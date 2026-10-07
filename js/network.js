@@ -49,6 +49,8 @@ const Network = {
       const status = await this.request('/api/status');
       if (status.setupRequired) {
         this.showSetup();
+      } else if (status.profileSetupRequired) {
+        this.showProfileSetup(status.canAddProfile);
       } else if (status.authenticated && status.user) {
         this.profile = status.user;
         this.savedWorld = (await this.request('/api/world')).world;
@@ -96,6 +98,7 @@ const Network = {
   bindForms() {
     const login = document.getElementById('login-form');
     const setup = document.getElementById('setup-form');
+    const profileSetup = document.getElementById('profile-setup-form');
     if (login) login.addEventListener('submit', async (event) => {
       event.preventDefault();
       const pinInput = document.getElementById('auth-pin');
@@ -116,8 +119,7 @@ const Network = {
     if (setup) setup.addEventListener('submit', async (event) => {
       event.preventDefault();
       const button = setup.querySelector('button[type="submit"]');
-      const names = [document.getElementById('setup-name-1'), document.getElementById('setup-name-2')];
-      const pins = [document.getElementById('setup-pin-1'), document.getElementById('setup-pin-2')];
+      const pins = [document.getElementById('setup-pin-1'), document.getElementById('setup-pin-2'), document.getElementById('setup-pin-3')];
       this.setBusy(button, true);
       try {
         await this.request('/api/setup', {
@@ -125,15 +127,33 @@ const Network = {
           body: JSON.stringify({
             bootstrapCode: document.getElementById('setup-code').value,
             users: [
-              { id: 'p1', displayName: names[0].value, pin: pins[0].value },
-              { id: 'p2', displayName: names[1].value, pin: pins[1].value },
+              { id: 'p1', pin: pins[0].value },
+              { id: 'p2', pin: pins[1].value },
+              { id: 'p3', pin: pins[2].value },
             ],
           }),
         });
-        for (const input of [document.getElementById('setup-code'), ...names, ...pins]) input.value = '';
-        this.showLogin('Setup is complete. Choose a profile and sign in.');
+        for (const input of [document.getElementById('setup-code'), ...pins]) input.value = '';
+        location.reload();
       } catch (error) { this.setMessage(error.message); }
       finally { this.setBusy(button, false); }
+    });
+    if (profileSetup) profileSetup.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const pinInput = document.getElementById('profile-setup-pin');
+      const button = profileSetup.querySelector('button[type="submit"]');
+      this.setBusy(button, true);
+      try {
+        await this.request('/api/profile-setup', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: pinInput.value }),
+        });
+        pinInput.value = '';
+        location.reload();
+      } catch (error) {
+        pinInput.value = '';
+        this.setMessage(error.message);
+      } finally { this.setBusy(button, false); }
     });
     document.addEventListener('click', (event) => {
       if (!event.target) return;
@@ -160,8 +180,10 @@ const Network = {
     this.showGate('');
     const login = document.getElementById('login-form');
     const setup = document.getElementById('setup-form');
+    const profileSetup = document.getElementById('profile-setup-form');
     if (login) login.classList.remove('hidden');
     if (setup) setup.classList.add('hidden');
+    if (profileSetup) profileSetup.classList.add('hidden');
     if (message) this.setMessage(message);
   },
 
@@ -169,8 +191,22 @@ const Network = {
     this.showGate('First-time setup happens here. The one-time code is printed in the PC server window.');
     const login = document.getElementById('login-form');
     const setup = document.getElementById('setup-form');
+    const profileSetup = document.getElementById('profile-setup-form');
     if (login) login.classList.add('hidden');
     if (setup) setup.classList.remove('hidden');
+    if (profileSetup) profileSetup.classList.add('hidden');
+  },
+
+  showProfileSetup(canAddProfile) {
+    this.showGate(canAddProfile
+      ? 'Add Feng’s PIN once on this PC. Existing Florenz and Marlene worlds stay saved separately.'
+      : 'Feng’s profile needs to be added once on the family PC. Open the game there, then refresh here.');
+    const login = document.getElementById('login-form');
+    const setup = document.getElementById('setup-form');
+    const profileSetup = document.getElementById('profile-setup-form');
+    if (login) login.classList.add('hidden');
+    if (setup) setup.classList.add('hidden');
+    if (profileSetup) profileSetup.classList.toggle('hidden', !canAddProfile);
   },
 
   setMessage(message) {
