@@ -8,7 +8,7 @@ Open `index.html` in a browser. This starts the game locally without contacting 
 
 ## Family LAN server
 
-The Windows host needs Node.js installed. Double-click `start.bat` on the family PC and leave its console window open while the server is in use. It displays the local network address and, only before first setup, a one-time setup code.
+The Windows host needs Node.js installed. Double-click `start.bat` on the family PC and leave its console window open while the server is in use. It starts on port 8080, automatically tries the next available port through 8090 if that port is occupied, and displays the local network address and, only before first setup, a one-time setup code. `allow-firewall.ps1` reads the active port recorded by the server.
 
 On each device connected to the same home Wi-Fi:
 

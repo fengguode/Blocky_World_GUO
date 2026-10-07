@@ -12,7 +12,8 @@ const scrypt = promisify(crypto.scrypt);
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, '.blocky-world-data');
 const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
-const PORT = Number(process.env.BLOCKY_PORT || 8080);
+const DEFAULT_PORT = 8080;
+const PORT_FALLBACK_LIMIT = DEFAULT_PORT + 10;
 const COOKIE = 'bw_session';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
 const ALLOWED_USERS = ['p1', 'p2'];
@@ -586,19 +587,41 @@ async function start() {
     for (const [token, item] of closedVisitSessions) if (item.expiresAt <= now) closedVisitSessions.delete(token);
   }, 1000).unref();
 
-  server.listen(PORT, '0.0.0.0', () => {
-    const addresses = [];
-    for (const entries of Object.values(os.networkInterfaces())) for (const net of entries || []) if (net.family === 'IPv4' && !net.internal) addresses.push(net.address);
-    console.log('\n  Blocky World family LAN server\n  ---------------------------------------------');
-    addresses.forEach(address => console.log('  On this network: http://' + address + ':' + PORT));
-    console.log('  On this PC:      http://localhost:' + PORT);
-    console.log('  LAN only: do not enable router port forwarding.');
-    if (bootstrapCode) {
-      console.log('\n  One-time setup code (enter it on this PC only): ' + bootstrapCode);
-      console.log('  Create the two profiles in the game setup screen.');
-    }
-    console.log('\n  Keep this window open while the family plays. Press Ctrl+C to stop.\n');
-  });
+  const configuredPort = process.env.BLOCKY_PORT ? Number(process.env.BLOCKY_PORT) : DEFAULT_PORT;
+  const listenOnPort = (port) => {
+    const onListening = async () => {
+      server.removeListener('error', onError);
+      const activePort = server.address().port;
+      try { await fs.promises.writeFile(path.join(DATA_DIR, 'port.txt'), String(activePort), { mode: 0o600 }); }
+      catch (err) { console.error('Could not record the active port:', err.message); }
+      const addresses = [];
+      for (const entries of Object.values(os.networkInterfaces())) for (const net of entries || []) if (net.family === 'IPv4' && !net.internal) addresses.push(net.address);
+      console.log('\n  Blocky World family LAN server\n  ---------------------------------------------');
+      addresses.forEach(address => console.log('  On this network: http://' + address + ':' + activePort));
+      console.log('  On this PC:      http://localhost:' + activePort);
+      console.log('  LAN only: do not enable router port forwarding.');
+      if (bootstrapCode) {
+        console.log('\n  One-time setup code (enter it on this PC only): ' + bootstrapCode);
+        console.log('  Create the two profiles in the game setup screen.');
+      }
+      console.log('\n  Keep this window open while the family plays. Press Ctrl+C to stop.\n');
+    };
+    const onError = (err) => {
+      server.removeListener('listening', onListening);
+      if (err.code === 'EADDRINUSE' && !process.env.BLOCKY_PORT && port < PORT_FALLBACK_LIMIT) {
+        console.log('Port ' + port + ' is already in use; trying ' + (port + 1) + '.');
+        listenOnPort(port + 1);
+        return;
+      }
+      console.error('Could not start Blocky World:', err.message);
+      process.exitCode = 1;
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '0.0.0.0');
+  };
+
+  listenOnPort(configuredPort);
 }
 
 start().catch(err => { console.error('Could not start Blocky World:', err.message); process.exitCode = 1; });

@@ -1263,7 +1263,9 @@ const Game = {
     // opaque
     gl.uniform1f(prog.u.uAlphaCut, 0.5);
     gl.uniform1f(prog.u.uIsLiquid, 0);
-    gl.uniform3f(prog.u.uTintR, 1, 1, 1);
+    gl.uniform1f(prog.u.uTintR, 1);
+    gl.uniform1f(prog.u.uTintG, 1);
+    gl.uniform1f(prog.u.uTintB, 1);
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
@@ -1289,7 +1291,9 @@ const Game = {
     gl.uniform3f(prog.u.uCamPos, camPos[0], camPos[1], camPos[2]);
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
-    gl.uniform3f(prog.u.uTintR, 1, 1, 1);
+    gl.uniform1f(prog.u.uTintR, 1);
+    gl.uniform1f(prog.u.uTintG, 1);
+    gl.uniform1f(prog.u.uTintB, 1);
     gl.uniform1i(prog.u.uTex, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
