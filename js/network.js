@@ -9,6 +9,8 @@ const Network = {
   pendingSave: null,
   serverEdits: new Map(),
   lastSavedSeed: null,
+  resetEditsPending: false,
+  serverRevision: 0,
   saveRevision: 0,
   saveQueue: Promise.resolve(),
   booted: false,
@@ -35,9 +37,11 @@ const Network = {
         this.profile = status.user;
         this.savedWorld = (await this.request('/api/world')).world;
         this.saveRevision = Number.isSafeInteger(this.savedWorld.revision) ? this.savedWorld.revision : 0;
+        this.serverRevision = this.saveRevision;
         this.serverEdits = this.indexEdits(this.savedWorld.edits);
         this.lastSavedSeed = this.savedWorld.seed;
         this.ready = true;
+        this.restoreRecovery();
       } else {
         this.showLogin();
       }
@@ -156,15 +160,17 @@ const Network = {
     button.setAttribute('aria-busy', busy ? 'true' : 'false');
   },
 
-  saveWorld(world) {
+  saveWorld(world, options) {
     if (!this.serverMode || !this.profile || !this.ready) return;
+    if (options && options.resetEdits) this.resetEditsPending = true;
     world.revision = ++this.saveRevision;
     this.savedWorld = world;
-    const replaceEdits = this.lastSavedSeed !== null && world.seed !== this.lastSavedSeed;
+    const replaceEdits = this.resetEditsPending || (this.lastSavedSeed !== null && world.seed !== this.lastSavedSeed);
     const baseEdits = replaceEdits ? new Map() : this.serverEdits;
     const edits = Array.isArray(world.edits) ? world.edits : [];
     const delta = edits.filter((edit) => baseEdits.get(this.editKey(edit)) !== edit[3]);
     this.pendingSave = Object.assign({}, world, { edits: delta, editPatch: true, replaceEdits });
+    this.persistRecovery();
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(async () => {
       await this.flushSave();
@@ -185,9 +191,16 @@ const Network = {
       this.saveQueue = write;
       const result = await write;
       if (Number.isSafeInteger(result.revision)) this.saveRevision = Math.max(this.saveRevision, result.revision);
+      this.serverRevision = Number.isSafeInteger(result.revision) ? result.revision : snapshot.revision;
       this.serverEdits = this.indexEdits(fullSnapshot.edits);
       this.lastSavedSeed = fullSnapshot.seed;
-      if (this.pendingSave && this.pendingSave.revision === snapshot.revision) this.pendingSave = null;
+      if (snapshot.replaceEdits) this.resetEditsPending = false;
+      if (this.pendingSave && this.pendingSave.revision === snapshot.revision) {
+        this.pendingSave = null;
+        this.clearRecovery();
+      } else {
+        this.persistRecovery();
+      }
       return true;
     } catch (_) {
       if (!suppressLock) this.lockGame('The PC server connection was lost. Your latest changes may not have been saved.');
@@ -206,6 +219,39 @@ const Network = {
   },
 
   editKey(edit) { return edit[0] + ',' + edit[1] + ',' + edit[2]; },
+
+  recoveryKey() { return 'blocky-world-server-recovery-v1:' + (this.profile ? this.profile.id : ''); },
+
+  persistRecovery() {
+    if (!this.profile || !this.savedWorld || !this.pendingSave) return;
+    try {
+      localStorage.setItem(this.recoveryKey(), JSON.stringify({
+        baseRevision: this.serverRevision,
+        replaceEdits: !!(this.pendingSave && this.pendingSave.replaceEdits),
+        world: this.savedWorld,
+      }));
+    } catch (_) { /* recovery is best-effort when browser storage is unavailable */ }
+  },
+
+  clearRecovery() {
+    if (!this.profile) return;
+    try { localStorage.removeItem(this.recoveryKey()); } catch (_) { /* server save remains authoritative */ }
+  },
+
+  restoreRecovery() {
+    if (!this.profile) return;
+    try {
+      const raw = localStorage.getItem(this.recoveryKey());
+      if (!raw) return;
+      const recovery = JSON.parse(raw);
+      if (!recovery || recovery.baseRevision !== this.serverRevision || !recovery.world || !Array.isArray(recovery.world.edits)) return;
+      this.savedWorld = recovery.world;
+      this.saveRevision = this.serverRevision;
+      this.resetEditsPending = recovery.replaceEdits === true || recovery.world.seed !== this.lastSavedSeed;
+      this.ready = true;
+      this.saveWorld(this.savedWorld);
+    } catch (_) { /* an unreadable recovery copy is left in place for manual inspection */ }
+  },
 
   indexEdits(edits) {
     const indexed = new Map();

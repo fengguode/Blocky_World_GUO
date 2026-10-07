@@ -678,7 +678,7 @@ const Game = {
     this.state = 'loading';
     this.buildWorld(this.settings.renderDist).then(() => {
       this.state = 'menu';
-      this.save();
+      this.save(true);
       UI.showMainMenu();
       UI.toast('New world ready — seed ' + seed);
     });
@@ -687,7 +687,7 @@ const Game = {
   /* ============================================================
      save / load
      ============================================================ */
-  save() {
+  save(resetEdits) {
     try {
       const p = this.players[0];
       const snapshot = {
@@ -701,7 +701,7 @@ const Game = {
           return [xyz[0], xyz[1], xyz[2], entry[1]];
         }) : [],
       };
-      if (window.Network && Network.serverMode) Network.saveWorld(snapshot);
+      if (window.Network && Network.serverMode) Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
       else localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
     } catch (e) { /* storage may be blocked; the game still works */ }
   },

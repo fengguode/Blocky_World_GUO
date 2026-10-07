@@ -104,12 +104,20 @@ async function writeWorld(userId, world) {
     if (world.revision < current.revision) {
       throw Object.assign(new Error('A newer world save already exists. Refresh and sign in again.'), { status: 409 });
     }
+    let persisted = world;
+    if (world.editPatch === true) {
+      const merged = new Map((world.replaceEdits === true ? [] : current.edits).map(edit => [edit[0] + ',' + edit[1] + ',' + edit[2], edit]));
+      for (const edit of world.edits) merged.set(edit[0] + ',' + edit[1] + ',' + edit[2], edit);
+      persisted = Object.assign({}, world, { edits: Array.from(merged.values()) });
+    }
+    delete persisted.editPatch;
+    delete persisted.replaceEdits;
     if (world.revision === current.revision) {
-      if (JSON.stringify(world) === JSON.stringify(current)) return;
+      if (JSON.stringify(persisted) === JSON.stringify(current)) return;
       throw Object.assign(new Error('A different world save already exists at this revision. Refresh and sign in again.'), { status: 409 });
     }
     const file = savePath(userId), temp = file + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
-    await fs.promises.writeFile(temp, JSON.stringify(world), { mode: 0o600 });
+    await fs.promises.writeFile(temp, JSON.stringify(persisted), { mode: 0o600 });
     await fs.promises.rename(temp, file);
   });
   worldWrites.set(userId, write);
@@ -212,15 +220,6 @@ async function handleApi(req, res, url) {
     const edits = Array.isArray(world.edits) ? world.edits : [];
     if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 304 || e[2] < 96 || e[2] >= 304 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
-    const current = await readWorld(user.id);
-    let persistedEdits = edits;
-    if (world.replaceEdits === true) {
-      persistedEdits = edits;
-    } else if (world.editPatch === true) {
-      const merged = new Map(current.edits.map(edit => [edit[0] + ',' + edit[1] + ',' + edit[2], edit]));
-      for (const edit of edits) merged.set(edit[0] + ',' + edit[1] + ',' + edit[2], edit);
-      persistedEdits = Array.from(merged.values());
-    }
     const safe = {
       version: 2, seed: world.seed,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
@@ -228,7 +227,9 @@ async function handleApi(req, res, url) {
       slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(8, world.slot)) : 0,
       pick: world.pick && typeof world.pick === 'object' ? world.pick : null,
       settings: world.settings && typeof world.settings === 'object' ? world.settings : null,
-      edits: persistedEdits,
+      edits,
+      editPatch: world.editPatch === true,
+      replaceEdits: world.replaceEdits === true,
     };
     await writeWorld(user.id, safe);
     return reply(res, 200, { ok: true, revision: safe.revision });
