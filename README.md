@@ -18,7 +18,7 @@ On each device connected to the same home Wi-Fi:
 
 Each profile's saved world is stored separately under `.blocky-world-data/` on the PC. The folder is excluded from Git and is not served to browsers. Stopping the server invalidates active sessions; restart it manually with `start.bat`. If Windows Firewall blocks the connection, run `allow-firewall.ps1` on the PC while it is connected to a trusted home network; it adds a rule for the Private network profile only.
 
-This is an HTTP service for the home LAN only. Do not enable router port forwarding or expose it to the internet. Internet access needs stronger account credentials and TLS first. GitHub Pages can host public static files, but cannot enforce the required server-side profile access or save private worlds; the game remains hosted on the family's PC.
+This service currently uses unencrypted HTTP on the home LAN. A device monitoring that network could capture a PIN or session cookie, so use it only on trusted home Wi-Fi. Do not enable router port forwarding or expose it to the internet. Internet access needs stronger account credentials and TLS first. GitHub Pages can host public static files, but cannot enforce the required server-side profile access or save private worlds; the game remains hosted on the family's PC.
 
 Login and separate server-side profile saves are implemented. Live visits between profiles are still open work; a second player cannot yet join another profile's world.
 

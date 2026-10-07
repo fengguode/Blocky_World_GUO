@@ -6,8 +6,11 @@ const Network = {
   ready: false,
   profile: null,
   savedWorld: null,
+  saveRevision: 0,
+  saveQueue: Promise.resolve(),
   booted: false,
   locked: false,
+  signingOut: false,
   saveTimer: null,
   sessionTimer: null,
   readyPromise: null,
@@ -28,6 +31,7 @@ const Network = {
       } else if (status.authenticated && status.user) {
         this.profile = status.user;
         this.savedWorld = (await this.request('/api/world')).world;
+        this.saveRevision = Number.isSafeInteger(this.savedWorld.revision) ? this.savedWorld.revision : 0;
         this.ready = true;
       } else {
         this.showLogin();
@@ -106,6 +110,7 @@ const Network = {
     document.addEventListener('click', (event) => {
       if (event.target && event.target.id === 'btn-logout') this.logout();
     });
+    window.addEventListener('pagehide', () => { this.saveOnPageHide(); });
   },
 
   showGate(message) {
@@ -146,18 +151,42 @@ const Network = {
 
   saveWorld(world) {
     if (!this.serverMode || !this.profile || !this.ready) return;
+    world.revision = ++this.saveRevision;
     this.savedWorld = world;
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(async () => {
-      try {
-        await this.request('/api/world', {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ world }),
-        });
-      } catch (_) {
-        this.lockGame('The PC server connection was lost. Your latest changes may not have been saved.');
-      }
+      await this.flushSave();
     }, 350);
+  },
+
+  async flushSave(keepalive) {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    if (!this.serverMode || !this.profile || !this.ready || !this.savedWorld) return true;
+    try {
+      const snapshot = this.savedWorld;
+      const body = JSON.stringify({ world: snapshot });
+      const write = this.saveQueue.catch(() => {}).then(() => this.request('/api/world', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: !!keepalive,
+      }));
+      this.saveQueue = write;
+      const result = await write;
+      if (Number.isSafeInteger(result.revision)) this.saveRevision = Math.max(this.saveRevision, result.revision);
+      return true;
+    } catch (_) {
+      this.lockGame('The PC server connection was lost. Your latest changes may not have been saved.');
+      return false;
+    }
+  },
+
+  saveOnPageHide() {
+    if (!this.serverMode || !this.profile || !this.ready || !this.savedWorld || this.signingOut) return;
+    const body = JSON.stringify({ world: this.savedWorld });
+    if (navigator.sendBeacon && body.length <= 60 * 1024) {
+      const queued = navigator.sendBeacon('/api/world/flush', new Blob([body], { type: 'text/plain;charset=UTF-8' }));
+      if (queued) return;
+    }
+    this.flushSave(true);
   },
 
   startSessionCheck() {
@@ -186,6 +215,8 @@ const Network = {
   },
 
   async logout() {
+    await this.flushSave();
+    this.signingOut = true;
     try { await this.request('/api/logout', { method: 'POST' }); } catch (_) { /* session may already be gone */ }
     location.reload();
   },

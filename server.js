@@ -21,6 +21,9 @@ let accounts = null;
 let bootstrapCode = null;
 const sessions = new Map();
 const attempts = new Map();
+const inFlightLogins = new Set();
+const worldWrites = new Map();
+const MAX_CONCURRENT_PIN_CHECKS = 4;
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -85,14 +88,32 @@ function savePath(userId) { return path.join(DATA_DIR, 'world-' + userId + '.jso
 async function readWorld(userId) {
   try {
     const world = JSON.parse(await fs.promises.readFile(savePath(userId), 'utf8'));
-    if (world && world.version === 2 && Number.isInteger(world.seed)) return world;
+    if (world && world.version === 2 && Number.isInteger(world.seed)) {
+      if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = 0;
+      return world;
+    }
   } catch (e) { if (e.code !== 'ENOENT') console.error('Could not read local world:', e.message); }
-  return { version: 2, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+  return { version: 2, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
 }
 async function writeWorld(userId, world) {
-  const file = savePath(userId), temp = file + '.tmp';
-  await fs.promises.writeFile(temp, JSON.stringify(world), { mode: 0o600 });
-  await fs.promises.rename(temp, file);
+  const previous = worldWrites.get(userId) || Promise.resolve();
+  const write = previous.catch(() => {}).then(async () => {
+    const current = await readWorld(userId);
+    if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = current.revision + 1;
+    if (world.revision < current.revision) {
+      throw Object.assign(new Error('A newer world save already exists. Refresh and sign in again.'), { status: 409 });
+    }
+    if (world.revision === current.revision) {
+      if (JSON.stringify(world) === JSON.stringify(current)) return;
+      throw Object.assign(new Error('A different world save already exists at this revision. Refresh and sign in again.'), { status: 409 });
+    }
+    const file = savePath(userId), temp = file + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+    await fs.promises.writeFile(temp, JSON.stringify(world), { mode: 0o600 });
+    await fs.promises.rename(temp, file);
+  });
+  worldWrites.set(userId, write);
+  try { await write; }
+  finally { if (worldWrites.get(userId) === write) worldWrites.delete(userId); }
 }
 
 async function handleApi(req, res, url) {
@@ -134,20 +155,29 @@ async function handleApi(req, res, url) {
     const key = (req.socket.remoteAddress || 'unknown') + ':' + userId;
     const attempt = attempts.get(key) || { count: 0, blockedUntil: 0, lastTry: Date.now() };
     if (attempt.blockedUntil > Date.now()) return reply(res, 429, { error: 'Too many tries. Wait five minutes, then try again.' });
+    if (inFlightLogins.has(key) || inFlightLogins.size >= MAX_CONCURRENT_PIN_CHECKS)
+      return reply(res, 429, { error: 'Another sign-in check is running. Wait a moment and try again.' });
+    attempt.count++;
+    attempt.lastTry = Date.now();
+    if (attempt.count >= 5) attempt.blockedUntil = Date.now() + 5 * 60 * 1000;
+    attempts.set(key, attempt);
     const account = accounts.users[userId];
-    const derived = await scrypt(pin, account.salt, 64);
-    if (!safeEqual(derived.toString('hex'), account.pinHash)) {
-      attempt.count++;
-      attempt.lastTry = Date.now();
-      if (attempt.count >= 5) { attempt.count = 0; attempt.blockedUntil = Date.now() + 5 * 60 * 1000; }
-      attempts.set(key, attempt);
-      return reply(res, 401, { error: 'That PIN did not match. Try again.' });
+    inFlightLogins.add(key);
+    try {
+      const derived = await scrypt(pin, account.salt, 64);
+      if (!safeEqual(derived.toString('hex'), account.pinHash)) {
+        return reply(res, attempt.blockedUntil > Date.now() ? 429 : 401, {
+          error: attempt.blockedUntil > Date.now() ? 'Too many tries. Wait five minutes, then try again.' : 'That PIN did not match. Try again.',
+        });
+      }
+      attempts.delete(key);
+      const token = crypto.randomBytes(32).toString('base64url');
+      sessions.set(token, { userId, lastSeen: Date.now() });
+      setCookie(res, token);
+      return reply(res, 200, { ok: true, user: { id: userId, displayName: account.displayName } });
+    } finally {
+      inFlightLogins.delete(key);
     }
-    attempts.delete(key);
-    const token = crypto.randomBytes(32).toString('base64url');
-    sessions.set(token, { userId, lastSeen: Date.now() });
-    setCookie(res, token);
-    return reply(res, 200, { ok: true, user: { id: userId, displayName: account.displayName } });
   }
 
   if (method === 'POST' && route === '/api/logout') {
@@ -165,7 +195,7 @@ async function handleApi(req, res, url) {
     return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id) });
   }
 
-  if (method === 'PUT' && route === '/api/world') {
+  if ((method === 'PUT' && route === '/api/world') || (method === 'POST' && route === '/api/world/flush')) {
     const body = await readBody(req, 2 * 1024 * 1024);
     const world = body.world;
     if (!world || typeof world !== 'object' || Array.isArray(world) || !Number.isInteger(world.seed) || world.seed < -2147483648 || world.seed > 2147483647)
@@ -175,6 +205,7 @@ async function handleApi(req, res, url) {
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
     const safe = {
       version: 2, seed: world.seed,
+      revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
       player1: Array.isArray(world.player1) && world.player1.length === 3 && world.player1.every(Number.isFinite) ? world.player1 : null,
       slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(8, world.slot)) : 0,
       pick: world.pick && typeof world.pick === 'object' ? world.pick : null,
@@ -182,7 +213,7 @@ async function handleApi(req, res, url) {
       edits,
     };
     await writeWorld(user.id, safe);
-    return reply(res, 200, { ok: true });
+    return reply(res, 200, { ok: true, revision: safe.revision });
   }
 
   return reply(res, 404, { error: 'No such game service endpoint.' });
@@ -234,7 +265,9 @@ async function start() {
   setInterval(() => {
     const now = Date.now();
     for (const [token, session] of sessions) if (now - session.lastSeen > SESSION_TTL) sessions.delete(token);
-    for (const [key, attempt] of attempts) if (!attempt.blockedUntil && now - attempt.lastTry > 60 * 60 * 1000) attempts.delete(key);
+    for (const [key, attempt] of attempts) {
+      if ((attempt.blockedUntil && attempt.blockedUntil <= now) || (!attempt.blockedUntil && now - attempt.lastTry > 60 * 60 * 1000)) attempts.delete(key);
+    }
   }, 30_000).unref();
 
   server.listen(PORT, '0.0.0.0', () => {
