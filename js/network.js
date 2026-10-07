@@ -6,6 +6,7 @@ const Network = {
   ready: false,
   profile: null,
   savedWorld: null,
+  recoveryConflict: null,
   pendingSave: null,
   serverEdits: new Map(),
   lastSavedSeed: null,
@@ -120,6 +121,8 @@ const Network = {
       if (!event.target) return;
       if (event.target.id === 'btn-logout' || event.target.id === 'btn-retry-save') this.logout();
       if (event.target.id === 'btn-return-game') this.returnToGame();
+      if (event.target.id === 'btn-use-recovery') this.useRecoveryCopy();
+      if (event.target.id === 'btn-keep-server') this.keepServerWorld();
     });
     window.addEventListener('pagehide', () => { this.saveOnPageHide(); });
   },
@@ -242,15 +245,60 @@ const Network = {
     if (!this.profile) return;
     try {
       const raw = localStorage.getItem(this.recoveryKey());
-      if (!raw) return;
+      if (!raw) return false;
       const recovery = JSON.parse(raw);
-      if (!recovery || recovery.baseRevision !== this.serverRevision || !recovery.world || !Array.isArray(recovery.world.edits)) return;
+      if (!recovery || !recovery.world || !Array.isArray(recovery.world.edits)) return false;
+      if (recovery.baseRevision !== this.serverRevision) {
+        this.recoveryConflict = recovery;
+        this.showRecoveryConflict();
+        return true;
+      }
       this.savedWorld = recovery.world;
       this.saveRevision = this.serverRevision;
       this.resetEditsPending = recovery.replaceEdits === true || recovery.world.seed !== this.lastSavedSeed;
-      this.ready = true;
       this.saveWorld(this.savedWorld);
+      return false;
     } catch (_) { /* an unreadable recovery copy is left in place for manual inspection */ }
+    return false;
+  },
+
+  showRecoveryConflict() {
+    this.ready = false;
+    this.showGate('A newer PC save exists alongside this browser’s unsaved recovery copy. Choose which world to open.');
+    for (const id of ['login-form', 'setup-form', 'save-recovery-actions']) {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    }
+    const actions = document.getElementById('recovery-conflict-actions');
+    if (actions) actions.classList.remove('hidden');
+  },
+
+  useRecoveryCopy() {
+    if (!this.recoveryConflict) return;
+    const recovery = this.recoveryConflict;
+    this.recoveryConflict = null;
+    this.savedWorld = Object.assign({}, recovery.world);
+    this.saveRevision = this.serverRevision;
+    this.resetEditsPending = true;
+    this.ready = true;
+    const actions = document.getElementById('recovery-conflict-actions');
+    if (actions) actions.classList.add('hidden');
+    const screen = document.getElementById('auth-screen');
+    if (screen) screen.classList.add('hidden');
+    this.saveWorld(this.savedWorld, { resetEdits: true });
+    this.startGameIfAllowed();
+  },
+
+  keepServerWorld() {
+    if (!this.recoveryConflict) return;
+    this.recoveryConflict = null;
+    this.clearRecovery();
+    this.ready = true;
+    const actions = document.getElementById('recovery-conflict-actions');
+    if (actions) actions.classList.add('hidden');
+    const screen = document.getElementById('auth-screen');
+    if (screen) screen.classList.add('hidden');
+    this.startGameIfAllowed();
   },
 
   indexEdits(edits) {
