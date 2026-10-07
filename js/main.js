@@ -17,6 +17,14 @@ const Game = {
   showDebug: false,
   renderDist: 5,
   lastTime: 0,
+  lastFrameAt: null,
+  frameInterval: 1000 / 60,
+  fpsWindowStart: 0,
+  fpsWindowFrames: 0,
+  measuredFps: 0,
+  debugLastUpdate: 0,
+  _boxModel: M4.create(),
+  _boxMvp: M4.create(),
   time: 0,                // world time, seconds
   dayPhase: 0.32,         // 0 = midnight, 0.5 = noon
   selectedSlot: 0,
@@ -92,12 +100,16 @@ const Game = {
     if (this.quality !== 'auto') return;   // the user pinned a setting
     const mem = navigator.deviceMemory || (this.isTouch ? 4 : 8);
     const cores = navigator.hardwareConcurrency || 4;
-    let dprCap = 2;
+    // Desktop GPUs rarely benefit from rendering a 2x device-pixel buffer
+    // for this low-poly scene. A 1.5x cap cuts pixel work by about 44%.
+    let dprCap = this.isTouch ? 2 : 1.5;
     let dist = this.settings.renderDist;
 
     if (!this.settings.renderDistAuto) {
       // Keep the player's choice; still tune the pixel ratio for the screen.
-      this.dprCap = this.isTouch ? (window.innerWidth < 500 ? 1.5 : 2) : (mem <= 4 ? 1.5 : 2);
+      this.dprCap = this.isTouch
+        ? (window.innerWidth < 500 ? 1.5 : 2)
+        : (mem <= 4 || cores <= 4 ? 1.25 : 1.5);
       return;
     }
 
@@ -112,7 +124,7 @@ const Game = {
         dist = 5;
       }
     } else {
-      if (mem <= 4) { dist = 4; dprCap = 1.5; }
+      if (mem <= 4 || cores <= 4) { dist = 4; dprCap = 1.25; }
     }
 
     this.dprCap = dprCap;
@@ -120,20 +132,25 @@ const Game = {
   },
 
   /* ---------- frame scheduling ----------
-     requestAnimationFrame is the right clock for a smooth game, but browsers
-     stop firing it in a backgrounded tab, which would freeze the world.
-     We drive the loop from rAF and a timer and simply take whichever fires
-     first, so only one frame ever runs at a time. */
+     Use the browser's monotonic animation clock and render at most 60 frames
+     per second. A single rAF source avoids the timer/rAF race that produced
+     zero-length deltas and misleading 1000 FPS readings. */
   scheduleFrame() {
-    let fired = false;
-    const run = (t) => {
-      if (fired) return;
-      fired = true;
+    requestAnimationFrame((now) => {
+      if (this.lastFrameAt === null) {
+        this.lastFrameAt = now;
+      } else {
+        const elapsed = now - this.lastFrameAt;
+        if (elapsed >= this.frameInterval) {
+          // Preserve the 60 Hz phase on 120/144 Hz displays instead of
+          // drifting with the display's faster callback interval.
+          const intervals = Math.max(1, Math.floor(elapsed / this.frameInterval));
+          this.lastFrameAt += intervals * this.frameInterval;
+          this.loop(now);
+        }
+      }
       this.scheduleFrame();
-      this.loop(t);
-    };
-    requestAnimationFrame(run);
-    setTimeout(() => run(performance.now()), 16);
+    });
   },
 
   setupGL() {
@@ -1227,6 +1244,7 @@ const Game = {
 
     const sky = this.skyColors();
     const dayF = this.dayLightFactor();
+    this._frameDayLight = dayF;
     const sunAngle = this.dayPhase * Math.PI * 2;
     const sunDir = [Math.cos(sunAngle) * 0.4, Math.sin(sunAngle), Math.cos(sunAngle) * 0.6];
 
@@ -1449,12 +1467,8 @@ const Game = {
     const p = this.progBox;
     gl.useProgram(p);
 
-    const model = M4.create();
-    M4.translate(model, center[0], center[1], center[2]);
-    if (rotY) M4.rotateY(model, rotY);
-    M4.scale(model, size[0], size[1], size[2]);
-    const mvp = M4.create();
-    M4.multiply(mvp, Cam.viewProj, model);
+    const model = M4.composeTRS(this._boxModel, center, size, rotY || 0);
+    const mvp = M4.multiply(this._boxMvp, Cam.viewProj, model);
 
     const camPos = (this.state === 'observe') ? Observer.pos : Cam.pos;
     const fogFar = 40 + this.renderDist * CHUNK * 0.85;
@@ -1464,7 +1478,7 @@ const Game = {
     gl.uniform1f(p.u.uFogNear, fogFar * 0.42);
     gl.uniform1f(p.u.uFogFar, fogFar);
     gl.uniform3f(p.u.uFogColor, 0.72, 0.82, 0.95);
-    gl.uniform1f(p.u.uDayLight, this.dayLightFactor());
+    gl.uniform1f(p.u.uDayLight, this._frameDayLight);
     gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, alpha === undefined ? 1 : alpha);
     gl.uniform1f(p.u.uTile, tile || 0);
@@ -1677,25 +1691,38 @@ const Game = {
     }
 
     // Rebuild edited chunks first, then top up the view with new ones.
-    this.updateDirtyChunks(2);
+    this.updateDirtyChunks(1);
     if (this.state !== 'menu') this.streamChunks();
     this.updateFrustum();
     this.render(dt);
 
+    // This is the measured rAF rate over a full second, not the reciprocal of
+    // one possibly jittery frame delta. It therefore stays informative while
+    // the renderer is capped at 60 FPS.
+    if (this.fpsWindowStart === 0) this.fpsWindowStart = now;
+    this.fpsWindowFrames++;
+    const fpsElapsed = now - this.fpsWindowStart;
+    if (fpsElapsed >= 1000) {
+      this.measuredFps = Math.round(this.fpsWindowFrames * 1000 / fpsElapsed);
+      this.fpsWindowStart = now;
+      this.fpsWindowFrames = 0;
+    }
+
     // debug overlay
-    if (this.showDebug) {
+    if (this.showDebug && (this.debugLastUpdate === 0 || now - this.debugLastUpdate >= 250)) {
       const p1 = this.players[0];
-      const fps = 1 / Math.max(0.001, dt);
       UI.debug(
-        'fps ' + fps.toFixed(0) +
+        'fps ' + this.measuredFps + ' / 60' +
         '\nstate ' + this.state +
         '\npos ' + (p1 ? p1.pos.map(v => v.toFixed(1)).join(' ') : '-') +
         '\nchunks ' + this.world.chunks.size +
         '\nday ' + this.dayLightFactor().toFixed(2) +
         '\nparts ' + Particles.list.length,
         true);
-    } else {
+      this.debugLastUpdate = now;
+    } else if (!this.showDebug && this.debugLastUpdate !== 0) {
       UI.debug('', false);
+      this.debugLastUpdate = 0;
     }
 
     Input.endFrame();

@@ -117,6 +117,20 @@ const M4 = {
     M4.identity(o); o[0] = x; o[5] = y; o[10] = z; return o;
   },
 
+  // Compose T * RY * S for a box in one pass. The individual helpers above
+  // initialize their output matrix, so calling translate(), rotateY(), then
+  // scale() on the same matrix would erase the earlier transforms.
+  composeTRS(o, position, scale, rotationY) {
+    const c = Math.cos(rotationY || 0), s = Math.sin(rotationY || 0);
+    o.fill(0);
+    o[0] = c * scale[0];  o[2] = -s * scale[0];
+    o[5] = scale[1];
+    o[8] = s * scale[2];  o[10] = c * scale[2];
+    o[12] = position[0];  o[13] = position[1];  o[14] = position[2];
+    o[15] = 1;
+    return o;
+  },
+
   rotateX(o, r) {
     const c = Math.cos(r), s = Math.sin(r);
     M4.identity(o); o[5] = c; o[6] = s; o[9] = -s; o[10] = c; return o;
