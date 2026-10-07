@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Blocky World">
+<meta name="theme-color" content="#0d1017">
+<meta name="format-detection" content="telephone=no">
+<title>Blocky World</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- The server reveals this sign-in screen to everyone. Game scripts and world
+     data are served only after the server authenticates the selected profile. -->
+<section id="auth-screen" class="auth-screen hidden" aria-labelledby="auth-title">
+  <div class="auth-card">
+    <div class="auth-sparkle" aria-hidden="true">✦</div>
+    <p class="auth-kicker">FAMILY WORLD</p>
+    <h1 id="auth-title">Blocky World</h1>
+    <p id="auth-lead">Sign in to enter your world.</p>
+
+    <form id="login-form" class="auth-form hidden" autocomplete="off">
+      <label for="auth-profile">Choose your profile</label>
+      <select id="auth-profile" name="profile">
+        <option value="p1">Profile 1</option>
+        <option value="p2">Profile 2</option>
+      </select>
+      <label for="auth-pin">Your PIN</label>
+      <input id="auth-pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="current-password" required>
+      <button class="primary" type="submit">Enter the world</button>
+    </form>
+
+    <form id="setup-form" class="auth-form hidden" autocomplete="off">
+      <label for="setup-code">One-time code from the PC server window</label>
+      <input id="setup-code" name="bootstrap" type="password" autocomplete="off" required>
+      <label for="setup-name-1">Profile 1 name</label>
+      <input id="setup-name-1" maxlength="32" autocomplete="off" required>
+      <label for="setup-pin-1">Profile 1 PIN</label>
+      <input id="setup-pin-1" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
+      <label for="setup-name-2">Profile 2 name</label>
+      <input id="setup-name-2" maxlength="32" autocomplete="off" required>
+      <label for="setup-pin-2">Profile 2 PIN</label>
+      <input id="setup-pin-2" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
+      <button class="primary" type="submit">Finish one-time setup</button>
+    </form>
+
+    <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>
+  </div>
+</section>
+
+<canvas id="gl-canvas"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+
+  <div class="vignette" id="vignette"></div>
+  <div class="crosshair" id="crosshair"></div>
+
+  <div class="info-box panel" id="info-box"></div>
+  <div class="debug panel hidden" id="debug"></div>
+
+  <div class="status-row">
+    <span class="bar-label">HP</span>
+    <div class="bar hp"><div class="fill" id="hp-fill" style="width:100%"></div></div>
+    <span class="bar-label">ULT</span>
+    <div class="bar ult"><div class="fill" id="ult-fill" style="width:0%"></div></div>
+    <span class="bar-label" id="combo-label"></span>
+  </div>
+
+  <div class="combo-pop" id="combo-pop"></div>
+  <div class="banner" id="banner"></div>
+
+  <div class="hotbar" id="hotbar"></div>
+</div>
+
+<!-- ============ OBSERVE MODE OVERLAY ============ -->
+<div id="observe-hud">
+  <div id="observe-frame"></div>
+  <div class="rec-dot"><i></i> Observe</div>
+  <div id="observe-info" class="panel">
+    <div class="view-name" id="obs-view-name">Free Cam</div>
+    <div class="coords" id="obs-coords"></div>
+    <div class="hint" id="obs-hint">F5 change view &nbsp;·&nbsp; P photo &nbsp;·&nbsp; F10 menu</div>
+  </div>
+</div>
+
+<div id="toast" class="panel"></div>
+
+<!-- ============ MAIN MENU ============ -->
+<div id="menu">
+  <div class="menu-card panel">
+    <h1>Blocky World</h1>
+    <h2>A world for your imagination</h2>
+    <div class="session-row"><span id="player-greeting"></span><button id="btn-logout" class="small hidden" type="button">Sign out</button></div>
+
+    <div class="btn-grid">
+      <button class="primary" id="btn-play">Play &amp; Build</button>
+      <button class="danger"  id="btn-fight">Fight Arena</button>
+      <button class="blue"    id="btn-observe">Observe World</button>
+      <button             id="btn-controls">Controls</button>
+      <button             id="btn-options">Options</button>
+      <button class="danger" id="btn-reset">Reset World</button>
+    </div>
+
+    <div id="menu-extra"></div>
+    <div class="credits">Single HTML game · no install · works offline</div>
+  </div>
+</div>
+
+<!-- ============ PAUSE ============ -->
+<div id="pause">
+  <div class="menu-card panel">
+    <h2 style="margin-bottom:14px">Paused</h2>
+    <div class="btn-grid">
+      <button class="primary" id="btn-resume">Resume</button>
+      <button id="btn-pause-controls">Controls</button>
+      <button class="danger" id="btn-pause-menu">Main Menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TOUCH CONTROLS (iPhone / iPad) ============ -->
+<div id="touch-ui" class="hidden">
+  <!-- left thumb: movement stick -->
+  <div id="touch-move">
+    <div id="touch-stick">
+      <div id="touch-knob"></div>
+      <span class="stick-hint">MOVE</span>
+    </div>
+  </div>
+
+  <!-- right side: drag anywhere to look around -->
+  <div id="touch-look">
+    <span class="look-hint">drag to look</span>
+  </div>
+
+  <!-- bottom right: action buttons, sized for small hands -->
+  <div id="touch-buttons">
+    <button id="touch-fly" class="tbtn tbtn-fly">FLY</button>
+    <button id="touch-use" class="tbtn tbtn-use">PLACE</button>
+    <button id="touch-jump" class="tbtn tbtn-jump">JUMP</button>
+    <button id="touch-hit" class="tbtn tbtn-hit">BREAK</button>
+  </div>
+</div>
+
+<!-- ============ DESKTOP: click to capture the mouse ============ -->
+<div id="capture-hint" class="hidden">
+  <div class="cap-card">
+    <div class="cap-ring"></div>
+    <div class="cap-title">Click to look around</div>
+    <div class="cap-sub">Then use <kbd>W A S D</kbd> to walk · <kbd>Space</kbd> to jump · <kbd>V</kbd> to change view</div>
+  </div>
+</div>
+
+<!-- ============ LOADING ============ -->
+<div id="loading">
+  <div class="title">Blocky World</div>
+  <div class="bar-outer"><div class="bar-inner" id="load-fill"></div></div>
+  <div class="msg" id="load-msg">Carving the world…</div>
+</div>
+
+<script src="js/blocks.js"></script>
+<script src="js/gl.js"></script>
+<script src="js/world.js"></script>
+<script src="js/mesher.js"></script>
+<script src="js/chars.js"></script>
+<script src="js/input.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/entity.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/fight.js"></script>
+<script src="js/touch.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+<script src="js/network.js"></script>
+</body>
+</html>
