@@ -36,6 +36,7 @@ const UI = {
     box.innerHTML = '';
     document.getElementById('menu').classList.remove('hidden');
     document.getElementById('pause').classList.remove('show');
+    if (window.Network && Network.serverMode) Network.refreshVisitLobby();
   },
 
   /* ---------- character select ---------- */

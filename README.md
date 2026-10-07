@@ -20,7 +20,7 @@ Each profile's saved world is stored separately under `.blocky-world-data/` on t
 
 This service currently uses unencrypted HTTP on the home LAN. A device monitoring that network could capture a PIN or session cookie, so use it only on trusted home Wi-Fi. Do not enable router port forwarding or expose it to the internet. Internet access needs stronger account credentials and TLS first. GitHub Pages can host public static files, but cannot enforce the required server-side profile access or save private worlds; the game remains hosted on the family's PC.
 
-Login and separate server-side profile saves are implemented. Live visits between profiles are still open work; a second player cannot yet join another profile's world.
+Play & Build live visits are implemented for the two family profiles: an owner starts a world, approves each visit, and the visitor's block changes save into the owner's world. The owner must stay online; signing out or disconnecting ends access. Fight Arena and Observe World visits remain open work.
 
 ## The three modes
 

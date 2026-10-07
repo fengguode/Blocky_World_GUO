@@ -551,6 +551,10 @@ const Game = {
     this.players[0].creative = true;
     this.players[0].flying = true;
     this.players[0].flying = false;   // start on the ground so kids can just walk
+    if (window.Network && Network.visitRole) {
+      this.players[1].networkRemote = true;
+      this.players[1].networkRemoteVisible = !!Network.remotePlayerState;
+    }
     Cam.thirdPerson = true;
     Audio.play('select');
     UI.toast('Tap BREAK to mine, PLACE to build. V changes the view.');
@@ -617,6 +621,10 @@ const Game = {
   },
 
   toMenu() {
+    if (window.Network && Network.serverMode && Network.visitRole) {
+      Network.endVisit();
+      return;
+    }
     this.state = 'menu';
     this.paused = false;
     Input.releaseLock();
@@ -625,6 +633,10 @@ const Game = {
     document.getElementById('pause').classList.remove('show');
     document.getElementById('observe-hud').classList.remove('show');
     UI.show('hud', false);
+    if (this.players[1]) {
+      this.players[1].networkRemote = false;
+      this.players[1].networkRemoteVisible = true;
+    }
     UI.showMainMenu();
     this.save();
   },
@@ -684,6 +696,55 @@ const Game = {
     });
   },
 
+  async enterSharedWorld(sharedWorld) {
+    const localPick = this.pick.p1;
+    this.saved = Object.assign({}, sharedWorld, { player1: null, pick: null });
+    this.pendingSeed = sharedWorld.seed;
+    await this.buildWorld(this.settings.renderDist);
+    this.pendingSeed = undefined;
+    this.saved = Network.savedWorld;
+    this.pick.p1 = localPick;
+    this.players[0].char = characterById(localPick);
+    this.players[0].maxHp = this.players[0].char.hp;
+    this.players[1].networkRemote = true;
+    this.players[1].networkRemoteVisible = !!Network.remotePlayerState;
+    this.players[1].networkRemoteInitialized = false;
+    if (Network.remotePlayerState) {
+      const other = Network.remotePlayerState.pos;
+      this.players[0].pos = [other[0] + 2, other[1], other[2]];
+      this.players[0].spawn = this.players[0].pos.slice();
+      this.players[1].pos = other.slice();
+      this.players[1].yaw = Network.remotePlayerState.yaw;
+      this.players[1].networkRemoteInitialized = true;
+    } else {
+      const spawn = this.players[0].spawn;
+      this.players[1].pos = [spawn[0] + 3, spawn[1], spawn[2]];
+    }
+    this.state = 'menu';
+    this.startPlay();
+  },
+
+  async restorePersonalWorld() {
+    if (!window.Network || !Network.savedWorld) return;
+    this.state = 'loading';
+    this.paused = true;
+    this.saved = Network.savedWorld;
+    this.pendingSeed = this.saved.seed;
+    if (this.saved.settings) this.settings = Object.assign(this.settings, this.saved.settings);
+    if (this.saved.pick) this.pick = this.saved.pick;
+    if (Number.isInteger(this.saved.slot)) this.selectedSlot = this.saved.slot;
+    await this.buildWorld(this.settings.renderDist);
+    this.pendingSeed = undefined;
+    this.saved = Network.savedWorld;
+    this.players[1].networkRemote = false;
+    this.state = 'menu';
+    this.paused = false;
+    document.body.classList.remove('playing');
+    Touch.setVisible(false);
+    UI.show('hud', false);
+    UI.showMainMenu();
+  },
+
   /* ============================================================
      save / load
      ============================================================ */
@@ -701,8 +762,10 @@ const Game = {
           return [xyz[0], xyz[1], xyz[2], entry[1]];
         }) : [],
       };
-      if (window.Network && Network.serverMode) Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
-      else localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
+      if (window.Network && Network.serverMode) {
+        if (Network.visitRole === 'owner' && Network.visitActive) return;
+        Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
+      } else localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
     } catch (e) { /* storage may be blocked; the game still works */ }
   },
 
@@ -956,7 +1019,8 @@ const Game = {
       this._flyHeld = Touch.btn.fly;
 
       p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
-      p2.update(dt, 0, 0, false, false);
+      if (window.Network && Network.visitRole && (Network.visitRole === 'owner' || Network.visitRole === 'visitor')) Network.updateRemotePlayer(p2, dt);
+      else p2.update(dt, 0, 0, false, false);
       this.clampToWorld(p1);
       this.clampToWorld(p2);
       this.handleBlockActions(p1, p2, dt);
@@ -1426,6 +1490,7 @@ const Game = {
 
     // players
     for (const p of this.players) {
+      if (p.networkRemote && !p.networkRemoteVisible) continue;
       this.drawCharacter(prog, p, dayF);
     }
 

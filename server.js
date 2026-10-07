@@ -24,7 +24,14 @@ const sessions = new Map();
 const attempts = new Map();
 const inFlightLogins = new Set();
 const worldWrites = new Map();
+const visits = new Map();
+const closedVisitSessions = new Map();
 const MAX_CONCURRENT_PIN_CHECKS = 4;
+const VISIT_HEARTBEAT_TIMEOUT = 3500;
+const VISIT_REQUEST_TTL = 45_000;
+const VISIT_CLOSED_TTL = 30_000;
+const VISIT_EVENT_LIMIT = 5000;
+const CHARACTER_IDS = new Set(['steve', 'alex', 'spider', 'doll', 'golem', 'ninja']);
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -96,33 +103,125 @@ async function readWorld(userId) {
   } catch (e) { if (e.code !== 'ENOENT') console.error('Could not read local world:', e.message); }
   return { version: 2, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
 }
-async function writeWorld(userId, world) {
+async function writeWorld(userId, world, commitAllowed) {
   const previous = worldWrites.get(userId) || Promise.resolve();
   const write = previous.catch(() => {}).then(async () => {
+    if (commitAllowed && !commitAllowed()) throw Object.assign(new Error('The live visit ended before this change could be saved.'), { status: 410 });
     const current = await readWorld(userId);
-    if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = current.revision + 1;
-    if (world.revision < current.revision) {
+    if (current.revision >= Number.MAX_SAFE_INTEGER) {
+      throw Object.assign(new Error('The world save revision limit has been reached.'), { status: 507 });
+    }
+    const nextRevision = current.revision + 1;
+    if (world.editPatch === true) {
+      // Patches carry changed blocks, so serialize them after the latest writer.
+      // Never trust a client-provided revision to move the server's counter.
+      world.revision = nextRevision;
+    } else if (!Number.isSafeInteger(world.revision) || world.revision < 0) {
+      world.revision = nextRevision;
+    } else if (world.revision < current.revision) {
       throw Object.assign(new Error('A newer world save already exists. Refresh and sign in again.'), { status: 409 });
+    } else if (world.revision > nextRevision) {
+      throw Object.assign(new Error('The world save revision is invalid. Refresh and try again.'), { status: 409 });
     }
     let persisted = world;
     if (world.editPatch === true) {
       const merged = new Map((world.replaceEdits === true ? [] : current.edits).map(edit => [edit[0] + ',' + edit[1] + ',' + edit[2], edit]));
       for (const edit of world.edits) merged.set(edit[0] + ',' + edit[1] + ',' + edit[2], edit);
-      persisted = Object.assign({}, world, { edits: Array.from(merged.values()) });
+      persisted = Object.assign({}, world.preserveMetadata === true ? current : world, {
+        revision: world.revision,
+        edits: Array.from(merged.values()),
+      });
     }
     delete persisted.editPatch;
     delete persisted.replaceEdits;
+    delete persisted.preserveMetadata;
     if (world.revision === current.revision) {
       if (JSON.stringify(persisted) === JSON.stringify(current)) return;
       throw Object.assign(new Error('A different world save already exists at this revision. Refresh and sign in again.'), { status: 409 });
     }
     const file = savePath(userId), temp = file + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
-    await fs.promises.writeFile(temp, JSON.stringify(persisted), { mode: 0o600 });
-    await fs.promises.rename(temp, file);
+    try {
+      await fs.promises.writeFile(temp, JSON.stringify(persisted), { mode: 0o600 });
+      if (commitAllowed && !commitAllowed()) throw Object.assign(new Error('The live visit ended before this change could be saved.'), { status: 410 });
+      await fs.promises.rename(temp, file);
+    } catch (error) {
+      await fs.promises.unlink(temp).catch(() => {});
+      throw error;
+    }
   });
   worldWrites.set(userId, write);
   try { await write; }
   finally { if (worldWrites.get(userId) === write) worldWrites.delete(userId); }
+  return world.revision;
+}
+
+function visitByUser(user) {
+  const owned = visits.get(user.id);
+  if (owned && owned.ownerToken === user.token && owned.status !== 'closed') return { room: owned, role: 'owner' };
+  for (const room of visits.values()) {
+    if (room.pending && room.pending.visitorId === user.id && room.pending.visitorToken === user.token) return { room, role: 'pending' };
+    if (room.visitorId === user.id && room.visitorToken === user.token) return { room, role: 'visitor' };
+  }
+  const closed = closedVisitSessions.get(user.token);
+  if (closed && closed.expiresAt > Date.now()) return { room: closed.room, role: closed.role, closed: true };
+  return null;
+}
+
+function appendVisitEvent(room, actorId, type, data) {
+  room.seq++;
+  room.events.push({ seq: room.seq, actorId, type, data });
+  if (room.events.length > VISIT_EVENT_LIMIT) room.events.splice(0, room.events.length - VISIT_EVENT_LIMIT);
+}
+
+function closeVisit(room, reason) {
+  if (!room || room.status === 'closed') return;
+  room.status = 'closed';
+  room.closedAt = Date.now();
+  room.closeReason = reason || 'The host is no longer available.';
+  appendVisitEvent(room, null, 'closed', { reason: room.closeReason });
+  for (const [token, role] of [[room.ownerToken, 'owner'], [room.visitorToken, 'visitor'], [room.pending && room.pending.visitorToken, 'pending']]) {
+    if (token) closedVisitSessions.set(token, { room, role, expiresAt: room.closedAt + VISIT_CLOSED_TTL });
+  }
+  room.pending = null;
+  room.visitorId = null;
+  room.visitorToken = null;
+  room.visitorNeedsWorld = false;
+  room.visitorWorldSent = false;
+}
+
+function safePlayerState(value) {
+  if (!value || typeof value !== 'object') return null;
+  const pos = value.pos;
+  if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite) || pos[0] < 5 || pos[0] > 203 || pos[2] < 5 || pos[2] > 203 || pos[1] < -8 || pos[1] > 200) return null;
+  if (!Number.isFinite(value.yaw) || Math.abs(value.yaw) > 1000 || !Number.isFinite(value.pitch) || Math.abs(value.pitch) > 2 || !CHARACTER_IDS.has(value.characterId)) return null;
+  return { pos: pos.map(n => Math.round(n * 1000) / 1000), yaw: value.yaw, pitch: value.pitch, characterId: value.characterId, updatedAt: Date.now() };
+}
+
+async function persistVisitEdits(room, actorId, actorToken, edits) {
+  if (!edits.length) return;
+  const actorIsOwner = actorId === room.ownerId;
+  const commitAllowed = () => room.status === 'active' && sessions.has(room.ownerToken) &&
+    (actorIsOwner ? room.ownerToken === actorToken && Date.now() - room.ownerSeen < VISIT_HEARTBEAT_TIMEOUT
+      : room.visitorToken === actorToken && Date.now() - room.ownerSeen < VISIT_HEARTBEAT_TIMEOUT);
+  let revision;
+  try {
+    revision = await writeWorld(room.ownerId, {
+      version: 2, revision: null, edits, editPatch: true, replaceEdits: false, preserveMetadata: true,
+    }, commitAllowed);
+  } catch (error) {
+    if (error.status === 410) return false;
+    throw error;
+  }
+  if (!commitAllowed()) return false;
+  room.worldRevision = Math.max(room.worldRevision || 0, revision);
+  for (const edit of edits) appendVisitEvent(room, actorId, 'edit', edit);
+  return room.worldRevision;
+}
+
+function visitEdits(value) {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  if (value.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 208 || e[2] < 96 || e[2] >= 208 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255)) return null;
+  return value;
 }
 
 async function handleApi(req, res, url) {
@@ -200,13 +299,183 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && route === '/api/logout') {
     const user = requireUser(req, res);
     if (!user) return;
+    const room = visits.get(user.id);
+    if (room && room.ownerToken === user.token && room.status !== 'closed') closeVisit(room, 'The host signed out.');
     sessions.delete(user.token);
+    const pendingWrite = worldWrites.get(user.id);
+    if (pendingWrite) await pendingWrite.catch(() => {});
     clearCookie(res);
     return reply(res, 200, { ok: true });
   }
 
   const user = requireUser(req, res);
   if (!user) return;
+
+  if (method === 'GET' && route === '/api/visits') {
+    const owners = [];
+    for (const room of visits.values()) {
+      if (room.status === 'hosting' && Date.now() - room.ownerSeen < VISIT_HEARTBEAT_TIMEOUT && room.ownerId !== user.id) {
+        owners.push({ id: room.ownerId, displayName: room.ownerName, available: !room.pending && !room.visitorId });
+      }
+    }
+    return reply(res, 200, { owners });
+  }
+
+  if (method === 'POST' && route === '/api/visit/host') {
+    const participating = visitByUser(user);
+    if (participating && !participating.closed) return reply(res, 409, { error: 'Leave your current live visit before hosting.' });
+    const previous = visits.get(user.id);
+    if (previous && previous.status !== 'closed') closeVisit(previous, 'The host started a new live visit.');
+    const savedWorld = await readWorld(user.id);
+    const room = {
+      id: crypto.randomBytes(12).toString('base64url'), ownerId: user.id, ownerToken: user.token,
+      ownerName: user.displayName, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
+      visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
+      visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
+    };
+    visits.set(user.id, room);
+    return reply(res, 201, { ok: true, ownerId: room.ownerId });
+  }
+
+  if (method === 'POST' && route === '/api/visit/stop') {
+    const room = visits.get(user.id);
+    if (room && room.ownerToken === user.token) closeVisit(room, 'The host ended the live visit.');
+    return reply(res, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/visit/leave') {
+    const found = visitByUser(user);
+    if (found && !found.closed && found.role === 'pending' && found.room.pending && found.room.pending.visitorToken === user.token) {
+      const room = found.room;
+      const pending = room.pending;
+      room.pending = null;
+      const ended = Object.assign({}, room, { status: 'closed', closeReason: 'The visitor cancelled the request.' });
+      closedVisitSessions.set(user.token, { room: ended, role: 'pending', expiresAt: Date.now() + VISIT_CLOSED_TTL });
+    } else if (found && !found.closed && found.role === 'visitor' && found.room.visitorToken === user.token) {
+      const room = found.room;
+      const ended = Object.assign({}, room, { status: 'closed', closeReason: 'The visitor left the world.' });
+      closedVisitSessions.set(user.token, { room: ended, role: 'visitor', expiresAt: Date.now() + VISIT_CLOSED_TTL });
+      appendVisitEvent(room, user.id, 'left', { displayName: room.visitorName });
+      room.visitorId = null;
+      room.visitorToken = null;
+      room.visitorName = null;
+      room.visitorSeen = 0;
+      room.visitorNeedsWorld = false;
+      room.visitorWorldSent = false;
+      room.players.visitor = null;
+      room.status = 'hosting';
+    }
+    return reply(res, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/visit/request') {
+    const body = await readBody(req, 4096);
+    const ownerId = String(body.ownerId || '');
+    if (!ALLOWED_USERS.includes(ownerId) || ownerId === user.id) return reply(res, 400, { error: 'Choose the other profile.' });
+    const existing = visitByUser(user);
+    if (existing && !existing.closed) return reply(res, 409, { error: 'Leave your current live visit first.' });
+    const room = visits.get(ownerId);
+    if (!room || room.status !== 'hosting' || Date.now() - room.ownerSeen >= VISIT_HEARTBEAT_TIMEOUT)
+      return reply(res, 409, { error: 'That world is no longer being hosted.' });
+    if (room.pending || room.visitorId) return reply(res, 409, { error: 'That world already has a visitor request or guest.' });
+    room.pending = { id: crypto.randomBytes(12).toString('base64url'), visitorId: user.id, visitorToken: user.token, visitorName: user.displayName, createdAt: Date.now() };
+    return reply(res, 202, { ok: true, ownerName: room.ownerName });
+  }
+
+  if (method === 'POST' && route === '/api/visit/respond') {
+    const body = await readBody(req, 4096);
+    const room = visits.get(user.id);
+    if (!room || room.ownerToken !== user.token || room.status !== 'hosting' || !room.pending || room.pending.id !== body.requestId)
+      return reply(res, 409, { error: 'That visit request is no longer waiting.' });
+    const pending = room.pending;
+    room.pending = null;
+    if (Date.now() - pending.createdAt > VISIT_REQUEST_TTL || !sessions.has(pending.visitorToken))
+      return reply(res, 410, { error: 'That visit request has expired.' });
+    if (body.approve !== true) {
+      closedVisitSessions.set(pending.visitorToken, { room: Object.assign({}, room, { status: 'closed', closeReason: 'The host declined the visit.' }), role: 'pending', expiresAt: Date.now() + VISIT_CLOSED_TTL });
+      return reply(res, 200, { ok: true, approved: false });
+    }
+    room.worldRevision = (await readWorld(room.ownerId)).revision;
+    room.visitorId = pending.visitorId;
+    room.visitorToken = pending.visitorToken;
+    room.visitorName = pending.visitorName;
+    room.visitorSeen = Date.now();
+    room.visitorNeedsWorld = true;
+    room.visitorWorldSent = false;
+    room.status = 'active';
+    room.players.visitor = null;
+    appendVisitEvent(room, user.id, 'joined', { displayName: pending.visitorName });
+    return reply(res, 200, { ok: true, approved: true });
+  }
+
+  if (method === 'POST' && route === '/api/visit/sync') {
+    const body = await readBody(req, 96 * 1024);
+    const found = visitByUser(user);
+    if (!found) return reply(res, 200, { state: 'none' });
+    const { room, role } = found;
+    if (found.closed || room.status === 'closed') return reply(res, 200, { state: 'closed', reason: room.closeReason || 'The host is no longer available.' });
+    if (role !== 'owner' && (!sessions.has(room.ownerToken) || Date.now() - room.ownerSeen >= VISIT_HEARTBEAT_TIMEOUT)) {
+      closeVisit(room, 'The host disconnected.');
+      return reply(res, 200, { state: 'closed', reason: room.closeReason });
+    }
+    if (role === 'owner') {
+      room.ownerSeen = Date.now();
+      const player = safePlayerState(body.player);
+      if (player) room.players.owner = player;
+    } else if (role === 'pending') {
+      if (!room.pending || room.pending.visitorToken !== user.token) return reply(res, 200, { state: 'closed', reason: 'The host is no longer available.' });
+      if (Date.now() - room.pending.createdAt > VISIT_REQUEST_TTL) {
+        const stale = room.pending;
+        room.pending = null;
+        closedVisitSessions.set(stale.visitorToken, { room: Object.assign({}, room, { status: 'closed', closeReason: 'The visit request expired.' }), role: 'pending', expiresAt: Date.now() + VISIT_CLOSED_TTL });
+        return reply(res, 200, { state: 'closed', reason: 'The visit request expired.' });
+      }
+      return reply(res, 200, { state: 'pending', ownerName: room.ownerName });
+    } else {
+      if (room.status !== 'active' || room.visitorToken !== user.token) return reply(res, 200, { state: 'closed', reason: 'The host is no longer available.' });
+      room.visitorSeen = Date.now();
+      const player = safePlayerState(body.player);
+      if (player) room.players.visitor = player;
+      if (body.worldReady === true && room.visitorWorldSent) room.visitorNeedsWorld = false;
+    }
+
+    const edits = visitEdits(body.edits === undefined ? [] : body.edits);
+    if (!edits) return reply(res, 400, { error: 'Shared block edits are invalid.' });
+    if (edits.length && room.status === 'active') {
+      const revision = await persistVisitEdits(room, user.id, user.token, edits);
+      if (!revision) return reply(res, 200, { state: 'closed', reason: room.closeReason || 'The host is no longer available.' });
+      room.worldRevision = Math.max(room.worldRevision || 0, revision);
+    }
+
+    if (role === 'owner' && room.status === 'hosting' && room.pending && Date.now() - room.pending.createdAt > VISIT_REQUEST_TTL) {
+      const stale = room.pending;
+      room.pending = null;
+      closedVisitSessions.set(stale.visitorToken, { room: Object.assign({}, room, { status: 'closed', closeReason: 'The visit request expired.' }), role: 'pending', expiresAt: Date.now() + VISIT_CLOSED_TTL });
+    }
+
+    const cursor = Number.isSafeInteger(body.cursor) && body.cursor >= 0 ? body.cursor : 0;
+    const batch = room.events.filter(event => event.seq > cursor).slice(0, 200);
+    const nextCursor = batch.length ? batch[batch.length - 1].seq : room.seq;
+    const response = {
+      state: room.status, role, cursor: nextCursor,
+      worldRevision: room.worldRevision,
+      pending: role === 'owner' && room.pending ? { id: room.pending.id, displayName: room.pending.visitorName } : null,
+      remotePlayer: room.players[role === 'owner' ? 'visitor' : 'owner'],
+      events: batch.filter(event => event.actorId !== user.id).map(({ seq, type, data }) => ({ seq, type, data })),
+    };
+    if (role === 'visitor' && room.status === 'active' && room.visitorToken === user.token && room.visitorNeedsWorld) {
+      response.world = await readWorld(room.ownerId);
+      response.ownerName = room.ownerName;
+      room.visitorWorldSent = true;
+    }
+    const firstSeq = room.events.length ? room.events[0].seq : room.seq + 1;
+    if (cursor < firstSeq - 1 && room.status === 'active') {
+      response.resync = true;
+      response.world = await readWorld(room.ownerId);
+      response.cursor = room.seq;
+    }
+    return reply(res, 200, response);
+  }
 
   if (method === 'GET' && route === '/api/world') {
     return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id) });
@@ -231,7 +500,7 @@ async function handleApi(req, res, url) {
       editPatch: world.editPatch === true,
       replaceEdits: world.replaceEdits === true,
     };
-    await writeWorld(user.id, safe);
+    await writeWorld(user.id, safe, () => sessions.has(user.token));
     return reply(res, 200, { ok: true, revision: safe.revision });
   }
 
@@ -288,6 +557,34 @@ async function start() {
       if ((attempt.blockedUntil && attempt.blockedUntil <= now) || (!attempt.blockedUntil && now - attempt.lastTry > 60 * 60 * 1000)) attempts.delete(key);
     }
   }, 30_000).unref();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ownerId, room] of visits) {
+      if (room.status !== 'closed' && now - room.ownerSeen >= VISIT_HEARTBEAT_TIMEOUT) {
+        closeVisit(room, 'The host disconnected.');
+      } else if (room.status === 'active' && now - room.visitorSeen >= VISIT_HEARTBEAT_TIMEOUT) {
+        const ended = Object.assign({}, room, { status: 'closed', closeReason: 'The visitor disconnected.' });
+        closedVisitSessions.set(room.visitorToken, { room: ended, role: 'visitor', expiresAt: now + VISIT_CLOSED_TTL });
+        appendVisitEvent(room, null, 'left', { displayName: room.visitorName });
+        room.visitorId = null;
+        room.visitorToken = null;
+        room.visitorName = null;
+        room.visitorSeen = 0;
+        room.visitorNeedsWorld = false;
+        room.visitorWorldSent = false;
+        room.players.visitor = null;
+        room.status = 'hosting';
+      } else if (room.pending && now - room.pending.createdAt >= VISIT_REQUEST_TTL) {
+        const expired = room.pending;
+        room.pending = null;
+        const ended = Object.assign({}, room, { status: 'closed', closeReason: 'The visit request expired.' });
+        closedVisitSessions.set(expired.visitorToken, { room: ended, role: 'pending', expiresAt: now + VISIT_CLOSED_TTL });
+      }
+      if (room.status === 'closed' && now - room.closedAt >= VISIT_CLOSED_TTL && visits.get(ownerId) === room) visits.delete(ownerId);
+    }
+    for (const [token, item] of closedVisitSessions) if (item.expiresAt <= now) closedVisitSessions.delete(token);
+  }, 1000).unref();
 
   server.listen(PORT, '0.0.0.0', () => {
     const addresses = [];

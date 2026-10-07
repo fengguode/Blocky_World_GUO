@@ -115,9 +115,20 @@
     </div>
 
     <div id="menu-extra"></div>
+    <div id="visit-lobby" class="visit-lobby hidden"></div>
     <div class="credits">Single HTML game · no install · works offline</div>
   </div>
 </div>
+
+<aside id="visit-hud" class="visit-hud hidden" aria-live="polite">
+  <div id="visit-status" class="visit-status"></div>
+  <div id="visit-request" class="visit-request hidden">
+    <span id="visit-request-name"></span>
+    <button id="btn-visit-approve" class="primary" type="button">Let them in</button>
+    <button id="btn-visit-reject" type="button">Not now</button>
+  </div>
+  <button id="btn-visit-end" type="button">End visit</button>
+</aside>
 
 <!-- ============ PAUSE ============ -->
 <div id="pause">
