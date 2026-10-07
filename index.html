@@ -26,8 +26,9 @@
     <form id="login-form" class="auth-form hidden" autocomplete="off">
       <label for="auth-profile">Choose your profile</label>
       <select id="auth-profile" name="profile">
-        <option value="p1">Profile 1</option>
-        <option value="p2">Profile 2</option>
+        <option value="p1">Florenz</option>
+        <option value="p2">Marlene</option>
+        <option value="p3">Feng</option>
       </select>
       <label for="auth-pin">Your PIN</label>
       <input id="auth-pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="current-password" required>
@@ -37,15 +38,19 @@
     <form id="setup-form" class="auth-form hidden" autocomplete="off">
       <label for="setup-code">One-time code from the PC server window</label>
       <input id="setup-code" name="bootstrap" type="password" autocomplete="off" required>
-      <label for="setup-name-1">Profile 1 name</label>
-      <input id="setup-name-1" maxlength="32" autocomplete="off" required>
-      <label for="setup-pin-1">Profile 1 PIN</label>
+      <label for="setup-pin-1">Florenz PIN</label>
       <input id="setup-pin-1" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
-      <label for="setup-name-2">Profile 2 name</label>
-      <input id="setup-name-2" maxlength="32" autocomplete="off" required>
-      <label for="setup-pin-2">Profile 2 PIN</label>
+      <label for="setup-pin-2">Marlene PIN</label>
       <input id="setup-pin-2" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
+      <label for="setup-pin-3">Feng PIN</label>
+      <input id="setup-pin-3" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
       <button class="primary" type="submit">Finish one-time setup</button>
+    </form>
+
+    <form id="profile-setup-form" class="auth-form hidden" autocomplete="off">
+      <label for="profile-setup-pin">Feng PIN (set up once on this PC)</label>
+      <input id="profile-setup-pin" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
+      <button class="primary" type="submit">Add Feng profile</button>
     </form>
 
     <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>

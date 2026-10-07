@@ -16,7 +16,12 @@ const DEFAULT_PORT = 8080;
 const PORT_FALLBACK_LIMIT = DEFAULT_PORT + 10;
 const COOKIE = 'bw_session';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
-const ALLOWED_USERS = ['p1', 'p2'];
+const PROFILES = [
+  { id: 'p1', displayName: 'Florenz' },
+  { id: 'p2', displayName: 'Marlene' },
+  { id: 'p3', displayName: 'Feng' },
+];
+const ALLOWED_USERS = PROFILES.map(profile => profile.id);
 const PUBLIC_FILES = new Set(['/index.html', '/style.css', '/js/network.js']);
 let accounts = null;
 let bootstrapCode = null;
@@ -72,6 +77,9 @@ function readBody(req, limit = 64 * 1024) {
 function sameOrigin(req) {
   if (!req.headers.origin) return true;
   try { return new URL(req.headers.origin).host === req.headers.host; } catch { return false; }
+}
+function isLoopbackAddress(address) {
+  return address === '127.0.0.1' || address === '::1' || /^::ffff:127(?:\.\d{1,3}){3}$/.test(address || '');
 }
 function userFor(req) {
   const token = cookies(req)[COOKIE];
@@ -230,9 +238,14 @@ async function handleApi(req, res, url) {
   if (method !== 'GET' && !sameOrigin(req)) return reply(res, 403, { error: 'Use the Blocky World server origin.' });
 
   if (method === 'GET' && route === '/api/status') {
-    if (!accounts) return reply(res, 200, { setupRequired: true, authenticated: false, profiles: ALLOWED_USERS });
+    if (!accounts) return reply(res, 200, { setupRequired: true, authenticated: false, profiles: PROFILES });
     const user = userFor(req);
-    return reply(res, 200, { setupRequired: false, authenticated: !!user, profiles: ALLOWED_USERS, user: user ? { id: user.id, displayName: user.displayName } : null });
+    return reply(res, 200, {
+      setupRequired: false, profileSetupRequired: !accounts.users.p3,
+      canAddProfile: isLoopbackAddress(req.socket.remoteAddress),
+      authenticated: !!user, profiles: PROFILES,
+      user: user ? { id: user.id, displayName: user.displayName } : null,
+    });
   }
 
   if (method === 'POST' && route === '/api/setup') {
@@ -241,16 +254,17 @@ async function handleApi(req, res, url) {
     try {
       const body = await readBody(req, 16 * 1024);
       if (!bootstrapCode || !safeEqual(String(body.bootstrapCode || ''), bootstrapCode)) return reply(res, 403, { error: 'That one-time setup code is not correct.' });
-      if (!Array.isArray(body.users) || body.users.length !== 2 || body.users.some((u, i) =>
-        !u || u.id !== ALLOWED_USERS[i] || typeof u.displayName !== 'string' || !u.displayName.trim() || u.displayName.length > 32 ||
+      if (!Array.isArray(body.users) || body.users.length !== PROFILES.length || body.users.some((u, i) =>
+        !u || u.id !== ALLOWED_USERS[i] ||
         typeof u.pin !== 'string' || !/^\d{4,12}$/.test(u.pin))) {
-        return reply(res, 400, { error: 'Enter two profile names and PINs from 4 to 12 digits.' });
+        return reply(res, 400, { error: 'Enter a 4 to 12 digit PIN for Florenz, Marlene, and Feng.' });
       }
       const users = {};
-      for (const input of body.users) {
+      for (let i = 0; i < body.users.length; i++) {
+        const input = body.users[i];
         const salt = crypto.randomBytes(16).toString('hex');
         const key = await scrypt(input.pin, salt, 64);
-        users[input.id] = { displayName: input.displayName.trim(), salt, pinHash: key.toString('hex') };
+        users[input.id] = { displayName: PROFILES[i].displayName, salt, pinHash: key.toString('hex') };
       }
       const newAccounts = { version: 1, users };
       const temp = ACCOUNTS_FILE + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
@@ -264,11 +278,36 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (method === 'POST' && route === '/api/profile-setup') {
+    if (!accounts || accounts.users.p3 || setupInProgress) return reply(res, 409, { error: 'Feng’s profile is already set up or setup is unavailable.' });
+    if (!isLoopbackAddress(req.socket.remoteAddress)) return reply(res, 403, { error: 'Add Feng’s profile from the family PC.' });
+    setupInProgress = true;
+    try {
+      const body = await readBody(req, 4096);
+      const pin = String(body.pin || '');
+      if (!/^\d{4,12}$/.test(pin)) return reply(res, 400, { error: 'Enter a PIN from 4 to 12 digits.' });
+      const salt = crypto.randomBytes(16).toString('hex');
+      const key = await scrypt(pin, salt, 64);
+      const newAccounts = Object.assign({}, accounts, {
+        users: Object.assign({}, accounts.users, { p3: { displayName: 'Feng', salt, pinHash: key.toString('hex') } }),
+      });
+      const temp = ACCOUNTS_FILE + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+      await fs.promises.writeFile(temp, JSON.stringify(newAccounts, null, 2), { mode: 0o600 });
+      await fs.promises.rename(temp, ACCOUNTS_FILE);
+      accounts = newAccounts;
+      return reply(res, 201, { ok: true });
+    } finally {
+      setupInProgress = false;
+    }
+  }
+
   if (method === 'POST' && route === '/api/login') {
     if (!accounts) return reply(res, 409, { error: 'Complete setup on this PC first.' });
     const body = await readBody(req, 4096);
     const userId = String(body.userId || ''), pin = String(body.pin || '');
     if (!ALLOWED_USERS.includes(userId) || !/^\d{4,12}$/.test(pin)) return reply(res, 400, { error: 'Choose a profile and enter its PIN.' });
+    const account = accounts.users[userId];
+    if (!account) return reply(res, 409, { error: 'Feng’s profile must first be added from the family PC.' });
     const key = (req.socket.remoteAddress || 'unknown') + ':' + userId;
     const attempt = attempts.get(key) || { count: 0, blockedUntil: 0, lastTry: Date.now() };
     if (attempt.blockedUntil > Date.now()) return reply(res, 429, { error: 'Too many tries. Wait five minutes, then try again.' });
@@ -278,7 +317,6 @@ async function handleApi(req, res, url) {
     attempt.lastTry = Date.now();
     if (attempt.count >= 5) attempt.blockedUntil = Date.now() + 5 * 60 * 1000;
     attempts.set(key, attempt);
-    const account = accounts.users[userId];
     inFlightLogins.add(key);
     try {
       const derived = await scrypt(pin, account.salt, 64);
@@ -536,7 +574,14 @@ async function start() {
   await fs.promises.mkdir(DATA_DIR, { recursive: true });
   try { accounts = JSON.parse(await fs.promises.readFile(ACCOUNTS_FILE, 'utf8')); }
   catch (e) { if (e.code !== 'ENOENT') throw e; accounts = null; }
-  if (accounts && (!accounts.users || ALLOWED_USERS.some(id => !accounts.users[id]))) throw new Error('The local profile store is invalid. Keep its backup and follow the recovery steps in README.md.');
+  if (accounts && (!accounts.users || ['p1', 'p2'].some(id => !accounts.users[id]))) throw new Error('The local profile store is invalid. Keep its backup and follow the recovery steps in README.md.');
+  if (accounts) {
+    for (const profile of PROFILES) {
+      if (accounts.users[profile.id] && accounts.users[profile.id].displayName !== profile.displayName) {
+        accounts.users[profile.id].displayName = profile.displayName;
+      }
+    }
+  }
   if (!accounts) bootstrapCode = crypto.randomBytes(9).toString('hex').toUpperCase();
 
   const server = http.createServer((req, res) => {
@@ -602,7 +647,9 @@ async function start() {
       console.log('  LAN only: do not enable router port forwarding.');
       if (bootstrapCode) {
         console.log('\n  One-time setup code (enter it on this PC only): ' + bootstrapCode);
-        console.log('  Create the two profiles in the game setup screen.');
+        console.log('  Create Florenz, Marlene, and Feng profiles in the game setup screen.');
+      } else if (!accounts.users.p3) {
+        console.log('  Open the game on this PC to finish Feng’s profile setup.');
       }
       console.log('\n  Keep this window open while the family plays. Press Ctrl+C to stop.\n');
     };
