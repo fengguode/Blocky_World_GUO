@@ -1637,6 +1637,21 @@ H.test('rotateY swings +X round to -Z', () => {
   H.near(r[2] * 1, -1, 0.001, 'x becomes -z');
 });
 
+H.test('box TRS keeps a character part at its world position', () => {
+  const model = M4.composeTRS(M4.create(), [12, 20, -4], [2, 3, 4], Math.PI / 2);
+  const transform = (x, y, z) => [
+    model[0] * x + model[4] * y + model[8] * z + model[12],
+    model[1] * x + model[5] * y + model[9] * z + model[13],
+    model[2] * x + model[6] * y + model[10] * z + model[14],
+  ];
+  const origin = transform(0, 0, 0);
+  H.near(origin[0], 12, 0.001, 'box center x follows the character');
+  H.near(origin[1], 20, 0.001, 'box center y follows the character');
+  H.near(origin[2], -4, 0.001, 'box center z follows the character');
+  const localX = transform(1, 0, 0);
+  H.near(localX[2], -6, 0.001, 'box scale and facing rotation are composed');
+});
+
 H.test('the cube mesh is well formed', () => {
   const cube = g.buildCube();
   H.eq(cube.positions.length / 3, 24, '24 vertices');
@@ -1797,6 +1812,13 @@ H.test('the quality profile trims weak phones but not desktops', () => {
 
   const desktop = H.load({ touch: false, mem: 8, cores: 8, boot: false });
   H.assert(desktop.Game.settings.renderDist >= 4, 'a desktop should keep a longer view');
+  H.assert(desktop.Game.dprCap <= 1.5,
+    'desktop pixel work should be capped at 1.5x, got ' + desktop.Game.dprCap);
+
+  const weakDesktop = H.load({ touch: false, mem: 4, cores: 4, boot: false });
+  H.eq(weakDesktop.Game.settings.renderDist, 4, 'a weaker desktop should shorten the automatic view');
+  H.assert(weakDesktop.Game.dprCap <= 1.25,
+    'a weaker desktop should receive a lower pixel cap, got ' + weakDesktop.Game.dprCap);
 });
 
 H.test('render distance stays playable on every device profile', () => {
