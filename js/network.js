@@ -6,6 +6,9 @@ const Network = {
   ready: false,
   profile: null,
   savedWorld: null,
+  pendingSave: null,
+  serverEdits: new Map(),
+  lastSavedSeed: null,
   saveRevision: 0,
   saveQueue: Promise.resolve(),
   booted: false,
@@ -32,12 +35,14 @@ const Network = {
         this.profile = status.user;
         this.savedWorld = (await this.request('/api/world')).world;
         this.saveRevision = Number.isSafeInteger(this.savedWorld.revision) ? this.savedWorld.revision : 0;
+        this.serverEdits = this.indexEdits(this.savedWorld.edits);
+        this.lastSavedSeed = this.savedWorld.seed;
         this.ready = true;
       } else {
         this.showLogin();
       }
     } catch (_) {
-      this.showGate('The family PC server is not available. Start it on the PC, then refresh this page.');
+      this.showLogin('The family PC server is not available. Start it on the PC, then refresh this page.');
     }
   },
 
@@ -108,7 +113,9 @@ const Network = {
       finally { this.setBusy(button, false); }
     });
     document.addEventListener('click', (event) => {
-      if (event.target && event.target.id === 'btn-logout') this.logout();
+      if (!event.target) return;
+      if (event.target.id === 'btn-logout' || event.target.id === 'btn-retry-save') this.logout();
+      if (event.target.id === 'btn-return-game') this.returnToGame();
     });
     window.addEventListener('pagehide', () => { this.saveOnPageHide(); });
   },
@@ -153,18 +160,24 @@ const Network = {
     if (!this.serverMode || !this.profile || !this.ready) return;
     world.revision = ++this.saveRevision;
     this.savedWorld = world;
+    const replaceEdits = this.lastSavedSeed !== null && world.seed !== this.lastSavedSeed;
+    const baseEdits = replaceEdits ? new Map() : this.serverEdits;
+    const edits = Array.isArray(world.edits) ? world.edits : [];
+    const delta = edits.filter((edit) => baseEdits.get(this.editKey(edit)) !== edit[3]);
+    this.pendingSave = Object.assign({}, world, { edits: delta, editPatch: true, replaceEdits });
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(async () => {
       await this.flushSave();
     }, 350);
   },
 
-  async flushSave(keepalive) {
+  async flushSave(keepalive, suppressLock) {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (!this.serverMode || !this.profile || !this.ready || !this.savedWorld) return true;
+    if (!this.serverMode || !this.profile || !this.ready || !this.pendingSave || !this.savedWorld) return true;
     try {
-      const snapshot = this.savedWorld;
+      const snapshot = this.pendingSave;
+      const fullSnapshot = this.savedWorld;
       const body = JSON.stringify({ world: snapshot });
       const write = this.saveQueue.catch(() => {}).then(() => this.request('/api/world', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: !!keepalive,
@@ -172,21 +185,34 @@ const Network = {
       this.saveQueue = write;
       const result = await write;
       if (Number.isSafeInteger(result.revision)) this.saveRevision = Math.max(this.saveRevision, result.revision);
+      this.serverEdits = this.indexEdits(fullSnapshot.edits);
+      this.lastSavedSeed = fullSnapshot.seed;
+      if (this.pendingSave && this.pendingSave.revision === snapshot.revision) this.pendingSave = null;
       return true;
     } catch (_) {
-      this.lockGame('The PC server connection was lost. Your latest changes may not have been saved.');
+      if (!suppressLock) this.lockGame('The PC server connection was lost. Your latest changes may not have been saved.');
       return false;
     }
   },
 
   saveOnPageHide() {
-    if (!this.serverMode || !this.profile || !this.ready || !this.savedWorld || this.signingOut) return;
-    const body = JSON.stringify({ world: this.savedWorld });
+    if (!this.serverMode || !this.profile || !this.ready || !this.pendingSave || this.signingOut) return;
+    const body = JSON.stringify({ world: this.pendingSave });
     if (navigator.sendBeacon && body.length <= 60 * 1024) {
       const queued = navigator.sendBeacon('/api/world/flush', new Blob([body], { type: 'text/plain;charset=UTF-8' }));
       if (queued) return;
     }
     this.flushSave(true);
+  },
+
+  editKey(edit) { return edit[0] + ',' + edit[1] + ',' + edit[2]; },
+
+  indexEdits(edits) {
+    const indexed = new Map();
+    for (const edit of Array.isArray(edits) ? edits : []) {
+      if (Array.isArray(edit) && edit.length === 4 && edit.every(Number.isInteger)) indexed.set(this.editKey(edit), edit[3]);
+    }
+    return indexed;
   },
 
   startSessionCheck() {
@@ -215,10 +241,32 @@ const Network = {
   },
 
   async logout() {
-    await this.flushSave();
+    if (this.signingOut && this.locked) return;
     this.signingOut = true;
+    const login = document.getElementById('login-form');
+    const setup = document.getElementById('setup-form');
+    if (login) login.classList.add('hidden');
+    if (setup) setup.classList.add('hidden');
+    const actions = document.getElementById('save-recovery-actions');
+    if (actions) actions.classList.add('hidden');
+    this.showGate('Saving your world and signing out…');
+    if (!await this.flushSave(false, true)) {
+      this.signingOut = false;
+      this.showGate('The save did not reach the PC. Retry the save or return to the game with your current changes still open.');
+      if (actions) actions.classList.remove('hidden');
+      return;
+    }
     try { await this.request('/api/logout', { method: 'POST' }); } catch (_) { /* session may already be gone */ }
     location.reload();
+  },
+
+  returnToGame() {
+    this.signingOut = false;
+    const actions = document.getElementById('save-recovery-actions');
+    if (actions) actions.classList.add('hidden');
+    const screen = document.getElementById('auth-screen');
+    if (screen) screen.classList.add('hidden');
+    this.startSessionCheck();
   },
 };
 

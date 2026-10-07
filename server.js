@@ -19,6 +19,7 @@ const ALLOWED_USERS = ['p1', 'p2'];
 const PUBLIC_FILES = new Set(['/index.html', '/style.css', '/js/network.js']);
 let accounts = null;
 let bootstrapCode = null;
+let setupInProgress = false;
 const sessions = new Map();
 const attempts = new Map();
 const inFlightLogins = new Set();
@@ -127,24 +128,32 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && route === '/api/setup') {
-    if (accounts) return reply(res, 409, { error: 'Setup is already complete on this PC.' });
-    const body = await readBody(req, 16 * 1024);
-    if (!bootstrapCode || !safeEqual(String(body.bootstrapCode || ''), bootstrapCode)) return reply(res, 403, { error: 'That one-time setup code is not correct.' });
-    if (!Array.isArray(body.users) || body.users.length !== 2 || body.users.some((u, i) =>
-      !u || u.id !== ALLOWED_USERS[i] || typeof u.displayName !== 'string' || !u.displayName.trim() || u.displayName.length > 32 ||
-      typeof u.pin !== 'string' || !/^\d{4,12}$/.test(u.pin))) {
-      return reply(res, 400, { error: 'Enter two profile names and PINs from 4 to 12 digits.' });
+    if (accounts || setupInProgress) return reply(res, 409, { error: 'Setup is already complete or running on this PC.' });
+    setupInProgress = true;
+    try {
+      const body = await readBody(req, 16 * 1024);
+      if (!bootstrapCode || !safeEqual(String(body.bootstrapCode || ''), bootstrapCode)) return reply(res, 403, { error: 'That one-time setup code is not correct.' });
+      if (!Array.isArray(body.users) || body.users.length !== 2 || body.users.some((u, i) =>
+        !u || u.id !== ALLOWED_USERS[i] || typeof u.displayName !== 'string' || !u.displayName.trim() || u.displayName.length > 32 ||
+        typeof u.pin !== 'string' || !/^\d{4,12}$/.test(u.pin))) {
+        return reply(res, 400, { error: 'Enter two profile names and PINs from 4 to 12 digits.' });
+      }
+      const users = {};
+      for (const input of body.users) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        const key = await scrypt(input.pin, salt, 64);
+        users[input.id] = { displayName: input.displayName.trim(), salt, pinHash: key.toString('hex') };
+      }
+      const newAccounts = { version: 1, users };
+      const temp = ACCOUNTS_FILE + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+      await fs.promises.writeFile(temp, JSON.stringify(newAccounts, null, 2), { mode: 0o600 });
+      await fs.promises.rename(temp, ACCOUNTS_FILE);
+      accounts = newAccounts;
+      bootstrapCode = null;
+      return reply(res, 201, { ok: true });
+    } finally {
+      setupInProgress = false;
     }
-    const users = {};
-    for (const input of body.users) {
-      const salt = crypto.randomBytes(16).toString('hex');
-      const key = await scrypt(input.pin, salt, 64);
-      users[input.id] = { displayName: input.displayName.trim(), salt, pinHash: key.toString('hex') };
-    }
-    accounts = { version: 1, users };
-    await fs.promises.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), { mode: 0o600 });
-    bootstrapCode = null;
-    return reply(res, 201, { ok: true });
   }
 
   if (method === 'POST' && route === '/api/login') {
@@ -196,13 +205,22 @@ async function handleApi(req, res, url) {
   }
 
   if ((method === 'PUT' && route === '/api/world') || (method === 'POST' && route === '/api/world/flush')) {
-    const body = await readBody(req, 2 * 1024 * 1024);
+    const body = await readBody(req, 6 * 1024 * 1024);
     const world = body.world;
     if (!world || typeof world !== 'object' || Array.isArray(world) || !Number.isInteger(world.seed) || world.seed < -2147483648 || world.seed > 2147483647)
       return reply(res, 400, { error: 'World save has an invalid format.' });
     const edits = Array.isArray(world.edits) ? world.edits : [];
-    if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
+    if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 304 || e[2] < 96 || e[2] >= 304 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
+    const current = await readWorld(user.id);
+    let persistedEdits = edits;
+    if (world.replaceEdits === true) {
+      persistedEdits = edits;
+    } else if (world.editPatch === true) {
+      const merged = new Map(current.edits.map(edit => [edit[0] + ',' + edit[1] + ',' + edit[2], edit]));
+      for (const edit of edits) merged.set(edit[0] + ',' + edit[1] + ',' + edit[2], edit);
+      persistedEdits = Array.from(merged.values());
+    }
     const safe = {
       version: 2, seed: world.seed,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
@@ -210,7 +228,7 @@ async function handleApi(req, res, url) {
       slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(8, world.slot)) : 0,
       pick: world.pick && typeof world.pick === 'object' ? world.pick : null,
       settings: world.settings && typeof world.settings === 'object' ? world.settings : null,
-      edits,
+      edits: persistedEdits,
     };
     await writeWorld(user.id, safe);
     return reply(res, 200, { ok: true, revision: safe.revision });

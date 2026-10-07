@@ -961,6 +961,9 @@ body { touch-action: none; }
 .auth-form input:focus, .auth-form select:focus { outline: 3px solid rgba(95, 227, 255, 0.26); border-color: var(--cyan); }
 .auth-form button { min-height: 54px; margin-top: 10px; }
 .auth-message { min-height: 24px; margin-top: 14px; color: var(--amber); font-size: 13px; line-height: 1.45; }
+.save-recovery-actions { display: grid; gap: 10px; margin-top: 12px; }
+.save-recovery-actions.hidden { display: none; }
+.save-recovery-actions button { min-height: 50px; }
 .session-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: -12px 0 18px; color: var(--text-dim); font-size: 12px; }
 .session-row .hidden { display: none; }
 .session-row button { padding: 8px 12px; }
