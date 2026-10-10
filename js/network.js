@@ -141,17 +141,20 @@ const Network = {
     if (profileSetup) profileSetup.addEventListener('submit', async (event) => {
       event.preventDefault();
       const pinInput = document.getElementById('profile-setup-pin');
+      const setupCode = document.getElementById('profile-setup-code');
       const button = profileSetup.querySelector('button[type="submit"]');
       this.setBusy(button, true);
       try {
         await this.request('/api/profile-setup', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: pinInput.value }),
+          body: JSON.stringify({ pin: pinInput.value, setupCode: setupCode.value }),
         });
         pinInput.value = '';
+        setupCode.value = '';
         location.reload();
       } catch (error) {
         pinInput.value = '';
+        setupCode.value = '';
         this.setMessage(error.message);
       } finally { this.setBusy(button, false); }
     });
@@ -199,7 +202,7 @@ const Network = {
 
   showProfileSetup(canAddProfile) {
     this.showGate(canAddProfile
-      ? 'Add Feng’s PIN once on this PC. Existing Florenz and Marlene worlds stay saved separately.'
+      ? 'Enter the one-time code from the PC server window to add Feng’s PIN. Existing worlds stay saved separately.'
       : 'Feng’s profile needs to be added once on the family PC. Open the game there, then refresh here.');
     const login = document.getElementById('login-form');
     const setup = document.getElementById('setup-form');
