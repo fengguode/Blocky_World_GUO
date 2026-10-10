@@ -103,14 +103,21 @@ function clearCookie(res) {
 }
 function savePath(userId) { return path.join(DATA_DIR, 'world-' + userId + '.json'); }
 async function readWorld(userId) {
+  const fallback = { version: 2, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+  let raw;
   try {
-    const world = JSON.parse(await fs.promises.readFile(savePath(userId), 'utf8'));
-    if (world && world.version === 2 && Number.isInteger(world.seed)) {
-      if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = 0;
-      return world;
-    }
-  } catch (e) { if (e.code !== 'ENOENT') console.error('Could not read local world:', e.message); }
-  return { version: 2, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+    raw = await fs.promises.readFile(savePath(userId), 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return fallback;
+    throw new Error('Could not read the saved world. No changes were made.');
+  }
+  let world;
+  try { world = JSON.parse(raw); }
+  catch (_) { throw new Error('The saved world file is damaged. It was left untouched; restore it from a backup before saving again.'); }
+  if (!world || world.version !== 2 || !Number.isInteger(world.seed))
+    throw new Error('The saved world uses an unsupported format. It was left untouched; restore a compatible backup before saving again.');
+  if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = 0;
+  return world;
 }
 async function writeWorld(userId, world, commitAllowed) {
   const previous = worldWrites.get(userId) || Promise.resolve();
@@ -364,7 +371,11 @@ async function handleApi(req, res, url) {
     const participating = visitByUser(user);
     if (participating && !participating.closed) return reply(res, 409, { error: 'Leave your current live visit before hosting.' });
     const previous = visits.get(user.id);
-    if (previous && previous.status !== 'closed') closeVisit(previous, 'The host started a new live visit.');
+    if (previous && previous.status !== 'closed') {
+      if (Date.now() - previous.ownerSeen < VISIT_HEARTBEAT_TIMEOUT)
+        return reply(res, 409, { error: 'This profile is already hosting from another device. Stop hosting there first.' });
+      closeVisit(previous, 'The host disconnected.');
+    }
     const savedWorld = await readWorld(user.id);
     const room = {
       id: crypto.randomBytes(12).toString('base64url'), ownerId: user.id, ownerToken: user.token,
@@ -672,3 +683,4 @@ async function start() {
 }
 
 start().catch(err => { console.error('Could not start Blocky World:', err.message); process.exitCode = 1; });
+
