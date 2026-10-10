@@ -48,7 +48,9 @@
     </form>
 
     <form id="profile-setup-form" class="auth-form hidden" autocomplete="off">
-      <label for="profile-setup-pin">Feng PIN (set up once on this PC)</label>
+      <label for="profile-setup-code">One-time code from the PC server window</label>
+      <input id="profile-setup-code" type="password" autocomplete="off" required>
+      <label for="profile-setup-pin">Feng PIN</label>
       <input id="profile-setup-pin" type="password" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="new-password" required>
       <button class="primary" type="submit">Add Feng profile</button>
     </form>
@@ -203,3 +205,4 @@
 <script src="js/network.js"></script>
 </body>
 </html>
+
