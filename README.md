@@ -14,7 +14,7 @@ On each device connected to the same home Wi-Fi:
 
 1. Open the displayed address in a browser. On iPhone or iPad use Safari; **Add to Home Screen** is optional.
 2. On first use, enter the one-time code shown only in the PC server window. Set a PIN for Florenz, Marlene, and Feng. The server stores salted PIN hashes on the PC; PINs are not included in the browser code or repository.
-3. On an existing two-profile server, open the game on the family PC once to add Feng's PIN. The existing Florenz and Marlene PIN hashes and world saves are preserved. This one-time step is available only from the PC itself.
+3. On an existing two-profile server, open the game on the family PC once to add Feng's PIN. Enter the one-time profile setup code shown in the PC server window; the existing Florenz and Marlene PIN hashes and world saves are preserved. The code is required because Tailscale Funnel also reaches the server through a local connection.
 4. On later visits, select Florenz, Marlene, or Feng and enter that profile's PIN.
 
 Each profile's saved world is stored separately under `.blocky-world-data/` on the PC. The folder is excluded from Git and is not served to browsers. Stopping the server invalidates active sessions; restart it manually with `start.bat`. If Windows Firewall blocks the connection, run `allow-firewall.ps1` on the PC while it is connected to a trusted home network; it adds a rule for the Private network profile only.
