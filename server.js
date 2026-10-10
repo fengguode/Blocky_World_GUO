@@ -322,7 +322,6 @@ async function handleApi(req, res, url) {
     if (!account) return reply(res, 409, { error: 'Feng’s profile must first be added from the family PC.' });
     const key = (req.socket.remoteAddress || 'unknown') + ':' + userId;
     const attempt = attempts.get(key) || { count: 0, blockedUntil: 0, lastTry: Date.now() };
-    if (attempt.blockedUntil > Date.now()) return reply(res, 429, { error: 'Too many tries. Wait five minutes, then try again.' });
     if (inFlightLogins.has(key) || inFlightLogins.size >= MAX_CONCURRENT_PIN_CHECKS)
       return reply(res, 429, { error: 'Another sign-in check is running. Wait a moment and try again.' });
     attempt.count++;
