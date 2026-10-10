@@ -1,0 +1,3 @@
+# Blocky World project defaults; adapted from the DATARA team setup.
+model = "gpt-6-luna"
+model_reasoning_effort = "medium"
