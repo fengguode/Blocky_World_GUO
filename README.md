@@ -8,19 +8,20 @@ Open `index.html` in a browser. This starts the game locally without contacting 
 
 ## Family LAN server
 
-The Windows host needs Node.js installed. Double-click `start.bat` on the family PC and leave its console window open while the server is in use. It displays the local network address and, only before first setup, a one-time setup code.
+The Windows host needs Node.js installed. Double-click `start.bat` on the family PC and leave its console window open while the server is in use. It starts on port 8082 and displays the local network address and, only before first setup, a one-time setup code. Keep this port available for the configured Tailscale Funnel target. `allow-firewall.ps1` reads the active port recorded by the server.
 
 On each device connected to the same home Wi-Fi:
 
 1. Open the displayed address in a browser. On iPhone or iPad use Safari; **Add to Home Screen** is optional.
-2. On first use, enter the one-time code shown only in the PC server window. Create the two profile names and enter each profile's already agreed PIN. The server stores salted PIN hashes on the PC; PINs are not included in the browser code or repository.
-3. On later visits, select the profile and enter its PIN.
+2. On first use, enter the one-time code shown only in the PC server window. Set a PIN for Florenz, Marlene, and Feng. The server stores salted PIN hashes on the PC; PINs are not included in the browser code or repository.
+3. On an existing two-profile server, open the game on the family PC once to add Feng's PIN. The existing Florenz and Marlene PIN hashes and world saves are preserved. This one-time step is available only from the PC itself.
+4. On later visits, select Florenz, Marlene, or Feng and enter that profile's PIN.
 
 Each profile's saved world is stored separately under `.blocky-world-data/` on the PC. The folder is excluded from Git and is not served to browsers. Stopping the server invalidates active sessions; restart it manually with `start.bat`. If Windows Firewall blocks the connection, run `allow-firewall.ps1` on the PC while it is connected to a trusted home network; it adds a rule for the Private network profile only.
 
-This service currently uses unencrypted HTTP on the home LAN. A device monitoring that network could capture a PIN or session cookie, so use it only on trusted home Wi-Fi. Do not enable router port forwarding or expose it to the internet. Internet access needs stronger account credentials and TLS first. GitHub Pages can host public static files, but cannot enforce the required server-side profile access or save private worlds; the game remains hosted on the family's PC.
+The server still uses HTTP between the PC and its local interface. For remote play, keep the PC signed in to Tailscale and configure Tailscale Funnel to forward HTTPS on your Funnel hostname to http://127.0.0.1:8082. Keep start.bat running on the PC. Do not enable router port forwarding. Profile PINs are short and are not designed to resist sustained internet guessing, so treat Funnel access as a limited family demo and do not use sensitive data. Funnel supplies the public HTTPS endpoint; the game server itself remains on the family PC.
 
-Login and separate server-side profile saves are implemented. Live visits between profiles are still open work; a second player cannot yet join another profile's world.
+Play & Build live visits are implemented for Florenz, Marlene, and Feng: an owner starts a world, approves each visit, and the visitor's block changes save into the owner's world. The owner must stay online; signing out or disconnecting ends access. Fight Arena and Observe World visits remain open work.
 
 ## The three modes
 
@@ -83,3 +84,4 @@ js/ui.js        menus, HUD, and sound
 js/main.js      state machine, saves, rendering, and frame loop
 js/network.js   profile sign-in and server-save bridge
 ```
+

@@ -1,10 +1,25 @@
-# Opens port 8080 so an iPad or iPhone on the same Wi-Fi can reach the game.
+# Opens the active game server port so an iPad or iPhone on the same Wi-Fi can reach the game.
 # Right-click this file and choose "Run with PowerShell", or just run:
 #   powershell -ExecutionPolicy Bypass -File allow-firewall.ps1
 
 $ErrorActionPreference = 'Stop'
 $port = 8080
+$portFile = Join-Path $PSScriptRoot '.blocky-world-data\port.txt'
+if ($env:BLOCKY_PORT -match '^\d+$') {
+    $port = [int]$env:BLOCKY_PORT
+} elseif (Test-Path -LiteralPath $portFile) {
+    $savedPort = (Get-Content -LiteralPath $portFile -Raw).Trim()
+    if ($savedPort -match '^\d+$') { $port = [int]$savedPort }
+}
 $rule = 'Blocky World (local network)'
+
+# Refuse to open a stale port when the manually started game server is offline.
+$listening = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+if (-not $listening) {
+    Write-Host 'The server is not running yet. Double-click start.bat first, then run this script again.' -ForegroundColor Yellow
+    pause
+    exit 1
+}
 
 # Ask for admin once, at the top, so the rest of the script can just work.
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -46,16 +61,8 @@ Write-Host ''
 Write-Host 'Open one of these in Safari on the iPad:' -ForegroundColor Cyan
 $addresses | ForEach-Object { Write-Host ('   http://' + $_.IPAddress + ':' + $port) }
 
-# Confirm something is actually listening, so the advice is never a dead end.
-$listening = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-if ($listening) {
-    Write-Host ''
-    Write-Host 'The game server is listening - you are ready to play.' -ForegroundColor Green
-} else {
-    Write-Host ''
-    Write-Host 'The server is not running yet. Double-click start.bat first,' -ForegroundColor Yellow
-    Write-Host 'then run this script again.' -ForegroundColor Yellow
-}
+Write-Host ''
+Write-Host 'The game server is listening - you are ready to play.' -ForegroundColor Green
 
 Write-Host ''
 pause

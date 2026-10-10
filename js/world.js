@@ -177,10 +177,26 @@ class World {
     if (!c || !c.generated) return false;
     c.blocks[Chunk.idx(x - cx * CHUNK, y, z - cz * CHUNK)] = id;
     this.recordEdit(x, y, z, id);
+    if (window.Network && Network.serverMode) Network.queueSharedEdit(x, y, z, id);
     c.dirty = true;
     this.markNeighbourChunksDirty(x, y, z);
     // relight the column and neighbours
     this.relightColumn(x, z);
+    return true;
+  }
+
+  applyRemoteEdit(x, y, z, id) {
+    x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
+    if (!inWorldXZ(x, z) || y < 1 || y >= WORLD_H || !Number.isInteger(id) || id < 0 || id > 255) return false;
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    const c = this.getChunk(cx, cz, false);
+    this.recordEdit(x, y, z, id);
+    if (c && c.generated) {
+      c.blocks[Chunk.idx(x - cx * CHUNK, y, z - cz * CHUNK)] = id;
+      c.dirty = true;
+      this.markNeighbourChunksDirty(x, y, z);
+      this.relightColumn(x, z);
+    }
     return true;
   }
 
