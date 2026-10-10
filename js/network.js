@@ -520,7 +520,11 @@ const Network = {
     const status = document.getElementById('visit-status');
     const request = document.getElementById('visit-request');
     const end = document.getElementById('btn-visit-end');
-    if (!hud || !this.visitRole) return;
+    if (!hud) return;
+    if (!this.visitRole) {
+      if (message) UI.toast(message);
+      return;
+    }
     hud.classList.remove('hidden');
     if (status) status.textContent = message || '';
     if (request) request.classList.toggle('hidden', !requesterName);
@@ -776,3 +780,4 @@ document.addEventListener('DOMContentLoaded', () => {
     Network.showGate(error.message || 'The game could not start.');
   });
 });
+
