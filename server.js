@@ -31,6 +31,7 @@ const attempts = new Map();
 const inFlightLogins = new Set();
 const worldWrites = new Map();
 const visits = new Map();
+const hostStartsInProgress = new Set();
 const closedVisitSessions = new Map();
 const MAX_CONCURRENT_PIN_CHECKS = 4;
 const VISIT_HEARTBEAT_TIMEOUT = 3500;
@@ -370,21 +371,28 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && route === '/api/visit/host') {
     const participating = visitByUser(user);
     if (participating && !participating.closed) return reply(res, 409, { error: 'Leave your current live visit before hosting.' });
+    if (hostStartsInProgress.has(user.id))
+      return reply(res, 409, { error: 'A live world is already starting for this profile. Try again in a moment.' });
     const previous = visits.get(user.id);
     if (previous && previous.status !== 'closed') {
       if (Date.now() - previous.ownerSeen < VISIT_HEARTBEAT_TIMEOUT)
         return reply(res, 409, { error: 'This profile is already hosting from another device. Stop hosting there first.' });
-      closeVisit(previous, 'The host disconnected.');
+        closeVisit(previous, 'The host disconnected.');
     }
-    const savedWorld = await readWorld(user.id);
-    const room = {
-      id: crypto.randomBytes(12).toString('base64url'), ownerId: user.id, ownerToken: user.token,
-      ownerName: user.displayName, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
-      visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
-      visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
-    };
-    visits.set(user.id, room);
-    return reply(res, 201, { ok: true, ownerId: room.ownerId });
+    hostStartsInProgress.add(user.id);
+    try {
+      const savedWorld = await readWorld(user.id);
+      const room = {
+        id: crypto.randomBytes(12).toString('base64url'), ownerId: user.id, ownerToken: user.token,
+        ownerName: user.displayName, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
+        visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
+        visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
+      };
+      visits.set(user.id, room);
+      return reply(res, 201, { ok: true, ownerId: room.ownerId });
+    } finally {
+      hostStartsInProgress.delete(user.id);
+    }
   }
 
   if (method === 'POST' && route === '/api/visit/stop') {
