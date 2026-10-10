@@ -25,6 +25,7 @@ const ALLOWED_USERS = PROFILES.map(profile => profile.id);
 const PUBLIC_FILES = new Set(['/index.html', '/style.css', '/js/network.js']);
 let accounts = null;
 let bootstrapCode = null;
+let profileSetupCode = null;
 let setupInProgress = false;
 const sessions = new Map();
 const attempts = new Map();
@@ -292,6 +293,8 @@ async function handleApi(req, res, url) {
     setupInProgress = true;
     try {
       const body = await readBody(req, 4096);
+      if (!profileSetupCode || !safeEqual(String(body.setupCode || ''), profileSetupCode))
+        return reply(res, 403, { error: 'Enter the one-time profile setup code shown in the server window.' });
       const pin = String(body.pin || '');
       if (!/^\d{4,12}$/.test(pin)) return reply(res, 400, { error: 'Enter a PIN from 4 to 12 digits.' });
       const salt = crypto.randomBytes(16).toString('hex');
@@ -303,6 +306,7 @@ async function handleApi(req, res, url) {
       await fs.promises.writeFile(temp, JSON.stringify(newAccounts, null, 2), { mode: 0o600 });
       await fs.promises.rename(temp, ACCOUNTS_FILE);
       accounts = newAccounts;
+      profileSetupCode = null;
       return reply(res, 201, { ok: true });
     } finally {
       setupInProgress = false;
@@ -602,6 +606,7 @@ async function start() {
     }
   }
   if (!accounts) bootstrapCode = crypto.randomBytes(9).toString('hex').toUpperCase();
+  else if (!accounts.users.p3) profileSetupCode = crypto.randomBytes(9).toString('hex').toUpperCase();
 
   const server = http.createServer((req, res) => {
     let url;
@@ -668,6 +673,7 @@ async function start() {
         console.log('\n  One-time setup code (enter it on this PC only): ' + bootstrapCode);
         console.log('  Create Florenz, Marlene, and Feng profiles in the game setup screen.');
       } else if (!accounts.users.p3) {
+        console.log('  One-time profile setup code (enter it on this PC only): ' + profileSetupCode);
         console.log('  Open the game on this PC to finish Feng’s profile setup.');
       }
       console.log('\n  Keep this window open while the family plays. Press Ctrl+C to stop.\n');
