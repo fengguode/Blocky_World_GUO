@@ -13,12 +13,12 @@
     {
       "path": "before.html",
       "bytes": 8539,
-      "sha256": "27475b2c8b8b827d0d9acd07016dc917003f8845374b5200a3c0e74795da660f"
+      "sha256": "d97fe7da2dd95de8060410b03457c2093e7fa7d7b343b4d8974f5898d4d33c7b"
     },
     {
       "path": "after.html",
       "bytes": 8537,
-      "sha256": "acc3daa838af8691aa878103175579ac4b18d875900392b5e05d70390c48d434"
+      "sha256": "7288874c7c2441c70fb0fed6ce578861a8ce469fe272c788dd9cfb4f8763e6a4"
     },
     {
       "path": "style.css",
@@ -87,8 +87,8 @@
     },
     {
       "path": "js/qa-harness.js",
-      "bytes": 3584,
-      "sha256": "1cb3fe3fc8e7b4d29f1b56321eab800a225fe6a1f9f17b87d8b3dcf018a572a9"
+      "bytes": 3564,
+      "sha256": "47da1bb9f3404c6548c13a3be82ae695edb75528ff6ab17e2a5549543e4d9f6b"
     },
     {
       "path": "js/touch.js",

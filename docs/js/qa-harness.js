@@ -4,7 +4,7 @@ const centre=100008, ground=29, marker=document.createElement('aside');
 marker.id='qa-evidence'; marker.setAttribute('aria-live','polite');
 marker.style.cssText='position:fixed;z-index:10000;top:10px;left:10px;max-width:400px;padding:8px 10px;border:1px solid rgba(255,255,255,.35);border-radius:8px;background:rgba(13,16,23,.9);color:#fff;font:12px/1.45 system-ui,sans-serif;box-shadow:0 3px 16px #0005';
 marker.innerHTML='<strong>Issue #21 visual QA · '+(window.BW_QA_VARIANT||'unknown')+'</strong><br>Storybook · seed 1337 · fixed dawn camera<br><button id="qa-measure" type="button" style="margin-top:5px;font:inherit">Measure 20 s</button> <span id="qa-result">Preparing world…</span>';
-window.BW_QA={variant:window.BW_QA_VARIANT||'unknown',seed:1337,camera:'fixed storybook orbit',ready:false,metrics:null};
+window.BW_QA={variant:window.BW_QA_VARIANT||'unknown',seed:1337,camera:'fixed storybook free cam',ready:false,metrics:null};
 document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(marker));
 function setup(){
  const result=document.getElementById('qa-result');
@@ -16,8 +16,8 @@ function setup(){
  Game.animals.forEach(a=>{a.update=()=>{};});
  Game.updateAnimals=()=>{};
  Game.players.forEach(p=>{p.pos=[centre,ground+1,centre];});
- Observer.index=1; Observer.orbitAngle=0.62; Observer.orbitRadius=48; Observer.orbitHeight=28; Observer.zoom=1;
- Observer.target=[centre,ground+1,centre];
+ Observer.index=0; Observer.pos=[centre+34,ground+30,centre+34];
+ Cam.yaw=Math.PI/4; Cam.pitch=-0.54; Cam.pos=Observer.pos.slice();
  Game.time=0;
  window.BW_QA.ready=true;
  if(result) result.textContent='Ready · '+Game.animals.length+' static animals';
