@@ -10,12 +10,13 @@ const UI = {
     const $ = (id) => document.getElementById(id);
 
     $('btn-play').onclick = () => Game.startPlay();
+    $('btn-worlds').onclick = () => UI.showWorldSelect();
     $('btn-fight').onclick = () => { UI.showCharSelect(); };
     $('btn-observe').onclick = () => Game.startObserve();
     $('btn-controls').onclick = () => { UI.showControls($('menu-extra')); };
     $('btn-options').onclick = () => { UI.showOptions($('menu-extra')); };
     $('btn-reset').onclick = () => {
-      if (confirm('Start a brand new world? This clears your old one.')) {
+      if (confirm('Start a brand new world? This clears the selected world only.')) {
         Game.newWorld();
       }
     };
@@ -36,7 +37,32 @@ const UI = {
     box.innerHTML = '';
     document.getElementById('menu').classList.remove('hidden');
     document.getElementById('pause').classList.remove('show');
+    const label = document.getElementById('world-label');
+    if (label) label.textContent = 'Current world: ' + (Game.activeWorldType === 'flat' ? 'Flat World' : 'Normal World');
     if (window.Network && Network.serverMode) Network.refreshVisitLobby();
+  },
+
+  showWorldSelect() {
+    const box = document.getElementById('menu-extra');
+    box.innerHTML =
+      '<section class="world-select" aria-labelledby="world-select-title">' +
+        '<h3 id="world-select-title">Choose a world</h3>' +
+        '<p>Each world keeps its own blocks and progress.</p>' +
+        '<div class="world-cards">' +
+          '<button type="button" class="world-card" id="choose-normal">' +
+            '<strong>Normal World</strong><span>Hills, trees, water and open places to explore.</span>' +
+            (Game.activeWorldType === 'normal' ? '<em>Current world</em>' : '') +
+          '</button>' +
+          '<button type="button" class="world-card" id="choose-flat">' +
+            '<strong>Flat World</strong><span>A wide, level grassy world with no trees.</span>' +
+            (Game.activeWorldType === 'flat' ? '<em>Current world</em>' : '') +
+          '</button>' +
+        '</div>' +
+        '<button type="button" id="world-select-back">Back</button>' +
+      '</section>';
+    box.querySelector('#choose-normal').onclick = () => Game.selectWorld('normal');
+    box.querySelector('#choose-flat').onclick = () => Game.selectWorld('flat');
+    box.querySelector('#world-select-back').onclick = () => UI.showMainMenu();
   },
 
   /* ---------- character select ---------- */

@@ -249,6 +249,21 @@ H.test('terrain is deterministic for a given seed', () => {
   }
 });
 
+H.test('flat worlds keep a grassy level surface and generate no trees', () => {
+  const w = new World(42, null, 'flat');
+  const c = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
+  w.generateChunk(c);
+  const base = CENTRE_CHUNK * CHUNK;
+  for (let z = 0; z < CHUNK; z++) {
+    for (let x = 0; x < CHUNK; x++) {
+      H.eq(w.heightAt(base + x, base + z), SEA_LEVEL, 'flat height');
+      H.eq(c.get(x, SEA_LEVEL, z), 1, 'flat surface should be grass');
+    }
+  }
+  H.assert(!c.blocks.includes(7), 'flat terrain should not generate tree trunks');
+  H.assert(!c.blocks.includes(9), 'flat terrain should not generate tree leaves');
+});
+
 H.test('different seeds produce genuinely different landscapes', () => {
   const sample = (seed) => {
     const w = new World(seed);
@@ -1967,6 +1982,28 @@ H.test('settings survive a save and reload', () => {
   H.eq(second.Game.pick.p2, 'doll', 'player two character');
   H.eq(second.Game.pick.p2bot, false, 'bot preference');
   H.eq(second.Game.selectedSlot, 5, 'hotbar slot');
+});
+
+H.test('flat and normal worlds keep separate local saves', () => {
+  const shared = H.makeStorage();
+  const first = H.load({ storage: shared, boot: false });
+  first.Game.activeWorldType = 'normal';
+  first.Game.world = first.World.world = new first.World(111);
+  first.Game.save();
+  first.storage.setItem('blocky-world-selected-type', 'flat');
+  first.Game.activeWorldType = 'flat';
+  first.Game.world = first.World.world = new first.World(222, null, 'flat');
+  first.Game.save();
+
+  H.eq(JSON.parse(first.storage.getItem('blocky-world-local-save-v1')).seed, 111, 'normal save seed');
+  H.eq(JSON.parse(first.storage.getItem('blocky-world-local-save-v1:flat')).seed, 222, 'flat save seed');
+
+  const flatLoad = H.load({ storage: shared, boot: false });
+  H.eq(flatLoad.Game.activeWorldType, 'flat', 'the selected world type');
+  H.eq(flatLoad.Game.saved.seed, 222, 'the flat world should load its own save');
+  first.storage.setItem('blocky-world-selected-type', 'normal');
+  const normalLoad = H.load({ storage: shared, boot: false });
+  H.eq(normalLoad.Game.saved.seed, 111, 'the normal world should retain its own save');
 });
 
 H.test('a render distance the player chose survives the auto profile', () => {
