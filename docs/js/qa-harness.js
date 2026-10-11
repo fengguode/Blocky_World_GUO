@@ -7,7 +7,10 @@ marker.innerHTML='<strong>Issue #21 visual QA · '+(window.BW_QA_VARIANT||'unkno
 window.BW_QA={variant:window.BW_QA_VARIANT||'unknown',seed:1337,camera:'fixed storybook orbit',ready:false,metrics:null};
 document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(marker));
 function setup(){
- if(typeof Game==='undefined' || !Game.world || Game.state!=='menu') return false;
+ const result=document.getElementById('qa-result');
+ if(typeof Game==='undefined'){if(result)result.textContent='Waiting: Game binding unavailable';return false;}
+ if(!Game.world || Game.state!=='menu'){if(result)result.textContent='Waiting: '+Game.state+' · world '+!!Game.world;return false;}
+ try {
  Object.defineProperty(Game,'dayPhase',{configurable:true,get:()=>0.25,set:()=>{}});
  Game.startObserve();
  Game.animals.forEach(a=>{a.update=()=>{};});
@@ -17,8 +20,9 @@ function setup(){
  Observer.target=[centre,ground+1,centre];
  Game.time=0;
  window.BW_QA.ready=true;
- const result=document.getElementById('qa-result'); if(result) result.textContent='Ready · 25 visible animal candidates';
+ if(result) result.textContent='Ready · '+Game.animals.length+' static animals';
  return true;
+ } catch(e) { if(result)result.textContent='QA setup error: '+(e&&e.message||String(e)); return false; }
 }
 window.addEventListener('load',()=>{let attempts=0; const poll=()=>{if(setup()) return; if(++attempts<600)setTimeout(poll,100);}; poll();});
 function measure(){
