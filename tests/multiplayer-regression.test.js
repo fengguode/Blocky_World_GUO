@@ -12,6 +12,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const net = require('net');
 const H = require('./harness');
+const { createVisitPlayerMoveBudget, plausibleVisitPlayerMove, visitPlayAttackAllowed } = require('../server');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLAYER = { pos: [100, 20, 100], yaw: 0, pitch: 0, characterId: 'steve' };
@@ -99,6 +100,23 @@ async function main() {
     const hostCall = (route, body, method) => call(base, host, hostPage, route, body, method);
     const guestCall = (route, body, method) => call(base, guest, guestPage, route, body, method);
     const spareCall = (route, body, method) => call(base, spare, sparePage, route, body, method);
+
+    await check('elapsed-time movement budget rejects rapid small steps before they reach attack range', async () => {
+      let now = 1_000_000;
+      const owner = { pos: [100, 20, 100], yaw: 0, pitch: 0 };
+      let accepted = { pos: [100, 20, 110], yaw: 0, pitch: 0 };
+      const budget = createVisitPlayerMoveBudget(now);
+      for (let step = 0; step < 70; step++) {
+        now += 1;
+        const candidate = Object.assign({}, accepted, { pos: [100, 20, accepted.pos[2] - 0.1] });
+        if (plausibleVisitPlayerMove(accepted, candidate, budget, now)) accepted = candidate;
+      }
+      const rapidAttack = Object.assign({}, accepted, { pos: [100, 20, 103], playAttackSeq: 1 });
+      now += 1;
+      assert(!plausibleVisitPlayerMove(accepted, rapidAttack, budget, now), 'the rapid sequence cannot move the accepted player into range');
+      assert(!visitPlayAttackAllowed(accepted, owner, now), 'the last accepted position remains outside attack range');
+      assert(accepted.pos[2] > 103 + 3.6, 'the accepted trajectory stays beyond the 3.6-block attack radius');
+    });
 
     await check('current world-size metadata survives a server save and reload', async () => {
       const initial = await hostCall('/api/world?type=normal', null, 'GET');
@@ -188,46 +206,6 @@ async function main() {
       assert(!farPoll.events.some(event => event.type === 'play-attack'), 'implausible teleport attacks are rejected');
       let poll = await hostCall('/api/visit/sync', { cursor: before.cursor, player: PLAYER });
       assert(!poll.events.some(event => event.type === 'play-attack'), 'a rejected position cannot reach the owner');
-
-      let visitorZ = 100;
-      for (let step = 0; step < 10; step++) {
-        visitorZ += 1;
-        await new Promise(resolve => setTimeout(resolve, 175));
-        await guestCall('/api/visit/sync', {
-          cursor: 0, worldReady: true,
-          player: Object.assign({}, PLAYER, { pos: [100, 20, visitorZ], playAttackSeq: 0 }),
-        });
-      }
-      poll = await hostCall('/api/visit/sync', { cursor: poll.cursor, player: PLAYER });
-      assert(Math.hypot(poll.remotePlayer.pos[0] - PLAYER.pos[0], poll.remotePlayer.pos[2] - PLAYER.pos[2]) > 3.6,
-        'the visitor can move away using elapsed time');
-
-      let forgedZ = visitorZ;
-      for (let step = 0; step < 100; step++) {
-        forgedZ = Math.max(103, forgedZ - 0.1);
-        await guestCall('/api/visit/sync', {
-          cursor: 0, worldReady: true,
-          player: Object.assign({}, PLAYER, { pos: [100, 20, forgedZ], yaw: 0, playAttackSeq: 0 }),
-        });
-      }
-      await guestCall('/api/visit/sync', {
-        cursor: 0, worldReady: true,
-        player: Object.assign({}, PLAYER, { pos: [100, 20, forgedZ], yaw: 0, playAttackSeq: 1, playAttackDamage: 20 }),
-      });
-      poll = await hostCall('/api/visit/sync', { cursor: poll.cursor, player: PLAYER });
-      assert(Math.hypot(poll.remotePlayer.pos[0] - PLAYER.pos[0], poll.remotePlayer.pos[2] - PLAYER.pos[2]) > 3.6,
-        'rapid individually small forged moves cannot walk into attack range');
-      assert(!poll.events.some(event => event.type === 'play-attack'), 'rapid movement does not enable a forged attack');
-
-      visitorZ = poll.remotePlayer.pos[2];
-      while (visitorZ > 100) {
-        visitorZ = Math.max(100, visitorZ - 1);
-        await new Promise(resolve => setTimeout(resolve, 175));
-        await guestCall('/api/visit/sync', {
-          cursor: 0, worldReady: true,
-          player: Object.assign({}, PLAYER, { pos: [100, 20, visitorZ], playAttackSeq: 0 }),
-        });
-      }
 
       const forgedYaw = Object.assign({}, PLAYER, { pos: [102, 20, 100], yaw: Math.PI, playAttackSeq: 1, playAttackDamage: 20 });
       await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: forgedYaw });

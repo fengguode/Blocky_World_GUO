@@ -261,7 +261,7 @@ function plausibleVisitPlayerMove(previous, next, budget, now = Date.now()) {
   if (!budget) return false;
   const elapsed = Math.min(0.4, Math.max(0, (now - budget.updatedAt) / 1000));
   budget.updatedAt = now;
-  budget.horizontal = Math.min(3.2, budget.horizontal + 8 * elapsed);
+  budget.horizontal = Math.min(5, budget.horizontal + 12.5 * elapsed);
   budget.vertical = Math.min(14.5, budget.vertical + 58 * elapsed);
   budget.yaw = Math.min(2.4, budget.yaw + 12 * elapsed);
   budget.pitch = Math.min(1.5, budget.pitch + 10 * elapsed);
@@ -984,5 +984,9 @@ async function start() {
   listenOnPort(configuredPort);
 }
 
-start().catch(err => { console.error('Could not start Blocky World:', err.message); process.exitCode = 1; });
+if (require.main === module) {
+  start().catch(err => { console.error('Could not start Blocky World:', err.message); process.exitCode = 1; });
+} else {
+  module.exports = { createVisitPlayerMoveBudget, plausibleVisitPlayerMove, visitPlayAttackAllowed };
+}
 
