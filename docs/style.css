@@ -1017,5 +1017,44 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+.session-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: -12px 0 18px; color: var(--text-dim); font-size: 12px; }
+.session-row .hidden { display: none; }
+.session-row button { padding: 8px 12px; }
+.world-label { margin: -8px 0 14px; color: var(--mint); font-size: 12px; letter-spacing: 1px; }
+.world-select { margin: 12px 0; text-align: left; }
+.world-select h3 { color: var(--cyan); margin: 0 0 4px; }
+.world-select > p { color: var(--text-dim); font-size: 13px; margin-bottom: 10px; }
+.world-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.world-card { min-height: 100px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 12px; border-radius: 8px; border: 2px solid var(--line); background: rgba(24, 37, 65, 0.88); color: var(--text); text-align: left; }
+.world-card:hover, .world-card:focus-visible { border-color: var(--cyan); outline: none; }
+.world-card strong { color: var(--mint); font-size: 14px; }
+.world-card span { color: var(--text-dim); font-size: 12px; line-height: 1.4; }
+.world-card em { color: var(--amber); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 1px; }
+@media (max-width: 420px) { .world-cards { grid-template-columns: 1fr; } }
+.visit-lobby { margin-top: 14px; padding: 14px; border: 1px solid rgba(95, 227, 255, 0.22); border-radius: 18px; background: rgba(22, 39, 71, 0.72); text-align: left; }
+.visit-lobby.hidden { display: none; }
+.visit-lobby h3 { margin: 0 0 8px; color: var(--mint); font-size: 16px; }
+.visit-lobby p { margin: 6px 0; color: var(--text-dim); font-size: 13px; line-height: 1.4; }
+.visit-lobby .visit-owner { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.visit-lobby .visit-owner button { min-height: 46px; }
+.visit-lobby select { width: 100%; min-height: 48px; margin: 8px 0; padding: 8px 12px; border-radius: 12px; }
+.visit-hud { position: fixed; z-index: 80; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 24px)); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 10px; border: 1px solid rgba(145, 205, 255, 0.4); border-radius: 18px; background: rgba(9, 15, 33, 0.92); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 13px; text-align: center; pointer-events: auto; touch-action: manipulation; }
+.visit-hud.hidden { display: none; }
+.visit-hud button { min-height: 44px; padding: 8px 14px; }
+.visit-status { flex: 1 1 100%; color: var(--mint); font-weight: 800; }
+.visit-request { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; width: 100%; }
+.visit-request.hidden { display: none; }
+.visit-request span { flex: 1 1 100%; color: var(--text-dim); }
+.visit-mode-dialog { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); background: rgba(5, 10, 24, .76); touch-action: manipulation; }
+.visit-mode-dialog.hidden { display: none; }
+.visit-mode-dialog .menu-card { width: min(520px, 100%); max-height: 90dvh; overflow-y: auto; }
+.visit-mode-dialog p { color: var(--text-dim); }
+@media (max-width: 760px) {
+  .visit-lobby { padding: 11px; }
+  .visit-lobby .visit-owner { align-items: stretch; flex-direction: column; }
+  .visit-hud { top: max(8px, env(safe-area-inset-top)); width: calc(100vw - 16px); padding: 8px; border-radius: 15px; }
+  .visit-hud button { min-height: 48px; }
+}
+
 /* Shared visibility state for gameplay buttons and nested panels. */
 .hidden { display: none !important; }

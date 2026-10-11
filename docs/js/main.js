@@ -2549,13 +2549,6 @@ const Game = {
       y,
       base[2] + fz * forward * s + rz * side * s,
     ];
-    const drawSteppedMass = (centerY, layers, tile, scaleVertical = false) => {
-      const verticalScale = scaleVertical ? s : 1;
-      for (const [forward, side, yOffset, width, height, depth] of layers) {
-        this.drawBox(prog, point(forward, side, centerY + yOffset * verticalScale),
-          [width * s, height * verticalScale, depth * s], tile, [1, 1, 1], yaw, 1);
-      }
-    };
     const bodyY = base[1] + legH + d.h * 0.32;
     const headY = base[1] + legH + d.h * 0.8;
     const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
@@ -2573,39 +2566,13 @@ const Game = {
     }
 
     const bodySize = d.id === 'pig'
-      ? [d.w * 1.08 * s, d.h * 0.48, d.d * 0.72 * s]
+      ? [d.w * 1.16 * s, d.h * 0.58, d.d * 0.76 * s]
       : d.id === 'sheep'
-        ? [d.w * 0.7 * s, d.h * 0.52, d.d * 0.62 * s]
+        ? [d.w * 1.08 * s, d.h * 0.74, d.d * 0.84 * s]
         : d.id === 'chick'
-          ? [d.w * 0.82 * s, d.h * 0.6, d.d * 0.84 * s]
+          ? [d.w * 1.02 * s, d.h * 0.86, d.d * 1.04 * s]
           : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
-
-    if (d.id === 'pig') {
-      // A low barrel, soft belly, back ridge, and forward shoulder form one
-      // stepped loaf instead of a single long cuboid.
-      drawSteppedMass(bodyY, [
-        [-d.d * 0.04, 0, 0, d.w * 1.08, d.h * 0.48, d.d * 0.72],
-        [-d.d * 0.02, 0, -d.h * 0.16, d.w * 0.84, d.h * 0.18, d.d * 0.82],
-        [-d.d * 0.18, 0, d.h * 0.22, d.w * 0.84, d.h * 0.18, d.d * 0.56],
-        [d.d * 0.28, 0, d.h * 0.04, d.w * 0.82, d.h * 0.3, d.d * 0.38],
-      ], d.body);
-    } else if (d.id === 'sheep') {
-      // Keep a smaller wool core visible between the staggered fleece lobes.
-      drawSteppedMass(bodyY, [
-        [-d.d * 0.04, 0, 0, d.w * 0.7, d.h * 0.52, d.d * 0.62],
-        [-d.d * 0.04, 0, -d.h * 0.15, d.w * 0.84, d.h * 0.18, d.d * 0.72],
-        [-d.d * 0.1, 0, d.h * 0.22, d.w * 0.74, d.h * 0.17, d.d * 0.62],
-      ], d.body);
-    } else if (d.id === 'chick') {
-      // Three shallow tiers give the chick a tucked belly and a soft crown.
-      drawSteppedMass(bodyY, [
-        [0, 0, 0, d.w * 0.82, d.h * 0.6, d.d * 0.84],
-        [0, 0, -d.h * 0.18, d.w * 0.7, d.h * 0.2, d.d * 0.74],
-        [-d.d * 0.03, 0, d.h * 0.23, d.w * 0.7, d.h * 0.18, d.d * 0.68],
-      ], d.body);
-    } else {
-      this.drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
-    }
+    this.drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
 
     if (d.id === 'pig') {
       // The pig skin tile carries its flank patches, keeping the body detail in one draw.
@@ -2613,16 +2580,15 @@ const Game = {
       this.drawBox(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
         [0.14 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
     } else if (d.id === 'sheep') {
-      // Uneven, overlapping lobes break the rectangular core into a stepped fleece.
-      const fleeceY = bodyY + d.h * 0.15;
+      // Separate wool puffs form a rounded fleece silhouette around the darker face.
+      const fleeceY = base[1] + legH + d.h * 0.68;
       for (const [forward, side, yOffset, width, height, depth] of [
-        [-d.d * 0.36, 0, -d.h * 0.02, d.w * 0.34, d.h * 0.25, d.d * 0.27],
-        [-d.d * 0.16, -d.w * 0.39, -d.h * 0.04, d.w * 0.3, d.h * 0.26, d.d * 0.29],
-        [-d.d * 0.16, d.w * 0.39, -d.h * 0.04, d.w * 0.3, d.h * 0.26, d.d * 0.29],
-        [d.d * 0.14, -d.w * 0.4, 0, d.w * 0.32, d.h * 0.28, d.d * 0.28],
-        [d.d * 0.14, d.w * 0.4, 0, d.w * 0.32, d.h * 0.28, d.d * 0.28],
-        [d.d * 0.37, 0, d.h * 0.025, d.w * 0.36, d.h * 0.27, d.d * 0.24],
-        [-d.d * 0.04, 0, d.h * 0.17, d.w * 0.46, d.h * 0.2, d.d * 0.36],
+        [-d.d * 0.4, 0, 0, 0.42, 0.26, 0.38],
+        [-d.d * 0.12, -d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
+        [-d.d * 0.12, d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
+        [d.d * 0.2, -d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
+        [d.d * 0.2, d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
+        [d.d * 0.42, 0, 0.015, 0.34, 0.24, 0.32],
       ]) {
         this.drawBox(prog, point(forward, side, fleeceY + yOffset),
           [width * s, height * s, depth * s], d.body, [1, 1, 1], yaw, 1);
@@ -2632,37 +2598,13 @@ const Game = {
       this.drawBox(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
         [d.w * 0.34 * s, d.h * 0.3, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.46), bodyY + d.h * 0.03),
-          [0.12 * s, 0.2 * s, 0.3 * s], d.accent, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY),
+          [0.07 * s, 0.22 * s, 0.29 * s], d.accent, [1, 1, 1], yaw, 1);
       }
     }
 
-    if (d.id === 'pig') {
-      // The brow and cheeks step inward toward a friendlier, shorter face.
-      drawSteppedMass(headY, [
-        [headForward, 0, -headHeight * 0.04, headWidth * 0.9, headHeight * 0.72, headDepth * 0.9],
-        [headForward - headDepth * 0.04, 0, headHeight * 0.27, headWidth * 0.74, headHeight * 0.22, headDepth * 0.74],
-        [headForward, -headWidth * 0.28, -headHeight * 0.15, headWidth * 0.2, headHeight * 0.3, headDepth * 0.34],
-        [headForward, headWidth * 0.28, -headHeight * 0.15, headWidth * 0.2, headHeight * 0.3, headDepth * 0.34],
-      ], d.face, true);
-    } else if (d.id === 'sheep') {
-      drawSteppedMass(headY, [
-        [headForward, 0, -headHeight * 0.04, headWidth * 0.82, headHeight * 0.72, headDepth * 0.86],
-        [headForward - headDepth * 0.04, 0, headHeight * 0.28, headWidth * 0.72, headHeight * 0.2, headDepth * 0.74],
-        [headForward, -headWidth * 0.32, -headHeight * 0.12, headWidth * 0.2, headHeight * 0.28, headDepth * 0.3],
-        [headForward, headWidth * 0.32, -headHeight * 0.12, headWidth * 0.2, headHeight * 0.28, headDepth * 0.3],
-      ], d.face, true);
-    } else if (d.id === 'chick') {
-      drawSteppedMass(headY, [
-        [headForward, 0, -headHeight * 0.04, headWidth * 0.88, headHeight * 0.76, headDepth * 0.88],
-        [headForward - headDepth * 0.04, 0, headHeight * 0.3, headWidth * 0.7, headHeight * 0.22, headDepth * 0.72],
-        [headForward, -headWidth * 0.34, -headHeight * 0.1, headWidth * 0.18, headHeight * 0.28, headDepth * 0.28],
-        [headForward, headWidth * 0.34, -headHeight * 0.1, headWidth * 0.18, headHeight * 0.28, headDepth * 0.28],
-      ], d.face, true);
-    } else {
-      this.drawBox(prog, point(headForward, 0, headY),
-        [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
-    }
+    this.drawBox(prog, point(headForward, 0, headY),
+      [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
 
     const headFront = headForward + headDepth * 0.5 + 0.025;
     const eyeY = headY + headHeight * 0.06 * s;
@@ -2697,19 +2639,10 @@ const Game = {
       this.drawBox(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
         [0.21 * s, 0.16 * s, 0.2 * s], d.body, [1, 1, 1], yaw, 1);
     } else if (d.id === 'chick') {
-      for (const [forward, side, size] of [
-        [headForward - 0.015, 0, [0.16, 0.19, 0.15]],
-        [headForward + 0.015, -headWidth * 0.16, [0.11, 0.14, 0.13]],
-        [headForward + 0.015, headWidth * 0.16, [0.11, 0.14, 0.13]],
-      ]) {
-        this.drawBox(prog, point(forward, side, headY + headHeight * 0.58 * s),
-          size.map((n, i) => n * s), d.accent, [1, 1, 1], yaw, 1);
-      }
-      const beakY = headY - headHeight * 0.18 * s;
-      this.drawBox(prog, point(headFront + 0.045, 0, beakY),
-        [0.2 * s, 0.13 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
-      this.drawBox(prog, point(headFront + 0.13, 0, beakY - 0.005),
-        [0.13 * s, 0.1 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.58 * s),
+        [0.18 * s, 0.22 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headFront + 0.06, 0, headY - headHeight * 0.18 * s),
+        [0.23 * s, 0.15 * s, 0.17 * s], d.beak, [1, 1, 1], yaw, 1);
     } else if (d.id === 'wolf') {
       // Keep the established original wolf read: grey muzzle, pointed ears, amber eyes, short tail.
       this.drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
