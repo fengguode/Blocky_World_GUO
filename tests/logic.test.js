@@ -3578,6 +3578,23 @@ H.test('stationary streaming does not rescan a completed chunk queue', () => {
   H.assert(replacement.chunks.size > distanceChunkCount, 'changing view distance should expand the local chunk window');
 });
 
+H.test('streaming rebuilds its render list after a mode change clears it', () => {
+  const t = H.load({ boot: true });
+  const world = t.Game.world;
+  const keep = t.Game.viewDistance();
+  t.Cam.pos = t.Game.players[0].pos.slice();
+  t.Game._streamAt = t.Cam.pos.slice();
+  t.Game._streamWorld = world;
+  t.Game._streamKeep = keep;
+  t.Game._streamQueue = [];
+  t.Game._generationQueue = [{ c: world.activeChunks.values().next().value, d: 0 }];
+  t.Game._streamTurn = 0;
+  t.Game._renderChunks = null;
+
+  t.Game.streamChunks(1);
+  H.assert(Array.isArray(t.Game._renderChunks), 'streaming should rebuild the render list before using a stale generation queue');
+});
+
 H.test('dirty mesh updates only traverse the nearby render set', () => {
   const t = H.load({ boot: true });
   t.Cam.pos = t.Game.players[0].pos.slice();
