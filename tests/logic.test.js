@@ -185,6 +185,14 @@ H.test('glass and water pixel highlights keep their translucent alpha', () => {
   }
 });
 
+H.test('leaf alpha follows the foliage silhouette', () => {
+  const leaves = g.ATLAS.find(entry => entry.name === 'leaves');
+  H.assert(leaves, 'leaf texture should exist');
+  const alphaAt = (x, y) => leaves.data[(y * 16 + x) * 4 + 3];
+  H.eq(alphaAt(7, 7), 255, 'a known point inside the leaf silhouette should be opaque');
+  H.eq(alphaAt(0, 0), 0, 'a known point outside the leaf silhouette should be transparent');
+});
+
 H.test('pig, sheep, and chick silhouettes have distinct proportions', () => {
   const pig = ANIMALS.find(a => a.id === 'pig');
   const sheep = ANIMALS.find(a => a.id === 'sheep');
@@ -1448,6 +1456,18 @@ H.test('each character outfit uses a role-patterned texture', () => {
   }
   H.eq(g.ATLAS[characterById('golem').shirt].name, 'cobble',
     'the golem should keep its stone material');
+});
+
+H.test('all role outfit fabrics retain their background shading', () => {
+  for (const name of ['builder_shirt', 'ranger_shirt', 'climber_shirt', 'dolly_dress', 'dolly_leggings', 'fire_ninja']) {
+    const tile = g.ATLAS.find(entry => entry.name === name);
+    H.assert(tile, name + ' texture should exist');
+    const colors = new Set();
+    for (let i = 0; i < tile.data.length; i += 4) {
+      colors.add(tile.data[i] + ',' + tile.data[i + 1] + ',' + tile.data[i + 2]);
+    }
+    H.assert(colors.size > 8, name + ' should keep its speckled fabric background beneath the role motif');
+  }
 });
 
 H.test('the menu stat bars use values between zero and one', () => {
@@ -3115,3 +3135,4 @@ H.test('server save failure is not reported as confirmed progress', async () => 
 if (require.main === module) {
   process.exit(H.main(process.argv.slice(2)));
 }
+
