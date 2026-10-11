@@ -148,10 +148,10 @@ function tileLine(d, x0, y0, x1, y1, color) {
   }
 }
 
-function patternedCloth(base, draw) {
-  return function (d) {
-    fillTile(d, base);
-    draw(d);
+function patternedCloth(base, variance, draw) {
+  return function (d, r) {
+    speckle(base, variance)(d, r);
+    draw(d, r);
   };
 }
 
@@ -338,10 +338,10 @@ T.leaves = pushTile('leaves', function (d) {
     ['  ggg ', ' glllg', '  ggg '],
     [' gggg ', 'gllggg', ' ggg  '],
   ];
-  fillTile(d, mid, 255);
+  fillTile(d, mid, 0);
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      if (holes[y][x] === '0') setPx(d, x, y, mid[0], mid[1], mid[2], 0);
+      if (holes[y][x] === '0') setPx(d, x, y, mid[0], mid[1], mid[2], 255);
     }
   }
   const palette = { g: dark, l: light };
@@ -350,6 +350,12 @@ T.leaves = pushTile('leaves', function (d) {
   stampTile(d, 10, 7, clusters[2], palette);
   stampTile(d, 2, 10, clusters[3], palette);
   stampTile(d, 12, 12, ['  gg ', ' gllg', '  gg '], palette);
+  // Pattern stamps can touch the edge; enforce the foliage silhouette last.
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      if (holes[y][x] !== '0') d[(y * TILE + x) * 4 + 3] = 0;
+    }
+  }
 });
 T.glass = pushTile('glass', function (d) {
   fillTile(d, [120, 208, 232], 42);
@@ -447,20 +453,20 @@ T.pants_dark = pushTile('pants_dark', speckle([48, 52, 74], 14));
 T.shoe       = pushTile('shoe', speckle([44, 44, 50], 14));
 T.hero_red   = pushTile('hero_red', speckle([198, 44, 52], 16));
 T.hero_blue  = pushTile('hero_blue', speckle([44, 82, 196], 16));
-T.builder_shirt = pushTile('builder_shirt', patternedCloth([68, 126, 190], function (d) {
+T.builder_shirt = pushTile('builder_shirt', patternedCloth([68, 126, 190], 18, function (d) {
   const seam = [34, 78, 132], check = [98, 160, 216], patch = [246, 194, 82];
   for (let x = 1; x < TILE; x += 5) tileLine(d, x, 0, x, TILE - 1, seam);
   for (let y = 3; y < TILE; y += 5) tileLine(d, 0, y, TILE - 1, y, seam);
   tileFillRect(d, 10, 5, 4, 4, check);
   tileFillRect(d, 11, 6, 2, 2, patch);
 }));
-T.ranger_shirt = pushTile('ranger_shirt', patternedCloth([40, 142, 126], function (d) {
+T.ranger_shirt = pushTile('ranger_shirt', patternedCloth([40, 142, 126], 16, function (d) {
   tileLine(d, 2, 0, 10, 15, [24, 84, 85]);
   tileLine(d, 4, 0, 12, 15, [242, 184, 78]);
   tileFillRect(d, 10, 4, 5, 2, [28, 98, 94]);
   tileFillRect(d, 11, 5, 3, 1, [122, 212, 177]);
 }));
-T.climber_shirt = pushTile('climber_shirt', patternedCloth([30, 60, 80], function (d) {
+T.climber_shirt = pushTile('climber_shirt', patternedCloth([30, 60, 80], 14, function (d) {
   const grip = [64, 218, 210], signal = [246, 204, 91];
   tileLine(d, 1, 0, 6, 15, [38, 102, 120]);
   tileLine(d, 7, 0, 12, 15, [38, 102, 120]);
@@ -470,19 +476,19 @@ T.climber_shirt = pushTile('climber_shirt', patternedCloth([30, 60, 80], functio
   tileFillRect(d, 9, 9, 3, 2, signal);
   tileFillRect(d, 13, 2, 2, 2, grip);
 }));
-T.dolly_dress = pushTile('dolly_dress', patternedCloth([178, 90, 172], function (d) {
+T.dolly_dress = pushTile('dolly_dress', patternedCloth([178, 90, 172], 18, function (d) {
   const hem = [86, 206, 190], star = [255, 221, 112], highlight = [239, 157, 201];
   tileLine(d, 0, 12, 15, 12, hem);
   tileLine(d, 0, 14, 15, 14, [112, 72, 154]);
   tileFillRect(d, 3, 3, 2, 2, star); tileFillRect(d, 2, 4, 4, 1, star); tileFillRect(d, 3, 5, 2, 2, star);
   tileFillRect(d, 10, 6, 2, 2, highlight); tileFillRect(d, 9, 7, 4, 1, highlight); tileFillRect(d, 10, 8, 2, 2, highlight);
 }));
-T.dolly_leggings = pushTile('dolly_leggings', patternedCloth([106, 78, 154], function (d) {
+T.dolly_leggings = pushTile('dolly_leggings', patternedCloth([106, 78, 154], 14, function (d) {
   tileFillRect(d, 2, 5, 3, 2, [91, 213, 197]);
   tileFillRect(d, 10, 5, 3, 2, [91, 213, 197]);
   tileLine(d, 0, 13, 15, 13, [222, 156, 222]);
 }));
-T.fire_ninja = pushTile('fire_ninja', patternedCloth([46, 42, 62], function (d) {
+T.fire_ninja = pushTile('fire_ninja', patternedCloth([46, 42, 62], 16, function (d) {
   const flame = [246, 112, 54], ember = [255, 208, 98];
   tileLine(d, 1, 11, 4, 8, flame); tileLine(d, 4, 8, 6, 10, flame); tileLine(d, 6, 10, 9, 5, flame);
   tileLine(d, 9, 5, 12, 8, flame); tileLine(d, 12, 8, 15, 4, flame);
@@ -643,3 +649,4 @@ function blockIconCanvas(id, size) {
   ctx.fillRect(0, 0, size, size);
   return c;
 }
+
