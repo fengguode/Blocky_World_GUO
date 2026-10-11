@@ -251,6 +251,31 @@ function safePlayerState(value) {
   };
 }
 
+function plausibleVisitPlayerMove(previous, next) {
+  if (!next) return false;
+  if (!previous) return true;
+  const elapsed = Math.max(0.05, (next.updatedAt - previous.updatedAt) / 1000);
+  const horizontal = Math.hypot(next.pos[0] - previous.pos[0], next.pos[2] - previous.pos[2]);
+  const maxHorizontal = 8 * elapsed + 2.4;
+  const maxVertical = 58 * elapsed + 3;
+  const yawDelta = Math.atan2(Math.sin(next.yaw - previous.yaw), Math.cos(next.yaw - previous.yaw));
+  const maxYaw = 12 * elapsed + 0.65;
+  const maxPitch = 10 * elapsed + 0.5;
+  return horizontal <= maxHorizontal && Math.abs(next.pos[1] - previous.pos[1]) <= maxVertical &&
+    Math.abs(yawDelta) <= maxYaw && Math.abs(next.pitch - previous.pitch) <= maxPitch;
+}
+
+function visitPlayAttackAllowed(attacker, target, now) {
+  if (!attacker || !target || !Number.isFinite(now)) return false;
+  const dx = target.pos[0] - attacker.pos[0], dz = target.pos[2] - attacker.pos[2];
+  const dist = Math.hypot(dx, dz);
+  if (dist > 3.6 || Math.abs(target.pos[1] - attacker.pos[1]) > 1.8) return false;
+  if (dist < 0.001) return false;
+  const pitchScale = Math.cos(attacker.pitch);
+  const facing = (dx * -Math.sin(attacker.yaw) * pitchScale + dz * -Math.cos(attacker.yaw) * pitchScale) / dist;
+  return facing >= 0.58;
+}
+
 function safeFightInput(value) {
   if (!value || typeof value !== 'object') return null;
   const number = (v, min, max, fallback = 0) => Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback;
@@ -510,6 +535,7 @@ async function handleApi(req, res, url) {
         visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
         visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
         playAttackSeq: { owner: 0, visitor: 0 },
+        playAttackAt: { owner: 0, visitor: 0 },
         playInventory: savedWorld.inventory || { apple: 0, meat: 0 },
         mode, modeRevision: 1,
         arenaCenter: Array.isArray(body.arenaCenter) && body.arenaCenter.length === 2 && body.arenaCenter.every(Number.isFinite)
@@ -647,8 +673,15 @@ async function handleApi(req, res, url) {
     room.visitorNeedsWorld = true;
     room.visitorWorldSent = false;
     room.status = 'active';
-    room.players.visitor = null;
+    const ownerPlayer = room.players.owner;
+    room.players.visitor = ownerPlayer ? Object.assign({}, ownerPlayer, {
+      pos: [ownerPlayer.pos[0] + 2, ownerPlayer.pos[1], ownerPlayer.pos[2]],
+      playAttackSeq: 0,
+      playAttackDamage: 8,
+      updatedAt: Date.now(),
+    }) : null;
     room.playAttackSeq.visitor = 0;
+    room.playAttackAt.visitor = 0;
     appendVisitEvent(room, user.id, 'joined', { displayName: pending.visitorName });
     return reply(res, 200, { ok: true, approved: true });
   }
@@ -666,7 +699,7 @@ async function handleApi(req, res, url) {
     if (role === 'owner') {
       room.ownerSeen = Date.now();
       const player = safePlayerState(body.player);
-      if (player) room.players.owner = player;
+      if (player && plausibleVisitPlayerMove(room.players.owner, player)) room.players.owner = player;
       const inventory = safeFoodInventory(body.inventory);
       if (inventory && room.status === 'active') {
         const revision = await persistVisitInventory(room, user.token, inventory);
@@ -685,7 +718,7 @@ async function handleApi(req, res, url) {
       if (room.status !== 'active' || room.visitorToken !== user.token) return reply(res, 200, { state: 'closed', reason: 'The host is no longer available.' });
       room.visitorSeen = Date.now();
       const player = safePlayerState(body.player);
-      if (player) room.players.visitor = player;
+      if (player && plausibleVisitPlayerMove(room.players.visitor, player)) room.players.visitor = player;
       if (body.worldReady === true && room.visitorWorldSent) room.visitorNeedsWorld = false;
     }
 
@@ -693,12 +726,17 @@ async function handleApi(req, res, url) {
       const player = room.players[role];
       if (player && player.playAttackSeq > room.playAttackSeq[role]) {
         room.playAttackSeq[role] = player.playAttackSeq;
-        appendVisitEvent(room, user.id, 'play-attack', {
-          role,
-          targetRole: role === 'owner' ? 'visitor' : 'owner',
-          seq: player.playAttackSeq,
-          damage: player.playAttackDamage,
-        });
+        const target = room.players[role === 'owner' ? 'visitor' : 'owner'];
+        const now = Date.now();
+        if (now - room.playAttackAt[role] >= 300 && visitPlayAttackAllowed(player, target, now)) {
+          room.playAttackAt[role] = now;
+          appendVisitEvent(room, user.id, 'play-attack', {
+            role,
+            targetRole: role === 'owner' ? 'visitor' : 'owner',
+            seq: player.playAttackSeq,
+            damage: player.playAttackDamage,
+          });
+        }
       }
     }
 
@@ -780,6 +818,8 @@ async function handleApi(req, res, url) {
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
     const safe = {
       version: 2, worldType, seed: world.seed,
+      worldSize: Number.isInteger(world.worldSize) && world.worldSize > 0 && world.worldSize <= WORLD_SIZE
+        ? world.worldSize : null,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
       player1: Array.isArray(world.player1) && world.player1.length === 3 && world.player1.every(Number.isFinite) ? world.player1 : null,
       slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(11, world.slot)) : 0,

@@ -173,7 +173,7 @@ html, body {
 .equipment-status {
   position: absolute;
   left: 50%;
-  bottom: 98px;
+  bottom: 130px;
   transform: translateX(-50%);
   max-width: min(94vw, 720px);
   padding: 7px 12px;
@@ -976,7 +976,8 @@ body.touch:not(.playing) #touch-stick { opacity: 0; }
   .slot canvas { width: clamp(22px, 7vw, 30px); height: clamp(22px, 7vw, 30px); }
   .bar { width: 120px; height: 13px; }
   .hotbar { bottom: max(12px, env(safe-area-inset-bottom)); gap: 2px; padding: 4px; }
-  .equipment-status { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px); max-width: calc(100vw - 20px); font-size: 10px; padding: 6px 9px; }
+  .equipment-status { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 110px); max-width: calc(100vw - 20px); font-size: 10px; padding: 6px 9px; }
+  body.touch .equipment-status { top: max(84px, calc(env(safe-area-inset-top) + 70px)); bottom: auto; }
   .status-row { bottom: 62px; gap: 8px; max-width: calc(100vw - 24px); }
   .status-row.play-health { bottom: 64px; gap: 6px; padding: 6px 9px; }
   .status-row.play-health .bar.hp { width: min(190px, 46vw); height: 16px; }

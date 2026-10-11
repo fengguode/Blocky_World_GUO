@@ -139,7 +139,7 @@ async function main() {
     assert.strictEqual(new Set(sessions.map(s => s.cookie)).size, 5, 'each session receives a distinct cookie');
     checks.push('five concurrent login attempts across two repeated profile IDs produced five distinct session cookies after retrying any 429; no profile was added.');
 
-    const hostOld = sameP1[0].session, host = sameP1[1].session;
+    const host = sameP1[0].session, duplicateHostSession = sameP1[1].session;
     const guestA = sameP2[0].session, guestB = sameP2[1].session, guestC = spare.session;
     for (const client of sessions) {
       const r = await status(base, client);
@@ -148,14 +148,16 @@ async function main() {
     }
     checks.push('parallel logins do not invalidate earlier cookies: all five page-scoped sessions remain authenticated.');
 
-    expectStatus(await post(base, hostOld, '/api/visit/host', { mode: 'fight' }), 201, 'first host session');
-    expectStatus(await post(base, host, '/api/visit/host', { mode: 'fight' }), 201, 'second same-profile host session');
-    const displaced = await post(base, hostOld, '/api/visit/sync', { cursor: 0, player: PLAYER(100) });
-    expectStatus(displaced, 200, 'displaced host sync');
-    assert.strictEqual(displaced.data.state, 'closed', 'second host session replaces prior room');
+    expectStatus(await post(base, host, '/api/visit/host', { mode: 'fight' }), 201, 'first host session');
+    const duplicateHost = await post(base, duplicateHostSession, '/api/visit/host', { mode: 'fight' });
+    expectStatus(duplicateHost, 409, 'second same-profile host session is blocked');
+    assert(/already hosting/i.test(duplicateHost.data.error), 'the existing profile room stays owned by its first device');
+    const hostStillActive = await post(base, host, '/api/visit/sync', { cursor: 0, player: PLAYER(100) });
+    expectStatus(hostStillActive, 200, 'original host sync');
+    assert.strictEqual(hostStillActive.data.state, 'hosting', 'a rejected duplicate does not displace the active host');
     const hostLobby = await request(base, host, 'GET', '/api/visits');
     expectStatus(hostLobby, 200, 'host listing');
-    checks.push('a second authenticated session for p1 can replace the same profile’s hosted room; the first session receives `state: closed`.');
+    checks.push('a second authenticated session for p1 is rejected as a duplicate host; the original room remains active.');
 
     // All three non-host sessions contend at once for the single request slot.
     const race = await Promise.all([guestA, guestB, guestC].map(client => post(base, client, '/api/visit/request', { ownerId: 'p1' })));
@@ -179,16 +181,16 @@ async function main() {
       cursor: 0, worldReady: true, player: PLAYER(150), edits: [[100, 10, 100, 4]],
     })));
     assert(forbiddenEdits.every(r => r.status === 200 && r.data.state === 'none'), 'non-participants get no visit role');
-    const move = await post(base, winner, '/api/visit/sync', { cursor: initial.data.cursor, worldReady: true, player: PLAYER(144) });
+    const move = await post(base, winner, '/api/visit/sync', { cursor: initial.data.cursor, worldReady: true, player: PLAYER(103) });
     expectStatus(move, 200, 'accepted visitor movement');
     const hostSeesMove = await post(base, host, '/api/visit/sync', { cursor: 0, player: PLAYER(100) });
     assert(hostSeesMove.data.remotePlayer, 'owner receives accepted visitor state');
-    assert.deepStrictEqual(hostSeesMove.data.remotePlayer.pos, [144, 20, 100]);
+    assert.deepStrictEqual(hostSeesMove.data.remotePlayer.pos, [103, 20, 100]);
     const ownerWorld = await request(base, host, 'GET', '/api/world');
     expectStatus(ownerWorld, 200, 'owner save after denied edit attempts');
     assert(!ownerWorld.data.world.edits.some(e => e[0] === 100 && e[1] === 10 && e[2] === 100), 'denied sessions cannot persist edits');
     const edit = await post(base, winner, '/api/visit/sync', {
-      cursor: move.data.cursor, worldReady: true, player: PLAYER(144), edits: [[101, 10, 100, 4]],
+      cursor: move.data.cursor, worldReady: true, player: PLAYER(103), edits: [[101, 10, 100, 4]],
     });
     expectStatus(edit, 200, 'accepted visitor edit');
     const afterEdit = await request(base, host, 'GET', '/api/world');
