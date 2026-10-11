@@ -2529,6 +2529,34 @@ H.test('mobile action and view buttons release when a finger lifts', () => {
   H.eq(t.Touch.btn.view, false, 'lifting the view button must release it');
 });
 
+H.test('Fight and Observe show their existing touch action on the shared action button', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.Touch.init();
+  const action = t.document.getElementById('touch-fly');
+
+  t.Touch.relabel('fight', false);
+  H.eq(action.textContent, 'ULT', 'Fight labels the action as ultimate');
+  H.eq(action.disabled, true, 'an uncharged ultimate is visibly unavailable');
+  H.eq(action.attributes['aria-label'], 'Ultimate not ready', 'unavailable state is announced');
+  H.assert(action.classList.contains('touch-action-fight'), 'Fight uses its distinct action style');
+
+  t.Touch.relabel('fight', true);
+  H.eq(action.disabled, false, 'a charged ultimate can be activated');
+  H.eq(action.attributes['aria-label'], 'Use ultimate', 'ready action has a useful accessible name');
+
+  t.Touch.relabel('observe');
+  H.eq(action.textContent, 'PHOTO', 'Observe labels the action as photo');
+  H.eq(action.disabled, false, 'photo capture remains available');
+  H.eq(action.attributes['aria-label'], 'Take a photo', 'photo action is announced');
+  H.assert(action.classList.contains('touch-action-observe'), 'Observe has a distinct action style');
+  H.assert(!action.classList.contains('touch-action-fight'), 'mode styling does not leak');
+
+  t.Touch.relabel('play');
+  H.eq(action.textContent, 'FLY', 'Play keeps the flying action');
+  H.eq(action.disabled, false, 'flying remains available');
+  H.assert(!action.classList.contains('touch-action-observe'), 'Play clears mode styling');
+});
+
 H.test('BREAK never toggles camera view and touch VIEW toggles once per press', () => {
   const t = H.load({ touch: true, boot: false });
   t.Touch.enabled = true;

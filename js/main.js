@@ -1797,8 +1797,9 @@ const Game = {
       UI.updateHUD(p1, 'fight',
         matchup + '<br>' +
         (this.isTouch
-          ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap FLY!' : Math.round(p1.ultMeter) + '%') + '</b>'
+          ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap ULT!' : Math.round(p1.ultMeter) + '%') + '</b>'
           : p1.char.ultName + ': <b>' + (ultReady ? 'READY! press L' : Math.round(p1.ultMeter) + '%') + '</b>'));
+      if (this.isTouch) Touch.relabel('fight', ultReady);
 
     } else if (this.state === 'observe') {
       // touch: the stick flies, the ▲▼ buttons raise and lower the camera,
@@ -1831,7 +1832,7 @@ const Game = {
       document.getElementById('obs-coords').textContent =
         'x ' + Observer.pos[0].toFixed(1) + '   y ' + Observer.pos[1].toFixed(1) + '   z ' + Observer.pos[2].toFixed(1);
       document.getElementById('obs-hint').textContent =
-        this.isTouch ? '▲▼ height · tap JUMP to change view · FLY to photo' : v.hint + ' · P photo · F10 menu';
+        this.isTouch ? '▲▼ height · tap JUMP to change view · PHOTO saves a picture' : v.hint + ' · P photo · F10 menu';
       // keep the world alive so animals still move while being observed
       this.updateAnimals(dt, null);
       Particles.update(dt, this.world);

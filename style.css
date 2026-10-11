@@ -949,6 +949,16 @@ body.touch:not(.playing) #touch-stick { opacity: 0; }
 .tbtn-use { background: rgba(126, 200, 80, 0.88); }
 .tbtn-jump { background: rgba(74, 144, 217, 0.88); }
 .tbtn-fly  { background: rgba(154, 160, 166, 0.88); }
+.tbtn-fly:disabled {
+  opacity: 0.48;
+  filter: grayscale(0.7);
+  box-shadow: inset 0 2px 0 rgba(255,255,255,0.12);
+}
+.tbtn-fly.touch-action-fight { background: rgba(154, 74, 203, 0.92); }
+.tbtn-fly.touch-action-fight:not(:disabled) {
+  box-shadow: 0 0 18px rgba(205, 120, 255, 0.62), inset 0 2px 0 rgba(255,255,255,0.28);
+}
+.tbtn-fly.touch-action-observe { background: rgba(35, 160, 170, 0.92); }
 
 /* Keep camera choice separate from BREAK so changing perspective never mines a block. */
 #touch-view {
