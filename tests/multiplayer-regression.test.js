@@ -92,10 +92,13 @@ async function main() {
     await waitForServer(base, child);
     const hostPage = crypto.randomBytes(16).toString('hex');
     const guestPage = crypto.randomBytes(16).toString('hex');
+    const sparePage = crypto.randomBytes(16).toString('hex');
     const host = await login(base, 'p1', '123456', hostPage);
     const guest = await login(base, 'p2', '654321', guestPage);
+    const spare = await login(base, 'p3', '112233', sparePage);
     const hostCall = (route, body, method) => call(base, host, hostPage, route, body, method);
     const guestCall = (route, body, method) => call(base, guest, guestPage, route, body, method);
+    const spareCall = (route, body, method) => call(base, spare, sparePage, route, body, method);
 
     await check('host can open a Play & Build room and the approved guest can request access', async () => {
       const started = await hostCall('/api/visit/host', {});
@@ -158,13 +161,56 @@ async function main() {
       assert(ownerPoll.events.some(event => event.type === 'fight-action' && event.data.role === 'visitor' && event.data.action === 'attack'));
     });
 
+    await check('Play & Build visitor attacks relay one validated damage event to the owner', async () => {
+      await hostCall('/api/visit/mode', { mode: 'play' });
+      const before = await hostCall('/api/visit/sync', { cursor: 0, player: PLAYER, inventory: { apple: 4, meat: 2 } });
+      const saved = await hostCall('/api/world?type=normal', null, 'GET');
+      assert.deepStrictEqual(saved.world.inventory, { apple: 4, meat: 2 }, 'owner food inventory is durable during an active visit');
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, PLAYER, {
+        playAttackSeq: 1, playAttackDamage: 20,
+      }) });
+      const hit = await hostCall('/api/visit/sync', { cursor: before.cursor, player: PLAYER });
+      const attack = hit.events.find(event => event.type === 'play-attack');
+      assert(attack, 'owner receives the visitor attack event');
+      assert.strictEqual(attack.data.role, 'visitor');
+      assert.strictEqual(attack.data.targetRole, 'owner');
+      assert.strictEqual(attack.data.damage, 20);
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, PLAYER, {
+        playAttackSeq: 1, playAttackDamage: 20,
+      }) });
+      const repeat = await hostCall('/api/visit/sync', { cursor: hit.cursor, player: PLAYER });
+      assert(!repeat.events.some(event => event.type === 'play-attack'), 'the same attack sequence cannot be replayed');
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, PLAYER, {
+        playAttackSeq: 2, playAttackDamage: 999,
+      }) });
+      const sanitized = await hostCall('/api/visit/sync', { cursor: repeat.cursor, player: PLAYER });
+      const safeAttack = sanitized.events.find(event => event.type === 'play-attack');
+      assert(safeAttack, 'the next attack sequence is relayed');
+      assert.strictEqual(safeAttack.data.damage, 8, 'damage is clamped to a permitted attack tier');
+    });
+
+    await check('a replacement visitor starts a fresh Play attack sequence', async () => {
+      await guestCall('/api/visit/leave', {});
+      const requested = await spareCall('/api/visit/request', { ownerId: 'p1' });
+      assert.strictEqual(requested.ownerName, 'Florenz');
+      const waiting = await hostCall('/api/visit/sync', { cursor: 0, player: PLAYER });
+      const approved = await hostCall('/api/visit/respond', { requestId: waiting.pending.id, approve: true });
+      assert.strictEqual(approved.approved, true);
+      const ready = await spareCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, PLAYER, { playAttackSeq: 1, playAttackDamage: 12 }) });
+      assert.strictEqual(ready.state, 'active');
+      const hit = await hostCall('/api/visit/sync', { cursor: 0, player: PLAYER });
+      const attack = hit.events.find(event => event.type === 'play-attack' && event.data.role === 'visitor');
+      assert(attack, 'the replacement visitor’s first attack is relayed');
+      assert.strictEqual(attack.data.seq, 1);
+    });
+
     await check('owner mode switch propagates and host closing during a loading phase closes the visitor session', async () => {
       const changed = await hostCall('/api/visit/mode', { mode: 'observe' });
       assert.strictEqual(changed.mode, 'observe');
-      const guestMode = await guestCall('/api/visit/sync', { cursor: 0, worldReady: true });
+      const guestMode = await spareCall('/api/visit/sync', { cursor: 0, worldReady: true });
       assert.strictEqual(guestMode.mode, 'observe');
       await hostCall('/api/visit/stop', {});
-      const afterClose = await guestCall('/api/visit/sync', {
+      const afterClose = await spareCall('/api/visit/sync', {
         cursor: 0, loadingOnly: true, worldReady: false, edits: [],
       });
       assert.strictEqual(afterClose.state, 'closed');

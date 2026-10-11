@@ -128,7 +128,7 @@ function safeWorldType(value) { return value === 'flat' ? 'flat' : 'normal'; }
 function savePath(userId, worldType) { return path.join(DATA_DIR, 'world-' + userId + (safeWorldType(worldType) === 'flat' ? '-flat' : '') + '.json'); }
 async function readWorld(userId, worldType) {
   worldType = safeWorldType(worldType);
-  const fallback = { version: 2, worldType, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+  const fallback = { version: 2, worldType, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, inventory: { apple: 0, meat: 0 }, edits: [] };
   let raw;
   try {
     raw = await fs.promises.readFile(savePath(userId, worldType), 'utf8');
@@ -143,6 +143,7 @@ async function readWorld(userId, worldType) {
     throw new Error('The saved world uses an unsupported format. It was left untouched; restore a compatible backup before saving again.');
   if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = 0;
   world.worldType = worldType;
+  world.inventory = safeFoodInventory(world.inventory) || { apple: 0, meat: 0 };
   return world;
 }
 async function writeWorld(userId, world, commitAllowed, worldType) {
@@ -176,6 +177,7 @@ async function writeWorld(userId, world, commitAllowed, worldType) {
         revision: world.revision,
         edits: Array.from(merged.values()),
       });
+      if (world.preserveMetadata === true && world.inventory) persisted.inventory = world.inventory;
     }
     delete persisted.editPatch;
     delete persisted.replaceEdits;
@@ -239,7 +241,14 @@ function safePlayerState(value) {
   const pos = value.pos;
   if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite) || pos[0] < -8 || pos[0] > WORLD_SIZE + 8 || pos[2] < -8 || pos[2] > WORLD_SIZE + 8 || pos[1] < -8 || pos[1] > 200) return null;
   if (!Number.isFinite(value.yaw) || Math.abs(value.yaw) > 1000 || !Number.isFinite(value.pitch) || Math.abs(value.pitch) > 2 || !CHARACTER_IDS.has(value.characterId)) return null;
-  return { pos: pos.map(n => Math.round(n * 1000) / 1000), yaw: value.yaw, pitch: value.pitch, characterId: value.characterId, updatedAt: Date.now() };
+  const allowedDamage = [8, 12, 16, 20];
+  return {
+    pos: pos.map(n => Math.round(n * 1000) / 1000), yaw: value.yaw, pitch: value.pitch,
+    characterId: value.characterId,
+    playAttackSeq: Number.isSafeInteger(value.playAttackSeq) && value.playAttackSeq >= 0 ? value.playAttackSeq : 0,
+    playAttackDamage: allowedDamage.includes(value.playAttackDamage) ? value.playAttackDamage : 8,
+    updatedAt: Date.now(),
+  };
 }
 
 function safeFightInput(value) {
@@ -307,6 +316,36 @@ async function persistVisitEdits(room, actorId, actorToken, edits) {
   if (!commitAllowed()) return false;
   room.worldRevision = Math.max(room.worldRevision || 0, revision);
   for (const edit of edits) appendVisitEvent(room, actorId, 'edit', edit);
+  return room.worldRevision;
+}
+
+function safeFoodInventory(value) {
+  if (!value || typeof value !== 'object') return null;
+  const inventory = {};
+  for (const item of ['apple', 'meat']) {
+    if (!Number.isSafeInteger(value[item]) || value[item] < 0 || value[item] > 1_000_000) return null;
+    inventory[item] = value[item];
+  }
+  return inventory;
+}
+
+async function persistVisitInventory(room, actorToken, inventory) {
+  if (JSON.stringify(inventory) === JSON.stringify(room.playInventory)) return room.worldRevision;
+  const commitAllowed = () => room.status === 'active' && room.ownerToken === actorToken &&
+    sessions.has(room.ownerToken) && Date.now() - room.ownerSeen < VISIT_HEARTBEAT_TIMEOUT;
+  let revision;
+  try {
+    revision = await writeWorld(room.ownerId, {
+      version: 2, revision: null, edits: [], editPatch: true,
+      preserveMetadata: true, inventory,
+    }, commitAllowed, room.worldType);
+  } catch (error) {
+    if (error.status === 410) return false;
+    throw error;
+  }
+  if (!commitAllowed()) return false;
+  room.playInventory = inventory;
+  room.worldRevision = Math.max(room.worldRevision || 0, revision);
   return room.worldRevision;
 }
 
@@ -470,6 +509,8 @@ async function handleApi(req, res, url) {
         ownerName: user.displayName, worldType, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
         visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
         visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
+        playAttackSeq: { owner: 0, visitor: 0 },
+        playInventory: savedWorld.inventory || { apple: 0, meat: 0 },
         mode, modeRevision: 1,
         arenaCenter: Array.isArray(body.arenaCenter) && body.arenaCenter.length === 2 && body.arenaCenter.every(Number.isFinite)
           ? body.arenaCenter.map(n => Math.max(18, Math.min(WORLD_SIZE - 19, Math.floor(n))))
@@ -607,6 +648,7 @@ async function handleApi(req, res, url) {
     room.visitorWorldSent = false;
     room.status = 'active';
     room.players.visitor = null;
+    room.playAttackSeq.visitor = 0;
     appendVisitEvent(room, user.id, 'joined', { displayName: pending.visitorName });
     return reply(res, 200, { ok: true, approved: true });
   }
@@ -625,6 +667,11 @@ async function handleApi(req, res, url) {
       room.ownerSeen = Date.now();
       const player = safePlayerState(body.player);
       if (player) room.players.owner = player;
+      const inventory = safeFoodInventory(body.inventory);
+      if (inventory && room.status === 'active') {
+        const revision = await persistVisitInventory(room, user.token, inventory);
+        if (revision === false) return reply(res, 200, { state: 'closed', reason: room.closeReason || 'The live visit ended before inventory could be saved.' });
+      }
     } else if (role === 'pending') {
       if (!room.pending || room.pending.visitorToken !== user.token) return reply(res, 200, { state: 'closed', reason: 'The host is no longer available.' });
       if (Date.now() - room.pending.createdAt > VISIT_REQUEST_TTL) {
@@ -640,6 +687,19 @@ async function handleApi(req, res, url) {
       const player = safePlayerState(body.player);
       if (player) room.players.visitor = player;
       if (body.worldReady === true && room.visitorWorldSent) room.visitorNeedsWorld = false;
+    }
+
+    if (room.mode === 'play' && room.status === 'active' && (role === 'owner' || role === 'visitor')) {
+      const player = room.players[role];
+      if (player && player.playAttackSeq > room.playAttackSeq[role]) {
+        room.playAttackSeq[role] = player.playAttackSeq;
+        appendVisitEvent(room, user.id, 'play-attack', {
+          role,
+          targetRole: role === 'owner' ? 'visitor' : 'owner',
+          seq: player.playAttackSeq,
+          damage: player.playAttackDamage,
+        });
+      }
     }
 
     if (room.mode === 'fight' && room.fightPhase === 'active' && (role === 'owner' || role === 'visitor')) {
@@ -722,9 +782,10 @@ async function handleApi(req, res, url) {
       version: 2, worldType, seed: world.seed,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
       player1: Array.isArray(world.player1) && world.player1.length === 3 && world.player1.every(Number.isFinite) ? world.player1 : null,
-      slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(9, world.slot)) : 0,
+      slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(11, world.slot)) : 0,
       pick: world.pick && typeof world.pick === 'object' ? world.pick : null,
       settings: world.settings && typeof world.settings === 'object' ? world.settings : null,
+      inventory: safeFoodInventory(world.inventory) || { apple: 0, meat: 0 },
       edits,
       editPatch: world.editPatch === true,
       replaceEdits: world.replaceEdits === true,

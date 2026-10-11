@@ -25,6 +25,7 @@ class Player {
     this.creative = true;
     this.hp = charDef.hp;
     this.maxHp = charDef.hp;
+    this.inventory = { apple: 0, meat: 0 };
     this.ultMeter = 0;
     this.maxUlt = 100;
     this.combo = 0;
@@ -162,7 +163,7 @@ class Player {
     if (this.onGround && !this.flying) this.walkAnim += Math.hypot(this.vel[0], this.vel[2]) * dt * 3.2;
     else this.walkAnim += dt * 1.4;
 
-    if (this.pos[1] < -8) this.respawn();
+    if (this.pos[1] < -8 && !this.ko) this.respawn();
 
     // timers
     if (this.hurtCooldown > 0) this.hurtCooldown -= dt;
@@ -270,7 +271,7 @@ class Animal {
     this.onGround = false;
     this.jumpCool = 0;
     this.scale = 0.85 + Math.random() * 0.3;
-    this.health = def.predator ? 4 : (def.id === 'chick' ? 1 : 3);
+    this.health = 30;
     this.dead = false;
     this.packId = null;
     this.packLeader = null;
@@ -278,6 +279,7 @@ class Animal {
     this.fleeFrom = null;
     this.aggressiveTimer = 0;
     this.biteCooldown = 0.3 + Math.random() * 0.5;
+    this.retaliationCooldown = 0;
     this.hitFlash = 0;
   }
 
@@ -285,14 +287,19 @@ class Animal {
     if (this.dead) return;
     this.think -= dt;
     this.biteCooldown = Math.max(0, this.biteCooldown - dt);
+    this.retaliationCooldown = Math.max(0, this.retaliationCooldown - dt);
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     this.aggressiveTimer = Math.max(0, this.aggressiveTimer - dt);
     if (this.jumpCool > 0) this.jumpCool -= dt;
 
     let speed = this.def.speed * (0.4 + Math.random() * 0.3);
     let target = null;
+    if (this.aggressiveTimer > 0 && player && !player.ko) {
+      const dx = player.pos[0] - this.pos[0], dz = player.pos[2] - this.pos[2];
+      if (dx * dx + dz * dz < 32 * 32) target = player;
+    }
     if (this.def.predator) {
-      if (this.aggressiveTimer > 0 && player && !player.ko) {
+      if (!target && this.aggressiveTimer > 0 && player && !player.ko) {
         const dx = player.pos[0] - this.pos[0], dz = player.pos[2] - this.pos[2];
         if (dx * dx + dz * dz < 32 * 32) target = player;
       }
@@ -318,10 +325,11 @@ class Animal {
       const dist = Math.hypot(dx, dz);
       this.yaw = Math.atan2(dx, dz);
       speed = this.def.speed * (target === player ? 1.2 : 1.35);
-      if (target === player && dist < 1.35 && this.biteCooldown <= 0) {
+      if (target === player && dist < 1.35 && this.biteCooldown <= 0 && this.retaliationCooldown <= 0) {
         const dir = dist > 0.001 ? [dx / dist, 0, dz / dist] : [0, 0, 0];
-        if (player.takeDamage) player.takeDamage(6, dir, 3.5);
-        this.biteCooldown = 1.2;
+        if (player.takeDamage) player.takeDamage(5, dir, 3.5);
+        this.biteCooldown = 1;
+        this.retaliationCooldown = 1;
       } else if (target !== player && target.health !== undefined && dist < 1.15 && this.biteCooldown <= 0) {
         target.health--;
         target.hitFlash = 0.18;

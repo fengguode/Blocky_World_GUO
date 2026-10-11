@@ -17,7 +17,7 @@ const H = require('./harness');
 const g = H.load({ seed: 1337 });
 
 const {
-  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS,
+  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS, HOTBAR_ITEMS,
   CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, ANIMALS,
   Player, Fight, Bot, Particles, PROJ_DEFS, Game, M4, Observer, Cam, migrateWorldSave,
 } = g;
@@ -1328,6 +1328,77 @@ H.test('running out of health knocks a fighter out and they recover', () => {
   H.eq(b.hp, b.maxHp, 'should return to full health');
 });
 
+H.test('a knocked out Fight Arena fighter keeps falling instead of freezing in midair', () => {
+  const { b } = closeRange('steve', 'golem');
+  b.pos = [CX + 8.5, b.pos[1] + 8, CX + 8.5];
+  b.vel = [0, 0, 0];
+  b.takeDamage(b.maxHp, null, 0);
+  const beforeY = b.pos[1];
+  b.update(0.1, 0, 0, false, false);
+  H.assert(b.pos[1] < beforeY, 'KO physics still applies gravity');
+  H.eq(b.ko, true, 'the existing KO recovery timer remains active');
+});
+
+H.test('Play & Build respawn restores health without resetting world or food inventory', () => {
+  const w = arenaWorld();
+  const p = new Player(w, characterById('steve'));
+  p.spawn = [CX + 5.5, w.arena.y, CX + 5.5];
+  p.pos = [CX + 8.5, w.arena.y, CX + 8.5];
+  p.inventory.apple = 3;
+  p.inventory.meat = 2;
+  const edit = [CX + 7, w.arena.y, CX + 7];
+  w.setBlock(edit[0], edit[1], edit[2], 16);
+  const editsBefore = w.edits.size;
+  p.takeDamage(p.maxHp, null, 0);
+  H.eq(p.koTimer, 2.4, 'zero health starts the approved respawn timer');
+  p.update(2.399, 0, 0, false, false);
+  H.eq(p.ko, true, 'the player remains down until the timer ends');
+  p.update(0.002, 0, 0, false, false);
+  H.eq(p.ko, false, 'the player respawns');
+  H.eq(p.pos[0], p.spawn[0], 'respawn uses the spawn position');
+  H.eq(p.hp, p.maxHp, 'respawn restores full character health');
+  H.eq(p.inventory.apple, 3, 'apples survive respawn');
+  H.eq(p.inventory.meat, 2, 'meat survives respawn');
+  H.eq(w.edits.size, editsBefore, 'respawn does not change world edits');
+  H.eq(w.getBlock(edit[0], edit[1], edit[2]), 16, 'the built world block remains');
+});
+
+H.test('selected wood, stone, and gold materials set the approved attack damage', () => {
+  const p = new Player(arenaWorld(), characterById('steve'));
+  for (const [slot, damage] of [[0, 8], [4, 12], [1, 16], [8, 20], [9, 8]]) {
+    p.selectedSlot = slot;
+    H.eq(Game.playAttackDamage(p), damage, 'slot ' + slot + ' damage');
+  }
+});
+
+H.test('leaf apple drop uses the approved 15 percent threshold', () => {
+  H.eq(Game.shouldDropApple(0.149999), true, 'a roll below 0.15 drops an apple');
+  H.eq(Game.shouldDropApple(0.15), false, 'a roll at 0.15 does not drop an apple');
+});
+
+H.test('apples and meat heal the approved amount and consume one item', () => {
+  const previousSave = Game.save;
+  const previousSlot = Game.selectedSlot;
+  const previousPlayer = Game.players[0];
+  const p = new Player(arenaWorld(), characterById('steve'));
+  p.hp = 60;
+  p.inventory.apple = 2;
+  p.inventory.meat = 1;
+  Game.players[0] = p;
+  Game.save = () => true;
+  Game.selectedSlot = 10;
+  H.eq(Game.consumeFood(p), true, 'an apple can be eaten');
+  H.eq(p.hp, 80, 'an apple restores 20 HP');
+  H.eq(p.inventory.apple, 1, 'one apple is consumed');
+  Game.selectedSlot = 11;
+  H.eq(Game.consumeFood(p), true, 'meat can be eaten');
+  H.eq(p.hp, 100, 'meat restores 30 HP up to the character maximum');
+  H.eq(p.inventory.meat, 0, 'one meat is consumed');
+  Game.save = previousSave;
+  Game.selectedSlot = previousSlot;
+  Game.players[0] = previousPlayer;
+});
+
 H.test('the healing character recovers after landing a hit', () => {
   const w = arenaWorld();
   const doll = new Player(w, characterById('doll'));
@@ -2032,6 +2103,26 @@ H.test('a wolf only bites the player after the pack is provoked', () => {
   wolf.aggressiveTimer = 5;
   wolf.update(1 / 60, w, player);
   H.assert(player.hp < 100, 'a provoked wolf should bite a nearby player');
+  H.eq(player.hp, 95, 'a bite deals five damage');
+  const firstHp = player.hp;
+  wolf.update(0.5, w, player);
+  H.eq(player.hp, firstHp, 'a wolf cannot retaliate again within one second');
+});
+
+H.test('every animal has 30 HP and an injured sheep retaliates once per second for 5', () => {
+  const w = arenaWorld();
+  const player = { pos: [CX + 5.5, w.arena.y + 1, CX + 5.5], ko: false, hits: [], takeDamage(amount) { this.hits.push(amount); } };
+  for (const def of ANIMALS) H.eq(new g.Animal(def, CX + 5.5, w.arena.y + 1, CX + 5.5).health, 30, def.name + ' health');
+  const sheep = new g.Animal(g.animalById('sheep'), player.pos[0], player.pos[1], player.pos[2]);
+  sheep.aggressiveTimer = 5;
+  sheep.biteCooldown = 0;
+  sheep.update(1 / 60, w, player);
+  H.eq(player.hits[0], 5, 'retaliation damage');
+  sheep.update(0.5, w, player);
+  H.eq(player.hits.length, 1, 'no second hit before one second');
+  sheep.update(0.55, w, player);
+  H.eq(player.hits.length, 2, 'retaliation resumes after the one-second cooldown');
+  H.eq(player.hits[1], 5, 'each retaliation still deals five damage');
 });
 
 H.test('hitting a wolf provokes its pack', () => {
@@ -2047,9 +2138,37 @@ H.test('hitting a wolf provokes its pack', () => {
   });
   Game.animals = wolves;
   H.assert(Game.tryHitAnimal(player), 'the nearest wolf in front should be hit');
-  H.eq(wolves[0].health, 3, 'the hit should injure the chosen wolf');
+  H.eq(wolves[0].health, 22, 'a fist attack deals eight damage');
   H.assert(wolves.every(wolf => wolf.aggressiveTimer > 0), 'the whole pack should react');
   Game.animals = [];
+});
+
+H.test('defeating an animal gives exactly one meat item', () => {
+  const w = arenaWorld();
+  const oldAnimals = Game.animals;
+  const oldSave = Game.save;
+  const oldSlot = Game.selectedSlot;
+  const oldPlayer = Game.players[0];
+  const player = new g.Player(w, g.characterById('steve'), false);
+  player.pos = [CX + 5.5, w.arena.y + 1, CX + 5.5];
+  player.yaw = 0;
+  player.selectedSlot = 8;
+  Game.selectedSlot = 8;
+  Game.players[0] = player;
+  Game.animals = [new g.Animal(g.animalById('sheep'), CX + 5.5, w.arena.y + 1, CX + 4.5)];
+  Game.save = () => true;
+  H.assert(Game.tryHitAnimal(player), 'the sheep is in attack range');
+  H.eq(Game.animals[0].health, 10, 'gold deals 20 damage');
+  H.eq(player.inventory.meat, 0, 'a live animal does not drop meat');
+  H.assert(Game.tryHitAnimal(player), 'the sheep remains attackable');
+  H.eq(Game.animals[0].dead, true, 'the animal is defeated');
+  H.eq(player.inventory.meat, 1, 'one meat is added once');
+  H.eq(Game.tryHitAnimal(player), false, 'dead animals cannot be hit or drop again');
+  H.eq(player.inventory.meat, 1, 'the drop cannot be duplicated');
+  Game.animals = oldAnimals;
+  Game.save = oldSave;
+  Game.selectedSlot = oldSlot;
+  Game.players[0] = oldPlayer;
 });
 
 H.test('an animal stays on the ground', () => {
@@ -2668,6 +2787,9 @@ H.test('settings survive a save and reload', () => {
   first.Game.pick.p2bot = false;
   first.Game.selectedSlot = 5;
   first.Game.world = first.World.world = new first.World(4242);
+  first.Game.players[0] = new first.Player(first.Game.world, first.characterById('ninja'));
+  first.Game.players[0].inventory.apple = 4;
+  first.Game.players[0].inventory.meat = 2;
   first.Game.save();
 
   const written = H.savedData(first.storage);
@@ -2681,6 +2803,8 @@ H.test('settings survive a save and reload', () => {
   H.eq(second.Game.pick.p2, 'doll', 'player two character');
   H.eq(second.Game.pick.p2bot, false, 'bot preference');
   H.eq(second.Game.selectedSlot, 5, 'hotbar slot');
+  H.eq(second.Game.saved.inventory.apple, 4, 'apple inventory survives the local save');
+  H.eq(second.Game.saved.inventory.meat, 2, 'meat inventory survives the local save');
 });
 
 H.test('flat and normal worlds keep separate local saves', () => {
@@ -2844,8 +2968,11 @@ H.test('the hotbar selection is clamped', () => {
   Game.selectSlot(-5);
   H.eq(Game.selectedSlot, 0);
   Game.selectSlot(99);
-  H.eq(Game.selectedSlot, 9, 'the shovel is the tenth selectable hotbar item');
+  H.eq(Game.selectedSlot, HOTBAR_ITEMS.length - 1, 'selection clamps to the last selectable item');
   H.eq(g.HOTBAR_BLOCKS.length, 9, 'the shovel tool does not increase the block inventory count');
+  H.eq(HOTBAR_ITEMS[9].id, 'shovel', 'the shovel retains its original slot');
+  H.eq(HOTBAR_ITEMS[10].id, 'apple', 'apple is the first food slot');
+  H.eq(HOTBAR_ITEMS[11].id, 'meat', 'meat is the last hotbar slot');
   Game.selectSlot(3);
   H.eq(Game.selectedSlot, 3);
 });

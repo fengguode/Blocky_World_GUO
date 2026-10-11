@@ -30,6 +30,8 @@ const Network = {
   visitOwnerId: null,
   visitOwnerName: null,
   visitCursor: 0,
+  playAttackSeq: 0,
+  playAttackDamage: 8,
   visitTimer: null,
   lobbyTimer: null,
   lobbyBusy: false,
@@ -357,6 +359,7 @@ const Network = {
       const visitBody = JSON.stringify({
         cursor: this.visitCursor,
         player: this.visitPlayerState(),
+        inventory: this.visitRole === 'owner' && Game.players[0] ? Game.players[0].inventory : undefined,
         edits: this.visitEditDelta(),
         worldReady: this.sharedWorldReady,
       });
@@ -522,6 +525,8 @@ const Network = {
       this.visitOwnerId = this.profile.id;
       this.visitOwnerName = this.profile.displayName;
       this.visitCursor = 0;
+      this.playAttackSeq = 0;
+      this.playAttackDamage = 8;
       this.sharedMode = hosted.mode || mode || 'play';
       this.sharedArenaCenter = hosted.arenaCenter || null;
       this.sharedModeRevision = hosted.modeRevision || 1;
@@ -549,6 +554,8 @@ const Network = {
       this.visitOwnerId = ownerId;
       this.visitOwnerName = ownerName;
       this.visitCursor = 0;
+      this.playAttackSeq = 0;
+      this.playAttackDamage = 8;
       this.showVisitHud('Visit request sent to ' + ownerName + '.');
       this.startVisitPolling();
       this.refreshVisitLobby();
@@ -618,7 +625,16 @@ const Network = {
       yaw: player.yaw,
       pitch: player.pitch,
       characterId: player.char.id,
+      playAttackSeq: this.playAttackSeq,
+      playAttackDamage: this.playAttackDamage,
     } : null;
+  },
+
+  queuePlayAttack(damage) {
+    if (!this.visitActive || this.sharedMode !== 'play' || !['owner', 'visitor'].includes(this.visitRole)) return false;
+    this.playAttackDamage = [8, 12, 16, 20].includes(damage) ? damage : 8;
+    this.playAttackSeq++;
+    return true;
   },
 
   visitEditDelta() {
@@ -675,7 +691,9 @@ const Network = {
     try {
       const data = await this.request('/api/visit/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cursor: this.visitCursor, player: this.visitPlayerState(), edits: sentEdits, worldReady: this.sharedWorldReady,
+        body: JSON.stringify({ cursor: this.visitCursor, player: this.visitPlayerState(),
+          inventory: this.visitRole === 'owner' && Game.players[0] ? Game.players[0].inventory : undefined,
+          edits: sentEdits, worldReady: this.sharedWorldReady,
           fightInput: this.fightLocalInput,
           fightState: this.visitRole === 'owner' && Game.mode === 'fight' && Game.sharedFightStarted ? Game.serializeSharedFightState() : null }),
       });
@@ -754,6 +772,15 @@ const Network = {
         } else if (event.type === 'left') {
           this.remotePlayerState = null;
           this.showVisitHud((event.data.displayName || 'Your visitor') + ' left your world.');
+        } else if (event.type === 'play-attack' && event.data && event.data.targetRole === this.visitRole) {
+          const target = Game.players && Game.players[0];
+          const source = Game.players && Game.players[1];
+          if (target && source && !target.ko) {
+            const dx = target.pos[0] - source.pos[0], dz = target.pos[2] - source.pos[2];
+            const length = Math.hypot(dx, dz) || 1;
+            target.takeDamage(event.data.damage, [dx / length, 0, dz / length], 3);
+            if (target.ko) UI.toast('Knocked out! Respawning in 2.4 seconds.');
+          }
         }
       }
       if (data.world && this.visitRole === 'visitor' && !this.sharedWorldReady) {
