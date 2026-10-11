@@ -1519,9 +1519,7 @@ const Game = {
 
     // projectiles
     for (const pr of Fight.projectiles) {
-      const d = pr.def;
-      this.drawBox(prog, pr.pos, [d.size, d.size, d.size], d.tile,
-        [1, 1, 1], pr.spin, 1);
+      this.drawProjectile(prog, pr);
     }
 
     // particles
@@ -1561,6 +1559,11 @@ const Game = {
     // facing vectors, needed for the eyes, hair and doll details
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const point = (forward, side, y) => [
+      base[0] + fx * forward + rx * side,
+      base[1] + y,
+      base[2] + fz * forward + rz * side,
+    ];
 
     // legs
     this.drawLimb(prog, base, yaw, [-0.15, legH, 0], legL, [0.25, legH, 0.28], c.pants, tint, dayF);
@@ -1568,6 +1571,13 @@ const Game = {
     // body
     this.drawBox(prog, [base[0], base[1] + legH + bodyH / 2, base[2]],
       [0.52, bodyH, 0.3], c.shirt, tint, yaw, 1);
+    // Small chest pixels give every character a second accent colour and a clearer identity.
+    if (c.accent) {
+      const chestY = legH + bodyH * 0.58;
+      this.drawBox(prog, point(0.17, 0, chestY), [0.15, 0.16, 0.035], c.accent, tint, yaw, 1);
+      this.drawBox(prog, point(0.193, -0.025, chestY + 0.055), [0.045, 0.045, 0.018], T.wool, tint, yaw, 1);
+      this.drawBox(prog, point(0.193, 0.025, chestY - 0.055), [0.045, 0.045, 0.018], c.shirt, tint, yaw, 1);
+    }
     // arms
     this.drawLimb(prog, base, yaw, [-0.36, legH + bodyH - 0.15, 0], armL, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
     this.drawLimb(prog, base, yaw, [0.36, legH + bodyH - 0.15, 0], armR, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
@@ -1626,6 +1636,45 @@ const Game = {
     this.drawBox(prog, [cx, base[1] + midY, cz + midZ], size, tile, tint, yaw, 1);
   },
 
+  drawProjectile(prog, projectile) {
+    const d = projectile.def;
+    const [x, y, z] = projectile.pos;
+    const size = d.size * (projectile.big ? 1.55 : 1);
+    const spin = projectile.spin;
+
+    if (d.kind === 'web') {
+      // A bright pixel lattice reads as a web shot instead of a plain glass cube.
+      this.drawBox(prog, [x, y, z], [size * 0.56, size * 0.56, size * 0.56], T.glass, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.16, size * 0.16], T.shirt_cyan, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.16, size * 1.45, size * 0.16], T.shirt_cyan, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.05, size * 0.12, size * 0.12], T.wool, [1, 1, 1], spin + 0.78, 1);
+      return;
+    }
+
+    if (d.kind === 'star') {
+      // Staggered bars make a chunky four-point star with a warm pixel core.
+      this.drawBox(prog, [x, y, z], [size * 0.38, size * 1.45, size * 0.32], T.glowstone, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.38, size * 0.32], T.glowstone, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.62, size * 0.62, size * 0.38], T.beak, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.20, size * 0.20, size * 0.42], T.wool, [1, 1, 1], spin, 1);
+      return;
+    }
+
+    if (d.kind === 'shuriken') {
+      // Two crossed steel blades and a hot centre make the spinning weapon legible at a glance.
+      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], T.steel, [1, 1, 1], spin + 0.78, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], T.steel, [1, 1, 1], spin - 0.78, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.34, size * 0.34, size * 0.24], T.hero_red, [1, 1, 1], spin, 1);
+      return;
+    }
+
+    // Block Bonanza and other special shots retain their material, with a crisp inset pixel.
+    this.drawBox(prog, [x, y, z], [size, size, size], d.tile, [1, 1, 1], spin, 1);
+    if (size > 0.4) {
+      this.drawBox(prog, [x, y, z], [size * 0.34, size * 0.34, size * 0.34], T.wool, [1, 1, 1], spin, 1);
+    }
+  },
+
   drawAnimal(prog, a, dayF) {
     const d = a.def;
     const s = a.scale;
@@ -1633,10 +1682,16 @@ const Game = {
     const walk = Math.sin(a.walkAnim) * 0.7;
     const base = a.pos;
     const legH = d.h * 0.45;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const point = (forward, side, y) => [
+      base[0] + fx * forward * s + rx * side * s,
+      y,
+      base[2] + fz * forward * s + rz * side * s,
+    ];
 
     // legs
     for (const [ox, ang] of [[-0.22, walk], [0.22, -walk]]) {
-      const rx = Math.cos(yaw), rz = -Math.sin(yaw);
       this.drawBox(prog,
         [base[0] + rx * ox * s, base[1] + legH / 2, base[2] + rz * ox * s],
         [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, 1);
@@ -1645,12 +1700,69 @@ const Game = {
     this.drawBox(prog,
       [base[0], base[1] + legH + d.h * 0.32, base[2]],
       [d.w * s, d.h * 0.64, d.d * s], d.body, [1, 1, 1], yaw, 1);
+
+    // Distinct pixel patches, wool tufts and wings break up the one-colour body shapes.
+    if (d.id === 'pig') {
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(-0.12, side * (d.w * 0.5 + 0.012), base[1] + legH + d.h * 0.36),
+          [0.025 * s, 0.2 * s, 0.28 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+    } else if (d.id === 'sheep') {
+      for (const [forward, side] of [[-0.28, 0], [0.08, -0.31], [0.08, 0.31]]) {
+        this.drawBox(prog, point(forward, side, base[1] + legH + d.h * 0.68),
+          [0.27 * s, 0.18 * s, 0.24 * s], d.body, [1, 1, 1], yaw, 1);
+      }
+    } else if (d.id === 'chick') {
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(-0.02, side * (d.w * 0.5 + 0.018), base[1] + legH + d.h * 0.34),
+          [0.04 * s, 0.2 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+    }
+
     // head
-    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const headY = base[1] + legH + d.h * 0.78;
-    this.drawBox(prog,
-      [base[0] + fx * d.d * 0.4 * s, headY, base[2] + fz * d.d * 0.4 * s],
-      [d.w * 0.7 * s, d.h * 0.5 * s, d.w * 0.6 * s], d.face, [1, 1, 1], yaw, 1);
+    const headForward = d.d * 0.4;
+    const headWidth = d.w * 0.7;
+    const headHeight = d.h * 0.5;
+    const headDepth = d.w * 0.6;
+    this.drawBox(prog, point(headForward, 0, headY),
+      [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
+
+    const headFront = headForward + headDepth * 0.5 + 0.02;
+    const eyeY = headY + headHeight * 0.08 * s;
+    const eyeSide = headWidth * 0.27;
+    for (const side of [-1, 1]) {
+      this.drawBox(prog, point(headFront, side * eyeSide, eyeY),
+        [0.085 * s, 0.095 * s, 0.03 * s], T.eye, [1, 1, 1], yaw, 1);
+    }
+
+    if (d.id === 'pig') {
+      // Two upright pixels and a broad snout make the pig's face unmistakable.
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(headForward - 0.015, side * headWidth * 0.36,
+          headY + headHeight * 0.55 * s), [0.11 * s, 0.16 * s, 0.1 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+      const snoutY = headY - headHeight * 0.16 * s;
+      this.drawBox(prog, point(headFront + 0.025, 0, snoutY),
+        [0.24 * s, 0.17 * s, 0.08 * s], d.accent, [1, 1, 1], yaw, 1);
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(headFront + 0.07, side * 0.055, snoutY),
+          [0.035 * s, 0.06 * s, 0.02 * s], T.eye, [1, 1, 1], yaw, 1);
+      }
+    } else if (d.id === 'sheep') {
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(headForward, side * headWidth * 0.55, headY + 0.015),
+          [0.12 * s, 0.08 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+      this.drawBox(prog, point(headFront + 0.025, 0, headY - headHeight * 0.22 * s),
+        [0.16 * s, 0.12 * s, 0.06 * s], d.accent, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'chick') {
+      // A stepped crest and orange beak give the chick a clear little silhouette.
+      this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.55 * s),
+        [0.1 * s, 0.12 * s, 0.1 * s], d.accent, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headFront + 0.05, 0, headY - headHeight * 0.16 * s),
+        [0.14 * s, 0.1 * s, 0.12 * s], d.beak, [1, 1, 1], yaw, 1);
+    }
   },
 
   saveScreenshot() {
