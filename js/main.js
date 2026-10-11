@@ -1210,7 +1210,7 @@ const Game = {
     this.onPointerLockChange(Input.pointerLocked);
     Audio.play('view');
     UI.toast(this.isTouch
-      ? 'Drag to look · ▲▼ height · JUMP changes view · FLY takes a photo'
+      ? 'Drag to look · ▲▼ height · JUMP changes view · PHOTO saves a picture'
       : 'F5 changes view · P takes a photo');
   },
 
