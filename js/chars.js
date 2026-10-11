@@ -13,7 +13,7 @@ const CHARACTERS = [
     style: 'Balanced Builder',
     color: '#4a90d9',
     desc: 'The classic blocky builder. Strong, steady, good at everything. Great for learning the ropes.',
-    skin: T.skin, hair: T.hair_brown, shirt: T.shirt_blue, pants: T.pants, shoe: T.shoe,
+    skin: T.skin, hair: T.hair_brown, shirt: T.shirt_blue, accent: T.shirt_cyan, pants: T.pants, shoe: T.shoe,
     hp: 100, speed: 4.6, jump: 8.2, damage: 12, reach: 3.4,
     ultName: 'Block Bonanza',
     ultDesc: 'Throws a spinning wall of blocks that knock the enemy back.',
@@ -30,7 +30,7 @@ const CHARACTERS = [
     style: 'Parkour Ranger',
     color: '#4ec3b0',
     desc: 'Quick and nimble. Runs fast, jumps higher, and whips out a triple combo.',
-    skin: T.skin, hair: T.hair_gold, shirt: T.shirt_teal, pants: T.pants_dark, shoe: T.shoe,
+    skin: T.skin, hair: T.hair_gold, shirt: T.shirt_teal, accent: T.shirt_blue, pants: T.pants_dark, shoe: T.shoe,
     hp: 90, speed: 5.6, jump: 9.4, damage: 10, reach: 3.2,
     ultName: 'Triple Cyclone',
     ultDesc: 'Spins through the air kicking three times, then dashes away.',
@@ -47,7 +47,7 @@ const CHARACTERS = [
     style: 'Wall-Crawling Hero',
     color: '#e63946',
     desc: 'A red and blue wall crawler. Can zip up walls and hit from far away with web shots.',
-    skin: T.skin, hair: T.hero_red, shirt: T.hero_blue, pants: T.hero_blue, shoe: T.hero_red,
+    skin: T.skin, hair: T.hero_red, shirt: T.hero_blue, accent: T.hero_red, pants: T.hero_blue, shoe: T.hero_red,
     hp: 95, speed: 5.2, jump: 9.0, damage: 11, reach: 3.6, climbsWalls: true,
     ultName: 'Web Cocoon',
     ultDesc: 'Fires a huge web ball that sticks the enemy in place, then pulls them in.',
@@ -66,7 +66,7 @@ const CHARACTERS = [
     style: 'Sparkle Power',
     color: '#ff7ad9',
     desc: 'A cheerful doll in a pink dress. She throws glittery stars and heals herself every time she lands a hit.',
-    skin: T.skin_doll, hair: T.hair_pink, shirt: T.shirt_pink, pants: T.shirt_pink, shoe: T.hero_red,
+    skin: T.skin_doll, hair: T.hair_pink, shirt: T.shirt_pink, accent: T.glowstone, pants: T.shirt_pink, shoe: T.hero_red,
     hp: 85, speed: 5.0, jump: 8.6, damage: 10, reach: 3.2, healsOnHit: 6,
     dollFace: true,
     ultName: 'Star Shower',
@@ -84,7 +84,7 @@ const CHARACTERS = [
     style: 'Heavy Hitter',
     color: '#9aa0a6',
     desc: 'Big, slow and incredibly strong. Every hit sends the enemy flying.',
-    skin: T.cobble, hair: T.stone, shirt: T.cobble, pants: T.stone, shoe: T.stone,
+    skin: T.cobble, hair: T.stone, shirt: T.cobble, accent: T.glowstone, pants: T.stone, shoe: T.stone,
     hp: 140, speed: 3.4, jump: 7.0, damage: 18, reach: 4.0, knockbackResist: 0.85,
     ultName: 'Quake Stomp',
     ultDesc: 'Slams the ground, sending a shockwave that flattens everything.',
@@ -101,7 +101,7 @@ const CHARACTERS = [
     style: 'Blazing Speed',
     color: '#ff7a18',
     desc: 'A fast fire ninja who dashes and throws flame shurikens.',
-    skin: T.skin, hair: T.hero_red, shirt: T.hero_red, pants: T.pants_dark, shoe: T.shoe,
+    skin: T.skin, hair: T.hero_red, shirt: T.hero_red, accent: T.glowstone, pants: T.pants_dark, shoe: T.shoe,
     hp: 88, speed: 6.0, jump: 9.8, damage: 11, reach: 3.3, canDash: true,
     ultName: 'Blazing Rush',
     ultDesc: 'Dash forward leaving a trail of fire that burns the enemy.',
@@ -120,9 +120,9 @@ function characterById(id) {
 
 /* ---------- friendly animals ---------- */
 const ANIMALS = [
-  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_snout,  leg: T.pig_skin, w: 0.9, h: 0.9, d: 1.3, speed: 1.1, tame: 'Oink!' },
-  { id: 'sheep',  name: 'Sheep',  body: T.wool,      face: T.wool,       leg: T.skin,     w: 0.9, h: 1.0, d: 1.3, speed: 1.0, tame: 'Baa!' },
-  { id: 'chick',  name: 'Chick',  body: T.chick,     face: T.beak,       leg: T.beak,     w: 0.6, h: 0.7, d: 0.6, speed: 1.4, tame: 'Peep!' },
+  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 0.9, h: 0.9, d: 1.3, speed: 1.1, tame: 'Oink!' },
+  { id: 'sheep',  name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 0.9, h: 1.0, d: 1.3, speed: 1.0, tame: 'Baa!' },
+  { id: 'chick',  name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.6, h: 0.7, d: 0.6, speed: 1.4, tame: 'Peep!' },
 ];
 
 function animalById(id) {

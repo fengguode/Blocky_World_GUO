@@ -447,7 +447,7 @@ const Particles = {
 
 /* Projectile visual definitions, indexed into the texture array */
 const PROJ_DEFS = {
-  web:      { tile: T.glass,    size: 0.28, glow: 0, gravity: false },
-  star:     { tile: T.glowstone,size: 0.3,  glow: 1, gravity: false },
-  shuriken: { tile: T.steel,    size: 0.26, glow: 0, gravity: true },
+  web:      { kind: 'web',      tile: T.glass,     size: 0.28, glow: 0, gravity: false },
+  star:     { kind: 'star',     tile: T.glowstone, size: 0.3,  glow: 1, gravity: false },
+  shuriken: { kind: 'shuriken', tile: T.steel,     size: 0.26, glow: 0, gravity: true },
 };

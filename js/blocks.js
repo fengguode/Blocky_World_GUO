@@ -296,7 +296,9 @@ T.eye        = pushTile('eye', function (d) {
 T.wool       = pushTile('wool', blotch([238, 238, 234], 10, 3, 18));
 T.pig_skin   = pushTile('pig_skin', speckle([238, 150, 156], 16));
 T.pig_snout  = pushTile('pig_snout', speckle([226, 118, 128], 14));
+T.sheep_face = pushTile('sheep_face', speckle([158, 137, 119], 12));
 T.chick      = pushTile('chick', speckle([246, 232, 148], 14));
+T.chick_wing = pushTile('chick_wing', speckle([224, 197, 104], 12));
 T.beak       = pushTile('beak', speckle([232, 168, 52], 14));
 
 /* ============================================================
