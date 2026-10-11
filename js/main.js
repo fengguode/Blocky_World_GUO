@@ -72,6 +72,7 @@ const Game = {
     renderDistAuto: true,
   },
   isTouch: false,
+  _touchUltReady: null,
   quality: 'auto',         // auto | high | low
   bot: null,
 
@@ -893,7 +894,7 @@ const Game = {
     document.getElementById('observe-hud').classList.remove('show');
     document.getElementById('pause').classList.remove('show');
     Touch.setVisible(true);
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
 
     this.players[0].char = characterById(this.pick.p1);
     this.players[1].char = characterById(this.pick.p2);
@@ -914,6 +915,13 @@ const Game = {
     Cam.pitch = -0.12;
     Input.requestLock(this.canvas);
     Audio.play('select');
+  },
+
+  setFightTouchUltReady(ready, force) {
+    const next = ready === true;
+    if (!force && this._touchUltReady === next) return;
+    this._touchUltReady = next;
+    if (this.isTouch) Touch.relabel('fight', next);
   },
 
   ensureFightArena() {
@@ -1008,7 +1016,7 @@ const Game = {
     UI.show('hud', true);
     Touch.reset(); Touch.setVisible(false);
     Input.releaseLock();
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
     UI.updateHUD(this.players[0], 'fight', 'Fight Arena — waiting for the shared match');
     if (window.Network) Network.updateFightLobby();
   },
@@ -1034,7 +1042,7 @@ const Game = {
     document.getElementById('pause').classList.remove('show');
     UI.show('hud', true);
     Touch.setVisible(true);
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
     this.ensureFightArena();
 
     const local = this.players[0], remote = this.players[1];
@@ -1799,7 +1807,7 @@ const Game = {
         (this.isTouch
           ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap ULT!' : Math.round(p1.ultMeter) + '%') + '</b>'
           : p1.char.ultName + ': <b>' + (ultReady ? 'READY! press L' : Math.round(p1.ultMeter) + '%') + '</b>'));
-      if (this.isTouch) Touch.relabel('fight', ultReady);
+      this.setFightTouchUltReady(ultReady);
 
     } else if (this.state === 'observe') {
       // touch: the stick flies, the ▲▼ buttons raise and lower the camera,
@@ -2152,7 +2160,8 @@ const Game = {
       Math.floor(camPos[2] / CHUNK) !== Math.floor(this._streamAt[2] / CHUNK);
     const worldChanged = this._streamWorld !== this.world;
     const distanceChanged = this._streamKeep !== keep;
-    const refresh = moved || worldChanged || distanceChanged || !Array.isArray(this._streamQueue);
+    const refresh = moved || worldChanged || distanceChanged || !Array.isArray(this._streamQueue) ||
+      !Array.isArray(this._generationQueue) || !Array.isArray(this._renderChunks);
     if (refresh) {
       // Generate and mesh nearest chunks first; never scan the full world.
       const wanted = [];
