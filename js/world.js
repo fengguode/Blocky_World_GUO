@@ -62,6 +62,9 @@ function smooth(t) { return t * t * (3 - 2 * t); }
 
 const STORYBOOK_CLEAR_RADIUS_SQ = STORYBOOK_CLEAR_RADIUS * STORYBOOK_CLEAR_RADIUS;
 const STORYBOOK_BLEND_RADIUS_SQ = STORYBOOK_BLEND_RADIUS * STORYBOOK_BLEND_RADIUS;
+const SUN_SPREAD_DX = [1,-1,0,0,0];
+const SUN_SPREAD_DY = [0,0,0,0,-1];
+const SUN_SPREAD_DZ = [0,0,1,-1,0];
 const STORYBOOK_BLEND_BY_RADIUS = new Float32Array(STORYBOOK_BLEND_RADIUS_SQ + 1);
 for (let r2 = STORYBOOK_CLEAR_RADIUS_SQ + 1; r2 <= STORYBOOK_BLEND_RADIUS_SQ; r2++) {
   STORYBOOK_BLEND_BY_RADIUS[r2] = smooth((Math.sqrt(r2) - STORYBOOK_CLEAR_RADIUS) /
@@ -467,19 +470,33 @@ class World {
   generateChunk(c) {
     c.allocate();
     c.maxY = 0;
-    const storyColumns = new Uint32Array(CHUNK * CHUNK);
     const hasStorybook = this.worldType !== 'flat' && this.seed === STORYBOOK_SEED;
+    const storyColumns = hasStorybook ? new Uint32Array(CHUNK * CHUNK) : null;
     const ox = c.cx * CHUNK, oz = c.cz * CHUNK;
     for (let z = 0; z < CHUNK; z++) {
       for (let x = 0; x < CHUNK; x++) {
         const wx = ox + x, wz = oz + z;
-        const storyDx = wx - WORLD_CENTRE, storyDz = wz - WORLD_CENTRE;
-        const fixedStoryGround = hasStorybook &&
-          storyDx * storyDx + storyDz * storyDz <= STORYBOOK_CLEAR_RADIUS_SQ;
-        // The fixed meadow and creek bank fully replace natural height in the clearing.
+        let story = 0, fixedStoryGround = false, storyDx = 0, storyDz = 0;
+        if (hasStorybook) {
+          storyDx = wx - WORLD_CENTRE; storyDz = wz - WORLD_CENTRE;
+          fixedStoryGround = storyDx * storyDx + storyDz * storyDz <= STORYBOOK_CLEAR_RADIUS_SQ;
+          // The fixed meadow and creek bank fully replace natural height in the clearing.
+        }
         const naturalHeight = fixedStoryGround ? 0 : this.heightAt(wx, wz);
-        const story = this.storybookColumn(wx, wz, naturalHeight);
-        storyColumns[z * CHUNK + x] = story || 0;
+        if (hasStorybook) {
+          if (storyDx >= -STORYBOOK_BLEND_RADIUS && storyDx <= STORYBOOK_BLEND_RADIUS &&
+              storyDz >= -STORYBOOK_BLEND_RADIUS && storyDz <= STORYBOOK_BLEND_RADIUS) {
+            const profileIndex = (storyDx + STORYBOOK_BLEND_RADIUS) * STORYBOOK_PROFILE_SIZE + storyDz + STORYBOOK_BLEND_RADIUS;
+            if (STORYBOOK_PROFILE_VALID[profileIndex]) {
+              const streamLevel = STORYBOOK_PROFILE_STREAM[profileIndex];
+              const blend = STORYBOOK_PROFILE_BLEND[profileIndex];
+              const groundY = Math.max(2, Math.floor(STORYBOOK_PROFILE_TARGET[profileIndex] * (1 - blend) + naturalHeight * blend));
+              const resolvedStream = streamLevel ? Math.max(1, Math.floor(streamLevel * (1 - blend) + SEA_LEVEL * blend)) : 0;
+              story = (groundY << 8) | (resolvedStream << 1) | STORYBOOK_PROFILE_CLEARING[profileIndex];
+            }
+          }
+          storyColumns[z * CHUNK + x] = story;
+        }
         const storyGround = story ? story >>> 8 : naturalHeight;
         const storyStream = story ? (story >>> 1) & 0x7f : 0;
         const h = storyGround;
@@ -527,9 +544,7 @@ class World {
         const surfaceY = this.surfaceY(c, x, z);
         if (surfaceY < 0) continue;
         const ground = c.get(x, surfaceY, z);
-        const story = storyColumns
-          ? storyColumns[z * CHUNK + x]
-          : (this.storybookColumn(wx, wz, this.heightAt(wx, wz)) || 0);
+        const story = storyColumns ? storyColumns[z * CHUNK + x] : 0;
         const inClearing = !!(story & 1);
         if (this.worldType !== 'flat' && !inClearing &&
             r > 0.986 && ground === 1 && surfaceY + 7 < WORLD_H) {
@@ -736,9 +751,10 @@ class World {
             if (c.light[i] === 0) continue;
             const id = c.blocks[i];
             if (id !== 0 && !isLiquid(id) && id !== 9) continue;
-            const nb = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
-            for (const [dx, dy, dz] of nb) {
-              const nx = x + dx, ny = y + dy, nz = z + dz;
+            for (let n = 0; n < SUN_SPREAD_DX.length; n++) {
+              const nx = x + SUN_SPREAD_DX[n];
+              const ny = y + SUN_SPREAD_DY[n];
+              const nz = z + SUN_SPREAD_DZ[n];
               if (nx < 0 || nx >= CHUNK || nz < 0 || nz >= CHUNK || ny < 0 || ny >= WORLD_H) continue;
               const j = Chunk.idx(nx, ny, nz);
               const nid = c.blocks[j];

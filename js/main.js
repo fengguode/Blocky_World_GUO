@@ -6,6 +6,10 @@
 const SAVE_KEY = 'blocky-world-local-save-v1';
 const ACTIVE_WORLD_KEY = 'blocky-world-selected-type';
 
+function isStorybookWorld(world) {
+  return !!world && world.worldType !== 'flat' && world.seed === STORYBOOK_SEED;
+}
+
 function migrateWorldSave(saved) {
   if (!saved || saved.worldSize === WORLD_SIZE) return saved;
   const hasExpandedCoordinates = saved.worldSize == null && (() => {
@@ -1903,7 +1907,7 @@ const Game = {
     const bottom = mix([0.10,0.13,0.24], [0.72,0.86,1.0]);
     bottom[0] += dawn * 0.12;
     const player = this.players && this.players[0];
-    const welcomeWarmth = this.world && this.world.seed === STORYBOOK_SEED && player &&
+    const welcomeWarmth = isStorybookWorld(this.world) && player &&
       Math.hypot(player.pos[0] - WORLD_CENTRE, player.pos[2] - WORLD_CENTRE) < 56;
     if (welcomeWarmth) {
       const warmTop = [0.48, 0.26, 0.39];
@@ -1992,7 +1996,7 @@ const Game = {
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
     gl.uniform1f(prog.u.uTime, this.time);
-    const showCenter = this.world && this.world.seed === STORYBOOK_SEED ? WORLD_CENTRE : -1000000;
+    const showCenter = isStorybookWorld(this.world) ? WORLD_CENTRE : -1000000;
     gl.uniform2f(prog.u.uStorybookCenter, showCenter, showCenter);
 
     // opaque

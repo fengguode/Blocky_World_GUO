@@ -18,7 +18,7 @@ const g = H.load({ seed: 1337 });
 
 const {
   World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS, HOTBAR_ITEMS,
-  CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, ANIMALS,
+  CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, ANIMALS, isStorybookWorld,
   Player, Fight, Bot, Particles, PROJ_DEFS, Game, M4, Observer, Cam, migrateWorldSave,
 } = g;
 
@@ -539,6 +539,40 @@ H.test('fixed showcase ground skips natural terrain noise for its spawn chunk', 
   H.eq(calls, 0, 'natural terrain height is irrelevant under the deterministic flat clearing surface');
 });
 
+H.test('non-showcase and flat chunk generation skips Storybook metadata work', () => {
+  for (const world of [new World(42), new World(1337, null, 'flat')]) {
+    let calls = 0;
+    const storybookColumn = world.storybookColumn;
+    world.storybookColumn = function (...args) { calls++; return storybookColumn.apply(this, args); };
+    world.generateChunk(world.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true));
+    H.eq(calls, 0, world.worldType + ' seed ' + world.seed + ' should not query Storybook columns');
+  }
+});
+
+H.test('Flat World with the Storybook seed receives no welcome palette or shader tint', () => {
+  const t = H.load({ boot: false });
+  const player = { pos: [WORLD_CENTRE, 29, WORLD_CENTRE] };
+  t.Game.players = [player];
+  const flat = new t.World(1337, null, 'flat');
+  const normal = new t.World(42);
+  const showcase = new t.World(1337);
+  H.eq(isStorybookWorld(flat), false, 'flat seed 1337 is not the Storybook world');
+  H.eq(isStorybookWorld(normal), false, 'other normal seeds are not the Storybook world');
+  H.eq(isStorybookWorld(showcase), true, 'normal seed 1337 keeps the Storybook world');
+  t.Game.world = flat;
+  const flatSky = t.Game.skyColors();
+  t.Game.world = normal;
+  const normalSky = t.Game.skyColors();
+  for (const key of ['top', 'bottom']) {
+    for (let i = 0; i < 3; i++) H.near(flatSky[key][i], normalSky[key][i], 1e-12,
+      'flat Storybook-seed sky should match an unthemed normal sky');
+  }
+  t.Game.world = showcase;
+  const showcaseSky = t.Game.skyColors();
+  H.assert(showcaseSky.top.some((value, i) => Math.abs(value - normalSky.top[i]) > 1e-6),
+    'the normal Storybook world keeps its welcome sky palette');
+});
+
 H.test('showcase column metadata packs ground, stream and clearing flags without changing terrain values', () => {
   const w = new World(1337);
   const x = WORLD_CENTRE, z = WORLD_CENTRE;
@@ -554,7 +588,11 @@ H.test('non-showcase random seeds keep their original terrain and sea-level wate
   const w = new World(42);
   const x = WORLD_CENTRE, z = WORLD_CENTRE;
   H.eq(w.storybookColumn(x, z, w.heightAt(x, z)), null, 'only the fixed storybook seed has a clearing');
-  H.eq(w.heightAt(x, z), new World(42).heightAt(x, z), 'random-seed terrain remains unchanged');
+  const c = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
+  w.generateChunk(c);
+  let hash = 2166136261 >>> 0;
+  for (const id of c.blocks) hash = Math.imul(hash ^ id, 16777619) >>> 0;
+  H.eq(hash, 1800347313, 'seed 42 center chunk block data matches the pre-showcase baseline');
 });
 
 H.test('flat worlds keep a grassy level surface and generate no trees', () => {
