@@ -294,8 +294,8 @@ const Network = {
   },
 
   saveWorld(world, options) {
-    if (this.visitRole === 'visitor' || this.visitRole === 'pending') return;
-    if (!this.serverMode || !this.profile || !this.ready) return;
+    if (this.visitRole === 'visitor' || this.visitRole === 'pending') return { status: 'failed', recoveryCopy: false };
+    if (!this.serverMode || !this.profile || !this.ready) return { status: 'failed', recoveryCopy: false };
     const worldType = world.worldType === 'flat' ? 'flat' : (world.worldType === 'normal' ? 'normal' : this.activeWorldType);
     world.worldType = worldType;
     this.activeWorldType = worldType;
@@ -308,17 +308,20 @@ const Network = {
     const edits = Array.isArray(world.edits) ? world.edits : [];
     const delta = edits.filter((edit) => baseEdits.get(this.editKey(edit)) !== edit[3]);
     this.pendingSave = Object.assign({}, world, { edits: delta, editPatch: true, replaceEdits });
-    this.persistRecovery();
+    const recoveryCopy = this.persistRecovery();
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(async () => {
       await this.flushSave();
     }, 350);
+    return { status: 'queued', recoveryCopy };
   },
 
   async flushSave(keepalive, suppressLock) {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (!this.serverMode || !this.profile || !this.ready || !this.pendingSave || !this.savedWorld) return true;
+    if (!this.serverMode) return true;
+    if (!this.profile || !this.ready) return false;
+    if (!this.pendingSave || !this.savedWorld) return true;
     try {
       const snapshot = this.pendingSave;
       const fullSnapshot = this.savedWorld;
@@ -944,14 +947,15 @@ const Network = {
   recoveryKey() { return 'blocky-world-server-recovery-v1:' + (this.profile ? this.profile.id : ''); },
 
   persistRecovery() {
-    if (!this.profile || !this.savedWorld || !this.pendingSave) return;
+    if (!this.profile || !this.savedWorld || !this.pendingSave) return false;
     try {
       localStorage.setItem(this.recoveryKey(), JSON.stringify({
         baseRevision: this.serverRevision,
         replaceEdits: !!(this.pendingSave && this.pendingSave.replaceEdits),
         world: this.savedWorld,
       }));
-    } catch (_) { /* recovery is best-effort when browser storage is unavailable */ }
+      return localStorage.getItem(this.recoveryKey()) !== null;
+    } catch (_) { return false; /* Browser storage may be unavailable. */ }
   },
 
   clearRecovery() {

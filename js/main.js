@@ -193,12 +193,21 @@ const Game = {
     });
   },
 
-  handleRuntimeError(error) {
+  async handleRuntimeError(error) {
     if (this.runtimeFailure) return;
     this.runtimeFailure = true;
     console.error('Game paused after a runtime error:', error);
-    let saved = false;
-    try { saved = this.save() === true; } catch (_) { /* Keep the recovery UI available. */ }
+    let recoveryStatus = 'failed';
+    try {
+      const result = this.save();
+      if (window.Network && Network.serverMode) {
+        const queued = result && result.status === 'queued';
+        const serverSaved = queued && await Network.flushSave(false, true);
+        recoveryStatus = serverSaved ? 'saved' : (result && result.recoveryCopy ? 'recovery' : 'failed');
+      } else {
+        recoveryStatus = result && result.status === 'saved' ? 'saved' : 'failed';
+      }
+    } catch (_) { /* Keep the recovery UI available even if persistence throws. */ }
     if (this.state !== 'menu' && this.state !== 'loading') {
       this.state = 'paused';
       this.paused = true;
@@ -208,9 +217,11 @@ const Game = {
         UI.show('pause-character-panel', false);
         UI.show('pause-extra', false);
         const recoveryMessage = document.getElementById('runtime-error-message');
-        recoveryMessage.textContent = saved
-          ? 'The game paused after an error. Your progress was saved for recovery. Reload the page to continue.'
-          : 'The game paused after an error, but a recovery copy could not be confirmed. Reloading may lose recent progress.';
+        recoveryMessage.textContent = recoveryStatus === 'saved'
+          ? 'The game paused after an error. Your progress was saved. Reload the page to continue.'
+          : recoveryStatus === 'recovery'
+            ? 'The PC could not confirm the save, but a recovery copy is stored on this device. Reload to recover it.'
+            : 'The game paused after an error, but neither a save nor a recovery copy could be confirmed. Reloading may lose recent progress.';
         recoveryMessage.classList.remove('hidden');
         document.getElementById('btn-runtime-reload').classList.remove('hidden');
         Touch.reset();
@@ -1333,9 +1344,10 @@ const Game = {
       };
       if (window.Network && Network.serverMode) {
         if (Network.visitRole === 'owner' && Network.visitActive) return false;
-        Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
-      } else localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
-      return true;
+        return Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
+      }
+      localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
+      return { status: 'saved' };
     } catch (e) { return false; /* storage may be blocked; the game still works */ }
   },
 
@@ -2208,7 +2220,9 @@ const Game = {
 
     // Camera-relative hand is drawn last so nearby terrain never hides it.
     if (this.state === 'play' && !Cam.thirdPerson && this.players[0]) {
-      gl.clear(gl.DEPTH_BUFFER_BIT);
+      // Keep scene depth intact: the hand should be occluded by nearby blocks,
+      // and clearing here would also let the later transparent-water pass draw
+      // over opaque terrain.
       this.drawBuildHand(prog, this.players[0], true);
     }
     gl.disable(gl.BLEND);

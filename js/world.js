@@ -562,7 +562,7 @@ class World {
             const i = Chunk.idx(x, y, z);
             if (c.light[i] === 0) continue;
             const id = c.blocks[i];
-            if (id !== 0 && id !== 12 && id !== 9) continue;
+            if (id !== 0 && !isLiquid(id) && id !== 9) continue;
             const nb = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
             for (const [dx, dy, dz] of nb) {
               const nx = x + dx, ny = y + dy, nz = z + dz;

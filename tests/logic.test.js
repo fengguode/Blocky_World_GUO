@@ -912,6 +912,16 @@ H.test('flowing water attenuates sunlight and carries block light', () => {
   H.eq(w.getLight(BASE, y, BASE), 14, 'flowing water attenuates vertical sunlight');
   H.assert(w.getBlockLight(BASE + 1, y, BASE) > 0, 'block light passes through flowing water');
 });
+H.test('flowing water continues lateral sunlight propagation', () => {
+  const { w, chunk, y, BASE } = scratchWorld(70);
+  const localX = BASE - chunk.cx * CHUNK, localZ = BASE - chunk.cz * CHUNK;
+  chunk.light.fill(0);
+  chunk.blocks[Chunk.idx(localX, y, localZ)] = 18;
+  chunk.light[Chunk.idx(localX, y, localZ)] = 10;
+  w.bspreadSun(chunk);
+  H.eq(chunk.light[Chunk.idx(localX + 1, y, localZ)], 9,
+    'sunlight should spread out of a flowing-water cell');
+});
 H.test('water refills a dug cell after a placed block is removed', () => {
   const { w, chunk, y, BASE } = scratchWorld(66);
   for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++)
@@ -931,6 +941,18 @@ H.test('leaves go to the depth-writing cutout pass', () => {
   H.eq(quadCount(mesh), 0, 'leaves keep their texture holes');
   H.eq(cutoutQuadCount(mesh), 6, 'leaf faces render with depth writes');
   H.eq(transQuadCount(mesh), 0, 'leaves are not blended with the background');
+});
+H.test('flowing-water blocks do not cast ambient occlusion', () => {
+  const mesher = fs.readFileSync(path.join(__dirname, '..', 'js', 'mesher.js'), 'utf8');
+  H.assert(/AO_OCCLUDES\[18\]\s*=\s*AO_OCCLUDES\[19\]\s*=\s*AO_OCCLUDES\[20\]\s*=\s*AO_OCCLUDES\[21\]\s*=\s*0/.test(mesher),
+    'all flowing-water levels should use the same non-occluding AO treatment as source water');
+});
+H.test('first-person hand preserves scene depth for the transparent pass', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  H.assert(!/clear\(gl\.DEPTH_BUFFER_BIT\)/.test(main),
+    'the first-person hand must not clear terrain depth before transparent water renders');
+  H.assert(/drawBuildHand\(prog, this\.players\[0\], true\)/.test(main),
+    'the first-person hand remains rendered');
 });
 
 H.test('water hides its faces against other water', () => {
@@ -2965,7 +2987,7 @@ H.test('a frame error saves progress and leaves a recoverable pause', () => {
   Game.runtimeFailure = false;
   Game.lastFrameAt = 0;
   Game.frameInterval = 16;
-  Game.save = () => { saved = true; return true; };
+  Game.save = () => { saved = true; return { status: 'saved' }; };
   Game.loop = () => { throw new Error('simulated frame crash'); };
   try {
     Game.scheduleFrame();
@@ -2975,12 +2997,43 @@ H.test('a frame error saves progress and leaves a recoverable pause', () => {
     H.eq(Game.state, 'paused', 'the player sees a pause state rather than a dead loop');
     H.eq(g.document.getElementById('runtime-error-message').classList.contains('hidden'), false,
       'the recovery instructions are visible');
+    H.assert(/progress was saved/.test(g.document.getElementById('runtime-error-message').textContent),
+      'the recovery message should only say saved for a confirmed local save');
     H.eq(pendingFrames.length, 1, 'animation scheduling survives the exception');
   } finally {
     g.windowStub.requestAnimationFrame = oldRaf;
     console.error = oldError;
     Game.loop = oldLoop;
     Game.save = oldSave;
+    Game.state = oldState;
+    Game.paused = oldPaused;
+    Game.runtimeFailure = oldFailure;
+  }
+});
+H.test('server save failure is not reported as confirmed progress', async () => {
+  const network = g.Network;
+  const oldSave = Game.save;
+  const oldFlush = network.flushSave;
+  const oldServerMode = network.serverMode;
+  const oldState = Game.state;
+  const oldPaused = Game.paused;
+  const oldFailure = Game.runtimeFailure;
+  network.serverMode = true;
+  network.flushSave = async () => false;
+  Game.save = () => ({ status: 'queued', recoveryCopy: false });
+  Game.state = 'play';
+  Game.paused = false;
+  Game.runtimeFailure = false;
+  try {
+    await Game.handleRuntimeError(new Error('simulated unsaved crash'));
+    const message = g.document.getElementById('runtime-error-message').textContent;
+    H.assert(/neither a save nor a recovery copy could be confirmed/.test(message),
+      'a failed server flush without a local copy must report possible data loss');
+    H.assert(!/progress was saved/.test(message), 'never claim the server save succeeded');
+  } finally {
+    Game.save = oldSave;
+    network.flushSave = oldFlush;
+    network.serverMode = oldServerMode;
     Game.state = oldState;
     Game.paused = oldPaused;
     Game.runtimeFailure = oldFailure;

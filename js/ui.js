@@ -22,8 +22,9 @@ const UI = {
       }
     };
     $('btn-resume').onclick = () => Game.togglePause(false);
-    $('btn-runtime-reload').onclick = () => {
+    $('btn-runtime-reload').onclick = async () => {
       Game.save();
+      if (window.Network && Network.serverMode) await Network.flushSave(false, true);
       window.location.reload();
     };
     $('btn-pause-character').onclick = () => { UI.showPlayerCharacterSelect('pause'); };
