@@ -144,6 +144,79 @@ H.test('every block has three valid texture layers', () => {
   }
 });
 
+H.test('every world block texture has a limited-color pixel motif', () => {
+  const ids = new Set();
+  for (const block of g.BLOCKS) {
+    if (block.id === 0) continue;
+    ids.add(block.top); ids.add(block.side); ids.add(block.bottom);
+  }
+
+  for (const id of ids) {
+    const data = g.ATLAS[id].data;
+    const colors = new Set();
+    let hasCluster = false;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const i = (y * 16 + x) * 4;
+      colors.add(data[i] + ',' + data[i + 1] + ',' + data[i + 2] + ',' + data[i + 3]);
+      if (x < 15 && y < 15 && data[i + 3] > 0) {
+        const right = i + 4, down = i + 64, diagonal = i + 68;
+        if (data[i] === data[right] && data[i + 1] === data[right + 1] &&
+            data[i + 2] === data[right + 2] && data[i + 3] === data[right + 3] &&
+            data[i] === data[down] && data[i + 1] === data[down + 1] &&
+            data[i + 2] === data[down + 2] && data[i + 3] === data[down + 3] &&
+            data[i] === data[diagonal] && data[i + 1] === data[diagonal + 1] &&
+            data[i + 2] === data[diagonal + 2] && data[i + 3] === data[diagonal + 3]) {
+          hasCluster = true;
+        }
+      }
+    }
+    H.assert(colors.size <= 12, g.ATLAS[id].name + ' has noisy per-pixel color variation (' + colors.size + ' colors)');
+    H.assert(hasCluster, g.ATLAS[id].name + ' lacks a readable pixel cluster');
+  }
+});
+
+H.test('glass and water pixel highlights keep their translucent alpha', () => {
+  for (const name of ['glass', 'water']) {
+    const tile = g.ATLAS.find(entry => entry.name === name);
+    H.assert(tile, name + ' texture should exist');
+    let maxAlpha = 0;
+    for (let i = 3; i < tile.data.length; i += 4) maxAlpha = Math.max(maxAlpha, tile.data[i]);
+    H.assert(maxAlpha < 255, name + ' highlights must not turn into opaque pixels');
+  }
+});
+
+H.test('pig, sheep, and chick silhouettes have distinct proportions', () => {
+  const pig = ANIMALS.find(a => a.id === 'pig');
+  const sheep = ANIMALS.find(a => a.id === 'sheep');
+  const chick = ANIMALS.find(a => a.id === 'chick');
+  H.assert(pig.d > sheep.d, 'pig should read longer than sheep');
+  H.assert(sheep.h > pig.h, 'sheep should read taller than pig');
+  H.assert(chick.w < pig.w && chick.h < sheep.h && chick.d < sheep.d, 'chick should remain visibly smaller');
+});
+
+H.test('animal renderers draw visible faces, multiple colors, and silhouette details', () => {
+  const originalDrawBox = Game.drawBox;
+  try {
+    for (const id of ['pig', 'sheep', 'chick']) {
+      const def = ANIMALS.find(a => a.id === id);
+      const calls = [];
+      Game.drawBox = (prog, pos, size, tile, tint, yaw, alpha) => calls.push({ pos, size, tile, tint, yaw, alpha });
+      Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
+      const tiles = new Set(calls.map(c => c.tile));
+      H.assert(calls.length >= (id === 'chick' ? 13 : 14), id + ' needs visible silhouette and face detail');
+      H.assert(tiles.size >= 3, id + ' should use multiple colors/materials');
+      H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
+      if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
+      if (id === 'sheep') {
+        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.4 && c.size[1] >= 0.25 && c.size[1] < 0.3 && c.size[2] >= 0.38).length,
+          3, 'sheep needs three visible fleece puffs for its silhouette');
+      }
+      if (id === 'chick') H.assert(calls.some(c => c.tile === def.beak), 'chick needs a visible beak');
+    }
+  } finally {
+    Game.drawBox = originalDrawBox;
+  }
+});
 H.test('every hotbar entry is a real, solid block', () => {
   H.eq(g.HOTBAR_BLOCKS.length, 9);
   for (const id of g.HOTBAR_BLOCKS) {
