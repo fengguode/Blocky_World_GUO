@@ -272,10 +272,23 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
       if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
       if (id === 'sheep') {
-        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.4 && c.size[1] >= 0.25 && c.size[1] < 0.3 && c.size[2] >= 0.38).length,
-          3, 'sheep needs three visible fleece puffs for its silhouette');
+        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.3 && c.size[1] >= 0.24 && c.size[1] < 0.3 && c.size[2] >= 0.3).length,
+          6, 'sheep needs a six-puff wool outline');
       }
-      if (id === 'chick') H.assert(calls.some(c => c.tile === def.beak), 'chick needs a visible beak');
+      if (id === 'pig') {
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
+        H.assert(body && body.size[0] > body.size[2], 'pig should have a broad, low silhouette');
+      }
+      if (id === 'sheep') {
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
+        H.assert(body && body.size[1] > calls[0].size[1], 'sheep fleece mass should rise above its legs');
+      }
+      if (id === 'chick') {
+        H.assert(calls.some(c => c.tile === def.beak && c.size[0] >= 0.2), 'chick needs a prominent beak');
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
+        const head = calls.find(c => c.tile === def.face && c.size[1] > 0.5 && c !== body);
+        H.assert(body && head && head.size[0] >= body.size[0] * 0.8, 'chick should have a compact body and large readable head');
+      }
     }
   } finally {
     Game.drawBox = originalDrawBox;
