@@ -477,6 +477,66 @@ H.test('terrain is deterministic for a given seed', () => {
   }
 });
 
+H.test('the fixed-seed welcome clearing is deterministic and saves only player edits', () => {
+  const first = new World(1337), second = new World(1337);
+  first.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  second.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  const x = WORLD_CENTRE, z = WORLD_CENTRE;
+  const samples = [
+    [0, 29, 0], [-22, 34, -12], [-25, 30, -12],
+    [12, 29, -18], [-9, 36, -22], [-9, 41, -22],
+    [-28, 30, -5], [-26, 30, -5], [-8, 25, 14], [0, 25, 16],
+  ];
+  for (const [dx, y, dz] of samples) {
+    const a = first.getBlock(x + dx, y, z + dz);
+    H.eq(second.getBlock(x + dx, y, z + dz), a, 'same seed / coordinates must regenerate the same clearing');
+  }
+  H.eq(first.getBlock(x, 29, z), 1, 'the meadow is grassy');
+  H.eq(first.getBlock(x - 22, 34, z - 12), 6, 'the first cottage has a stepped brick roof');
+  H.eq(first.getBlock(x + 12, 29, z - 18), 8, 'the second cottage has a plank floor');
+  H.eq(first.getBlock(x - 9, 30, z - 22), 7, 'the treehouse trunk rises above the meadow');
+  H.eq(first.getBlock(x - 28, 30, z - 5), 22, 'a rose patch grows by the clearing');
+  H.eq(first.getBlock(x - 15, 28, z + 14), 12, 'the upstream stream is raised to meadow level');
+  H.eq(first.getBlock(x - 8, 25, z + 14), 12, 'the stream continues below its short drop');
+  H.eq(first.getBlock(x, 25, z + 16), 12, 'the downstream water keeps flowing through the clearing');
+  H.eq(first.edits.size, 0, 'generated storybook scenery is not recorded as a player edit');
+});
+
+H.test('clearing respects saved edits and leaves Flat World level and treeless', () => {
+  const x = WORLD_CENTRE, z = WORLD_CENTRE;
+  const shared = H.makeStorage();
+  const first = H.load({ storage: shared, boot: false });
+  const edited = new first.World(1337);
+  edited.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  first.Game.world = first.World.world = edited;
+  first.Game.players[0] = new first.Player(edited, first.characterById('steve'));
+  first.Game.save();
+  H.eq(H.savedData(shared).edits.length, 0, 'the generated clearing is not serialized as player edits');
+  H.eq(edited.setBlock(x - 22, 34, z - 12, 16), true, 'a player can edit the cottage roof');
+  first.Game.save();
+
+  const reload = H.load({ storage: shared, boot: false });
+  const saved = H.savedData(shared);
+  const restored = new reload.World(saved.seed, saved.edits);
+  restored.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  H.eq(restored.getBlock(x - 22, 34, z - 12), 16, 'the edited roof survives save, reload, and deterministic regeneration');
+
+  const flat = new World(1337, null, 'flat');
+  const fc = flat.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
+  flat.generateChunk(fc);
+  H.eq(flat.getBlock(x, SEA_LEVEL, z), 1, 'flat center remains grassy at sea level');
+  H.eq(flat.getBlock(x - 22, 29, z - 12), 0, 'flat world gets no generated cottage');
+  H.assert(!fc.blocks.includes(22) && !fc.blocks.includes(23) && !fc.blocks.includes(24),
+    'flat worlds remain flower-free');
+});
+
+H.test('non-showcase random seeds keep their original terrain and sea-level water', () => {
+  const w = new World(42);
+  const x = WORLD_CENTRE, z = WORLD_CENTRE;
+  H.eq(w.storybookColumn(x, z, w.heightAt(x, z)), null, 'only the fixed storybook seed has a clearing');
+  H.eq(w.heightAt(x, z), new World(42).heightAt(x, z), 'random-seed terrain remains unchanged');
+});
+
 H.test('flat worlds keep a grassy level surface and generate no trees', () => {
   const w = new World(42, null, 'flat');
   const c = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
