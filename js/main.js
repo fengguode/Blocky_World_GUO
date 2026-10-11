@@ -4,12 +4,14 @@
    ============================================================ */
 
 const SAVE_KEY = 'blocky-world-local-save-v1';
+const ACTIVE_WORLD_KEY = 'blocky-world-selected-type';
 
 const Game = {
   state: 'loading',       // loading | menu | play | fight | observe | paused
   canvas: null,
   gl: null,
   world: null,
+  activeWorldType: 'normal',
   players: [],
   animals: [],
   mode: 'play',
@@ -429,7 +431,8 @@ const Game = {
     UI.show('loading', true);
 
     const seed = this.pendingSeed !== undefined ? this.pendingSeed : (this.saved ? this.saved.seed : 1337);
-    World.world = new World(seed, this.saved && this.saved.edits);
+    const worldType = this.pendingWorldType || this.activeWorldType || 'normal';
+    World.world = new World(seed, this.saved && this.saved.edits, worldType);
     this.world = World.world;
 
     // hand the world to the camera helper
@@ -703,7 +706,7 @@ const Game = {
     const seed = Math.floor(Math.random() * 100000);
     this.pendingSeed = seed;
     this.saved = null;
-    if (!window.Network || !Network.serverMode) localStorage.removeItem(SAVE_KEY);
+    if (!window.Network || !Network.serverMode) localStorage.removeItem(this.saveKey(this.activeWorldType));
     this.state = 'loading';
     this.buildWorld(this.settings.renderDist).then(() => {
       this.state = 'menu';
@@ -713,12 +716,61 @@ const Game = {
     });
   },
 
+  saveKey(worldType) {
+    return worldType === 'flat' ? SAVE_KEY + ':flat' : SAVE_KEY;
+  },
+
+  async selectWorld(worldType) {
+    worldType = worldType === 'flat' ? 'flat' : 'normal';
+    if (window.Network && Network.visitActive) {
+      UI.toast('End the visit before switching worlds.');
+      return;
+    }
+    if (worldType === this.activeWorldType) { UI.showMainMenu(); return; }
+    this.save();
+    if (window.Network && Network.serverMode) {
+      try {
+        this.saved = await Network.activateWorld(worldType);
+      } catch (error) {
+        UI.toast(error.message || 'Could not open that world.');
+        return;
+      }
+    } else {
+      const raw = localStorage.getItem(this.saveKey(worldType));
+      this.saved = raw ? JSON.parse(raw) : null;
+      Network.activeWorldType = worldType;
+      try { localStorage.setItem(ACTIVE_WORLD_KEY, worldType); } catch (_) {}
+    }
+    this.activeWorldType = worldType;
+    if (this.saved && this.saved.settings) {
+      this.settings = Object.assign({}, this.settings, this.saved.settings);
+      Input.sensitivity = this.settings.sensitivity;
+      this.renderDist = this.settings.renderDist;
+    }
+    if (this.saved && this.saved.pick) this.pick = this.saved.pick;
+    if (this.saved && Number.isInteger(this.saved.slot)) this.selectedSlot = this.saved.slot;
+    this.pendingWorldType = worldType;
+    this.pendingSeed = this.saved ? this.saved.seed : Math.floor(Math.random() * 100000);
+    this.state = 'loading';
+    await this.buildWorld(this.settings.renderDist);
+    this.pendingSeed = undefined;
+    this.pendingWorldType = undefined;
+    this.state = 'menu';
+    if (!this.saved) this.save(true);
+    UI.showMainMenu();
+    UI.toast(worldType === 'flat' ? 'Flat world ready.' : 'Normal world ready.');
+  },
+
   async enterSharedWorld(sharedWorld) {
     const localPick = this.pick.p1;
+    this.activeWorldType = sharedWorld.worldType === 'flat' ? 'flat' : 'normal';
+    this.pendingWorldType = this.activeWorldType;
+    Network.activeWorldType = this.activeWorldType;
     this.saved = Object.assign({}, sharedWorld, { player1: null, pick: null });
     this.pendingSeed = sharedWorld.seed;
     await this.buildWorld(this.settings.renderDist);
     this.pendingSeed = undefined;
+    this.pendingWorldType = undefined;
     this.saved = Network.savedWorld;
     this.pick.p1 = localPick;
     this.players[0].char = characterById(localPick);
@@ -746,12 +798,16 @@ const Game = {
     this.state = 'loading';
     this.paused = true;
     this.saved = Network.savedWorld;
+    this.activeWorldType = this.saved.worldType === 'flat' ? 'flat' : 'normal';
+    Network.activeWorldType = this.activeWorldType;
+    this.pendingWorldType = this.activeWorldType;
     this.pendingSeed = this.saved.seed;
     if (this.saved.settings) this.settings = Object.assign(this.settings, this.saved.settings);
     if (this.saved.pick) this.pick = this.saved.pick;
     if (Number.isInteger(this.saved.slot)) this.selectedSlot = this.saved.slot;
     await this.buildWorld(this.settings.renderDist);
     this.pendingSeed = undefined;
+    this.pendingWorldType = undefined;
     this.saved = Network.savedWorld;
     this.players[1].networkRemote = false;
     this.state = 'menu';
@@ -769,6 +825,7 @@ const Game = {
     try {
       const p = this.players[0];
       const snapshot = {
+        worldType: this.activeWorldType,
         seed: this.world ? this.world.seed : 1337,
         player1: p ? p.pos.slice() : null,
         slot: this.selectedSlot,
@@ -782,22 +839,26 @@ const Game = {
       if (window.Network && Network.serverMode) {
         if (Network.visitRole === 'owner' && Network.visitActive) return;
         Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
-      } else localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
+      } else localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
     } catch (e) { /* storage may be blocked; the game still works */ }
   },
 
   load() {
     try {
-      let raw = window.Network && Network.serverMode ? null : localStorage.getItem(SAVE_KEY);
+      this.activeWorldType = localStorage.getItem(ACTIVE_WORLD_KEY) === 'flat' ? 'flat' : 'normal';
+      this.pendingWorldType = this.activeWorldType;
+      let raw = window.Network && Network.serverMode ? null : localStorage.getItem(this.saveKey(this.activeWorldType));
       if (window.Network && Network.serverMode) {
         this.saved = Network.savedWorld;
       } else if (raw) {
         this.saved = JSON.parse(raw);
-      } else if (!(window.Network && Network.serverMode)) {
+      } else if (this.activeWorldType === 'normal' && !(window.Network && Network.serverMode)) {
         // Migrate a prior local save by its game-specific data shape while
         // leaving the original browser entry untouched.
         for (let i = 0; i < localStorage.length; i++) {
-          const candidate = localStorage.getItem(localStorage.key(i));
+          const key = localStorage.key(i);
+          if (key === ACTIVE_WORLD_KEY || key === this.saveKey('flat')) continue;
+          const candidate = localStorage.getItem(key);
           try {
             const value = JSON.parse(candidate);
             if (value && Number.isInteger(value.seed) && value.pick && typeof value.pick === 'object' &&

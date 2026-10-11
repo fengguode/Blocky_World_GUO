@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const H = require('./harness');
 const g = H.load({ seed: 1337 });
 
@@ -247,6 +248,21 @@ H.test('terrain is deterministic for a given seed', () => {
   for (let i = 0; i < 60; i++) {
     H.eq(a.heightAt(CX + i * 3 - 90, CX + i * 5 - 150), b.heightAt(CX + i * 3 - 90, CX + i * 5 - 150));
   }
+});
+
+H.test('flat worlds keep a grassy level surface and generate no trees', () => {
+  const w = new World(42, null, 'flat');
+  const c = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
+  w.generateChunk(c);
+  const base = CENTRE_CHUNK * CHUNK;
+  for (let z = 0; z < CHUNK; z++) {
+    for (let x = 0; x < CHUNK; x++) {
+      H.eq(w.heightAt(base + x, base + z), SEA_LEVEL, 'flat height');
+      H.eq(c.get(x, SEA_LEVEL, z), 1, 'flat surface should be grass');
+    }
+  }
+  H.assert(!c.blocks.includes(7), 'flat terrain should not generate tree trunks');
+  H.assert(!c.blocks.includes(9), 'flat terrain should not generate tree leaves');
 });
 
 H.test('different seeds produce genuinely different landscapes', () => {
@@ -1967,6 +1983,93 @@ H.test('settings survive a save and reload', () => {
   H.eq(second.Game.pick.p2, 'doll', 'player two character');
   H.eq(second.Game.pick.p2bot, false, 'bot preference');
   H.eq(second.Game.selectedSlot, 5, 'hotbar slot');
+});
+
+H.test('flat and normal worlds keep separate local saves', () => {
+  const shared = H.makeStorage();
+  const first = H.load({ storage: shared, boot: false });
+  first.Game.activeWorldType = 'normal';
+  first.Game.world = first.World.world = new first.World(111);
+  first.Game.save();
+  first.storage.setItem('blocky-world-selected-type', 'flat');
+  first.Game.activeWorldType = 'flat';
+  first.Game.world = first.World.world = new first.World(222, null, 'flat');
+  first.Game.save();
+
+  H.eq(JSON.parse(first.storage.getItem('blocky-world-local-save-v1')).seed, 111, 'normal save seed');
+  H.eq(JSON.parse(first.storage.getItem('blocky-world-local-save-v1:flat')).seed, 222, 'flat save seed');
+
+  const flatLoad = H.load({ storage: shared, boot: false });
+  H.eq(flatLoad.Game.activeWorldType, 'flat', 'the selected world type');
+  H.eq(flatLoad.Game.saved.seed, 222, 'the flat world should load its own save');
+  first.storage.setItem('blocky-world-selected-type', 'normal');
+  const normalLoad = H.load({ storage: shared, boot: false });
+  H.eq(normalLoad.Game.saved.seed, 111, 'the normal world should retain its own save');
+});
+
+H.test('server recovery uses its own world type and revision', () => {
+  const script = String.raw`    const assert = require('assert');
+    const fs = require('fs');
+    const vm = require('vm');
+    const source = fs.readFileSync('js/network.js', 'utf8');
+    function fixture(flatRevision) {
+      const values = new Map();
+      const localStorage = {
+        getItem: (key) => values.has(key) ? values.get(key) : null,
+        setItem: (key, value) => values.set(key, String(value)),
+        removeItem: (key) => values.delete(key),
+      };
+      const calls = [];
+      const context = {
+        window: {}, document: { addEventListener() {}, getElementById() { return null; } },
+        localStorage, location: { protocol: 'https:' }, navigator: {}, console,
+        setTimeout() { return 1; }, clearTimeout() {}, Game: { activeWorldType: 'normal' },
+      };
+      vm.createContext(context);
+      vm.runInContext(source, context);
+      const network = context.window.Network;
+      network.serverMode = true;
+      network.ready = true;
+      network.profile = { id: 'p1' };
+      network.activeWorldType = 'normal';
+      network.serverRevision = 10;
+      network.saveRevision = 10;
+      network.savedWorld = { worldType: 'normal', revision: 10, seed: 100, edits: [] };
+      network.lastSavedSeed = 100;
+      network.request = async (url, options) => {
+        calls.push({ url, options });
+        if (options && options.method === 'PUT') return { revision: flatRevision + 1 };
+        if (url.includes('type=flat')) return { world: { revision: flatRevision, seed: 222, edits: [] } };
+        return { world: { revision: 10, seed: 100, edits: [] } };
+      };
+      return { context, network, localStorage, calls };
+    }
+    (async () => {
+      const recovery = fixture(2);
+      recovery.localStorage.setItem(recovery.network.recoveryKey(), JSON.stringify({
+        baseRevision: 2,
+        world: { worldType: 'flat', revision: 2, seed: 222, edits: [] },
+      }));
+      await recovery.network.restoreRecovery();
+      assert.strictEqual(recovery.network.activeWorldType, 'flat');
+      assert.strictEqual(recovery.context.Game.activeWorldType, 'flat');
+      await recovery.network.flushSave();
+      const write = recovery.calls.find((call) => call.options && call.options.method === 'PUT');
+      assert(write && write.url.includes('type=flat'), 'recovery must be written to the flat save');
+
+      const conflict = fixture(3);
+      conflict.network.showRecoveryConflict = () => {};
+      conflict.localStorage.setItem(conflict.network.recoveryKey(), JSON.stringify({
+        baseRevision: 2,
+        world: { worldType: 'flat', revision: 2, seed: 222, edits: [] },
+      }));
+      await conflict.network.restoreRecovery();
+      assert.strictEqual(conflict.network.serverRevision, 3, 'compare against flat server revision');
+      assert(conflict.network.recoveryConflict, 'a newer flat save should show a conflict');
+    })().catch((error) => { console.error(error); process.exit(1); });
+  `;
+  const result = spawnSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+  H.eq(result.status, 0, result.stderr || 'recovery regression subprocess failed');
 });
 
 H.test('a render distance the player chose survives the auto profile', () => {

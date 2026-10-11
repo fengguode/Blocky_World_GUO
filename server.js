@@ -103,12 +103,14 @@ function setCookie(res, token) {
 function clearCookie(res) {
   res.setHeader('Set-Cookie', COOKIE + '=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
 }
-function savePath(userId) { return path.join(DATA_DIR, 'world-' + userId + '.json'); }
-async function readWorld(userId) {
-  const fallback = { version: 2, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+function safeWorldType(value) { return value === 'flat' ? 'flat' : 'normal'; }
+function savePath(userId, worldType) { return path.join(DATA_DIR, 'world-' + userId + (safeWorldType(worldType) === 'flat' ? '-flat' : '') + '.json'); }
+async function readWorld(userId, worldType) {
+  worldType = safeWorldType(worldType);
+  const fallback = { version: 2, revision: 0, worldType, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
   let raw;
   try {
-    raw = await fs.promises.readFile(savePath(userId), 'utf8');
+    raw = await fs.promises.readFile(savePath(userId, worldType), 'utf8');
   } catch (e) {
     if (e.code === 'ENOENT') return fallback;
     throw new Error('Could not read the saved world. No changes were made.');
@@ -119,13 +121,17 @@ async function readWorld(userId) {
   if (!world || world.version !== 2 || !Number.isInteger(world.seed))
     throw new Error('The saved world uses an unsupported format. It was left untouched; restore a compatible backup before saving again.');
   if (!Number.isSafeInteger(world.revision) || world.revision < 0) world.revision = 0;
+  world.worldType = worldType;
   return world;
 }
-async function writeWorld(userId, world, commitAllowed) {
-  const previous = worldWrites.get(userId) || Promise.resolve();
+async function writeWorld(userId, world, commitAllowed, worldType) {
+  worldType = safeWorldType(worldType || world.worldType);
+  world.worldType = worldType;
+  const writeKey = userId + ':' + worldType;
+  const previous = worldWrites.get(writeKey) || Promise.resolve();
   const write = previous.catch(() => {}).then(async () => {
     if (commitAllowed && !commitAllowed()) throw Object.assign(new Error('The live visit ended before this change could be saved.'), { status: 410 });
-    const current = await readWorld(userId);
+    const current = await readWorld(userId, worldType);
     if (current.revision >= Number.MAX_SAFE_INTEGER) {
       throw Object.assign(new Error('The world save revision limit has been reached.'), { status: 507 });
     }
@@ -157,7 +163,7 @@ async function writeWorld(userId, world, commitAllowed) {
       if (JSON.stringify(persisted) === JSON.stringify(current)) return;
       throw Object.assign(new Error('A different world save already exists at this revision. Refresh and sign in again.'), { status: 409 });
     }
-    const file = savePath(userId), temp = file + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+    const file = savePath(userId, worldType), temp = file + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
     try {
       await fs.promises.writeFile(temp, JSON.stringify(persisted), { mode: 0o600 });
       if (commitAllowed && !commitAllowed()) throw Object.assign(new Error('The live visit ended before this change could be saved.'), { status: 410 });
@@ -167,9 +173,9 @@ async function writeWorld(userId, world, commitAllowed) {
       throw error;
     }
   });
-  worldWrites.set(userId, write);
+  worldWrites.set(writeKey, write);
   try { await write; }
-  finally { if (worldWrites.get(userId) === write) worldWrites.delete(userId); }
+  finally { if (worldWrites.get(writeKey) === write) worldWrites.delete(writeKey); }
   return world.revision;
 }
 
@@ -225,7 +231,7 @@ async function persistVisitEdits(room, actorId, actorToken, edits) {
   try {
     revision = await writeWorld(room.ownerId, {
       version: 2, revision: null, edits, editPatch: true, replaceEdits: false, preserveMetadata: true,
-    }, commitAllowed);
+    }, commitAllowed, room.worldType);
   } catch (error) {
     if (error.status === 410) return false;
     throw error;
@@ -352,8 +358,8 @@ async function handleApi(req, res, url) {
     const room = visits.get(user.id);
     if (room && room.ownerToken === user.token && room.status !== 'closed') closeVisit(room, 'The host signed out.');
     sessions.delete(user.token);
-    const pendingWrite = worldWrites.get(user.id);
-    if (pendingWrite) await pendingWrite.catch(() => {});
+    const pendingWrites = ['normal', 'flat'].map(type => worldWrites.get(user.id + ':' + type)).filter(Boolean);
+    await Promise.all(pendingWrites.map(write => write.catch(() => {})));
     clearCookie(res);
     return reply(res, 200, { ok: true });
   }
@@ -384,10 +390,12 @@ async function handleApi(req, res, url) {
     }
     hostStartsInProgress.add(user.id);
     try {
-      const savedWorld = await readWorld(user.id);
+      const body = await readBody(req, 4096);
+      const worldType = safeWorldType(body.worldType);
+      const savedWorld = await readWorld(user.id, worldType);
       const room = {
         id: crypto.randomBytes(12).toString('base64url'), ownerId: user.id, ownerToken: user.token,
-        ownerName: user.displayName, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
+        ownerName: user.displayName, worldType, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
         visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
         visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
       };
@@ -456,7 +464,7 @@ async function handleApi(req, res, url) {
       closedVisitSessions.set(pending.visitorToken, { room: Object.assign({}, room, { status: 'closed', closeReason: 'The host declined the visit.' }), role: 'pending', expiresAt: Date.now() + VISIT_CLOSED_TTL });
       return reply(res, 200, { ok: true, approved: false });
     }
-    room.worldRevision = (await readWorld(room.ownerId)).revision;
+    room.worldRevision = (await readWorld(room.ownerId, room.worldType)).revision;
     room.visitorId = pending.visitorId;
     room.visitorToken = pending.visitorToken;
     room.visitorName = pending.visitorName;
@@ -525,33 +533,35 @@ async function handleApi(req, res, url) {
       events: batch.filter(event => event.actorId !== user.id).map(({ seq, type, data }) => ({ seq, type, data })),
     };
     if (role === 'visitor' && room.status === 'active' && room.visitorToken === user.token && room.visitorNeedsWorld) {
-      response.world = await readWorld(room.ownerId);
+      response.world = await readWorld(room.ownerId, room.worldType);
       response.ownerName = room.ownerName;
       room.visitorWorldSent = true;
     }
     const firstSeq = room.events.length ? room.events[0].seq : room.seq + 1;
     if (cursor < firstSeq - 1 && room.status === 'active') {
       response.resync = true;
-      response.world = await readWorld(room.ownerId);
+      response.world = await readWorld(room.ownerId, room.worldType);
       response.cursor = room.seq;
     }
     return reply(res, 200, response);
   }
 
   if (method === 'GET' && route === '/api/world') {
-    return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id) });
+    const worldType = safeWorldType(url.searchParams.get('type'));
+    return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id, worldType) });
   }
 
   if ((method === 'PUT' && route === '/api/world') || (method === 'POST' && route === '/api/world/flush')) {
     const body = await readBody(req, 6 * 1024 * 1024);
     const world = body.world;
+    const worldType = safeWorldType(url.searchParams.get('type') || (world && world.worldType));
     if (!world || typeof world !== 'object' || Array.isArray(world) || !Number.isInteger(world.seed) || world.seed < -2147483648 || world.seed > 2147483647)
       return reply(res, 400, { error: 'World save has an invalid format.' });
     const edits = Array.isArray(world.edits) ? world.edits : [];
     if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 304 || e[2] < 96 || e[2] >= 304 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
     const safe = {
-      version: 2, seed: world.seed,
+      version: 2, worldType, seed: world.seed,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
       player1: Array.isArray(world.player1) && world.player1.length === 3 && world.player1.every(Number.isFinite) ? world.player1 : null,
       slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(8, world.slot)) : 0,
@@ -561,7 +571,7 @@ async function handleApi(req, res, url) {
       editPatch: world.editPatch === true,
       replaceEdits: world.replaceEdits === true,
     };
-    await writeWorld(user.id, safe, () => sessions.has(user.token));
+    await writeWorld(user.id, safe, () => sessions.has(user.token), worldType);
     return reply(res, 200, { ok: true, revision: safe.revision });
   }
 

@@ -86,8 +86,9 @@ class Chunk {
    World
    ============================================================ */
 class World {
-  constructor(seed, savedEdits) {
+  constructor(seed, savedEdits, worldType) {
     this.seed = (seed === undefined || seed === null) ? 1337 : (seed | 0);
+    this.worldType = worldType === 'flat' ? 'flat' : 'normal';
     this.chunks = new Map();
     this.edits = new Map();
     this.editsByChunk = new Map();
@@ -230,6 +231,7 @@ class World {
 
   /* ---------- terrain ---------- */
   heightAt(x, z) {
+    if (this.worldType === 'flat') return SEA_LEVEL;
     const s = this.seed;
     // Rolling hills, plus a separate low-frequency shape that decides where
     // high ground and low ground sit. Using two different scales keeps the
@@ -255,7 +257,7 @@ class World {
       for (let x = 0; x < CHUNK; x++) {
         const wx = ox + x, wz = oz + z;
         const h = this.heightAt(wx, wz);
-        const beach = h <= SEA_LEVEL + 1;
+        const beach = this.worldType !== 'flat' && h <= SEA_LEVEL + 1;
         for (let y = 0; y <= h; y++) {
           let id;
           if (y === 0) id = 17;                        // bedrock floor
@@ -295,7 +297,7 @@ class World {
         const ground = c.get(x, surfaceY, z);
 
         // trees on grass, away from water
-        if (r > 0.986 && ground === 1 && surfaceY + 7 < WORLD_H) {
+        if (this.worldType !== 'flat' && r > 0.986 && ground === 1 && surfaceY + 7 < WORLD_H) {
           this.placeTree(c, x, surfaceY + 1, z);
         }
         // pumpkins
