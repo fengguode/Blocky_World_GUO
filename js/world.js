@@ -70,6 +70,34 @@ for (let r2 = STORYBOOK_CLEAR_RADIUS_SQ + 1; r2 <= STORYBOOK_BLEND_RADIUS_SQ; r2
 const STORYBOOK_STREAM_Z = new Int8Array(63);
 for (let dx = -31; dx <= 31; dx++) STORYBOOK_STREAM_Z[dx + 31] = 16 + Math.round(Math.sin(dx * 0.12) * 2);
 
+// The clearing shape depends only on block offsets. Precompute it once so streamed
+// chunks do not redo radius, creek and pond calculations for every terrain column.
+const STORYBOOK_PROFILE_SIZE = STORYBOOK_BLEND_RADIUS * 2 + 1;
+const STORYBOOK_PROFILE_LENGTH = STORYBOOK_PROFILE_SIZE * STORYBOOK_PROFILE_SIZE;
+const STORYBOOK_PROFILE_VALID = new Uint8Array(STORYBOOK_PROFILE_LENGTH);
+const STORYBOOK_PROFILE_BLEND = new Float32Array(STORYBOOK_PROFILE_LENGTH);
+const STORYBOOK_PROFILE_TARGET = new Uint8Array(STORYBOOK_PROFILE_LENGTH);
+const STORYBOOK_PROFILE_STREAM = new Uint8Array(STORYBOOK_PROFILE_LENGTH);
+const STORYBOOK_PROFILE_CLEARING = new Uint8Array(STORYBOOK_PROFILE_LENGTH);
+for (let dx = -STORYBOOK_BLEND_RADIUS; dx <= STORYBOOK_BLEND_RADIUS; dx++) {
+  for (let dz = -STORYBOOK_BLEND_RADIUS; dz <= STORYBOOK_BLEND_RADIUS; dz++) {
+    const radiusSquared = dx * dx + dz * dz;
+    if (radiusSquared > STORYBOOK_BLEND_RADIUS_SQ) continue;
+    const streamZ = Math.abs(dx) <= 31 ? STORYBOOK_STREAM_Z[dx + 31] : 0;
+    const pond = dx > 21 && dx < 31 && (dx - 24) * (dx - 24) + (dz - streamZ) * (dz - streamZ) < 25;
+    let streamLevel = 0;
+    if (Math.abs(dx) <= 31 && (Math.abs(dz - streamZ) <= 2 || pond)) {
+      streamLevel = dx < -8 ? STORYBOOK_GROUND : STORYBOOK_GROUND - 3;
+    }
+    const index = (dx + STORYBOOK_BLEND_RADIUS) * STORYBOOK_PROFILE_SIZE + dz + STORYBOOK_BLEND_RADIUS;
+    STORYBOOK_PROFILE_VALID[index] = 1;
+    STORYBOOK_PROFILE_BLEND[index] = radiusSquared <= STORYBOOK_CLEAR_RADIUS_SQ ? 0 : STORYBOOK_BLEND_BY_RADIUS[radiusSquared];
+    STORYBOOK_PROFILE_TARGET[index] = streamLevel ? streamLevel - 3 : STORYBOOK_GROUND;
+    STORYBOOK_PROFILE_STREAM[index] = streamLevel;
+    STORYBOOK_PROFILE_CLEARING[index] = radiusSquared <= STORYBOOK_CLEAR_RADIUS_SQ ? 1 : 0;
+  }
+}
+
 function noise2(x, y, seed) {
   const xi = Math.floor(x), yi = Math.floor(y);
   const xf = smooth(x - xi), yf = smooth(y - yi);
@@ -398,27 +426,17 @@ class World {
     const dx = Math.floor(x) - WORLD_CENTRE;
     const dz = Math.floor(z) - WORLD_CENTRE;
     if (Math.abs(dx) > STORYBOOK_BLEND_RADIUS || Math.abs(dz) > STORYBOOK_BLEND_RADIUS) return null;
-    const radiusSquared = dx * dx + dz * dz;
-    if (radiusSquared > STORYBOOK_BLEND_RADIUS_SQ) return null;
+    const index = (dx + STORYBOOK_BLEND_RADIUS) * STORYBOOK_PROFILE_SIZE + dz + STORYBOOK_BLEND_RADIUS;
+    if (!STORYBOOK_PROFILE_VALID[index]) return null;
 
-    let targetHeight = STORYBOOK_GROUND;
-    let streamLevel = 0;
-    if (Math.abs(dx) <= 31) {
-      const streamZ = STORYBOOK_STREAM_Z[dx + 31];
-      const pond = dx > 21 && dx < 31 && (dx - 24) * (dx - 24) + (dz - streamZ) * (dz - streamZ) < 25;
-      if (Math.abs(dz - streamZ) <= 2 || pond) {
-        streamLevel = dx < -8 ? STORYBOOK_GROUND : STORYBOOK_GROUND - 3;
-        targetHeight = streamLevel - 3;
-      }
-    }
-
-    const inClearing = radiusSquared <= STORYBOOK_CLEAR_RADIUS_SQ;
-    const blend = STORYBOOK_BLEND_BY_RADIUS[radiusSquared];
-    return {
-      groundY: Math.max(2, Math.floor(targetHeight * (1 - blend) + naturalHeight * blend)),
-      streamLevel: streamLevel ? Math.max(1, Math.floor(streamLevel * (1 - blend) + SEA_LEVEL * blend)) : 0,
-      inClearing,
-    };
+    const targetHeight = STORYBOOK_PROFILE_TARGET[index];
+    const streamLevel = STORYBOOK_PROFILE_STREAM[index];
+    const blend = STORYBOOK_PROFILE_BLEND[index];
+    const inClearing = STORYBOOK_PROFILE_CLEARING[index] !== 0;
+    const groundY = Math.max(2, Math.floor(targetHeight * (1 - blend) + naturalHeight * blend));
+    const resolvedStream = streamLevel ? Math.max(1, Math.floor(streamLevel * (1 - blend) + SEA_LEVEL * blend)) : 0;
+    // Store per-column story metadata in one integer to avoid short-lived objects during chunk generation.
+    return (groundY << 8) | (resolvedStream << 1) | (inClearing ? 1 : 0);
   }
 
   heightAt(x, z) {
@@ -449,16 +467,23 @@ class World {
   generateChunk(c) {
     c.allocate();
     c.maxY = 0;
-    const storyColumns = new Array(CHUNK * CHUNK);
+    const storyColumns = new Uint32Array(CHUNK * CHUNK);
+    const hasStorybook = this.worldType !== 'flat' && this.seed === STORYBOOK_SEED;
     const ox = c.cx * CHUNK, oz = c.cz * CHUNK;
     for (let z = 0; z < CHUNK; z++) {
       for (let x = 0; x < CHUNK; x++) {
         const wx = ox + x, wz = oz + z;
-        const naturalHeight = this.heightAt(wx, wz);
+        const storyDx = wx - WORLD_CENTRE, storyDz = wz - WORLD_CENTRE;
+        const fixedStoryGround = hasStorybook &&
+          storyDx * storyDx + storyDz * storyDz <= STORYBOOK_CLEAR_RADIUS_SQ;
+        // The fixed meadow and creek bank fully replace natural height in the clearing.
+        const naturalHeight = fixedStoryGround ? 0 : this.heightAt(wx, wz);
         const story = this.storybookColumn(wx, wz, naturalHeight);
-        storyColumns[z * CHUNK + x] = story;
-        const h = story ? story.groundY : naturalHeight;
-        const channel = story && story.streamLevel > 0;
+        storyColumns[z * CHUNK + x] = story || 0;
+        const storyGround = story ? story >>> 8 : naturalHeight;
+        const storyStream = story ? (story >>> 1) & 0x7f : 0;
+        const h = storyGround;
+        const channel = storyStream > 0;
         const beach = channel || (this.worldType !== 'flat' && h <= SEA_LEVEL + 1);
         for (let y = 0; y <= h; y++) {
           let id;
@@ -468,7 +493,7 @@ class World {
           else id = 3;                                 // stone
           c.set(x, y, z, id);
         }
-        const waterTop = channel ? story.streamLevel : SEA_LEVEL;
+        const waterTop = channel ? storyStream : SEA_LEVEL;
         for (let y = h + 1; y <= waterTop; y++) {
           c.set(x, y, z, 12);                          // sea fill or welcome stream
         }
@@ -504,18 +529,19 @@ class World {
         const ground = c.get(x, surfaceY, z);
         const story = storyColumns
           ? storyColumns[z * CHUNK + x]
-          : this.storybookColumn(wx, wz, this.heightAt(wx, wz));
-        if (this.worldType !== 'flat' && !(story && story.inClearing) &&
+          : (this.storybookColumn(wx, wz, this.heightAt(wx, wz)) || 0);
+        const inClearing = !!(story & 1);
+        if (this.worldType !== 'flat' && !inClearing &&
             r > 0.986 && ground === 1 && surfaceY + 7 < WORLD_H) {
           this.placeTree(c, x, surfaceY + 1, z);
-        } else if (!(story && story.inClearing) && r > 0.978 && r < 0.984 && ground === 1) {
+        } else if (!inClearing && r > 0.978 && r < 0.984 && ground === 1) {
           c.set(x, surfaceY + 1, z, 14);
         }
         else if (r > 0.973 && r < 0.9765 && surfaceY > 6) {
           const gy = 2 + ((hash2(wx + 104 - WORLD_CENTRE, wz + 104 - WORLD_CENTRE, this.seed + 7) * (surfaceY - 4)) | 0);
           if (c.get(x, gy, z) === 3) c.set(x, gy, z, 11);
         }
-        if (story && story.inClearing) this.decorateStorybookColumn(c, x, z, wx, wz, surfaceY);
+        if (inClearing) this.decorateStorybookColumn(c, x, z, wx, wz, surfaceY);
       }
     }
   }

@@ -530,6 +530,26 @@ H.test('clearing respects saved edits and leaves Flat World level and treeless',
     'flat worlds remain flower-free');
 });
 
+H.test('fixed showcase ground skips natural terrain noise for its spawn chunk', () => {
+  const w = new World(1337);
+  let calls = 0;
+  const heightAt = w.heightAt;
+  w.heightAt = function (x, z) { calls++; return heightAt.call(this, x, z); };
+  w.generateChunk(w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true));
+  H.eq(calls, 0, 'natural terrain height is irrelevant under the deterministic flat clearing surface');
+});
+
+H.test('showcase column metadata packs ground, stream and clearing flags without changing terrain values', () => {
+  const w = new World(1337);
+  const x = WORLD_CENTRE, z = WORLD_CENTRE;
+  const clearing = w.storybookColumn(x, z, 42);
+  H.eq(clearing >>> 8, 29, 'clearing metadata keeps the meadow ground height');
+  H.eq(clearing & 1, 1, 'clearing metadata keeps the forest suppression flag');
+  const creek = w.storybookColumn(x, z + 16, 42);
+  H.eq(creek >>> 8, 23, 'creek metadata keeps the raised stream bank height');
+  H.eq((creek >>> 1) & 0x7f, 26, 'creek metadata keeps its water level');
+});
+
 H.test('non-showcase random seeds keep their original terrain and sea-level water', () => {
   const w = new World(42);
   const x = WORLD_CENTRE, z = WORLD_CENTRE;
