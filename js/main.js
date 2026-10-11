@@ -2519,9 +2519,9 @@ const Game = {
     const bodyY = base[1] + legH + d.h * 0.32;
     const headY = base[1] + legH + d.h * 0.8;
     const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
-    const headWidth = d.w * (d.id === 'sheep' ? 0.58 : 0.72);
-    const headHeight = d.h * (d.id === 'sheep' ? 0.46 : 0.52);
-    const headDepth = d.w * (d.id === 'sheep' ? 0.48 : 0.62);
+    const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : 0.72);
+    const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : 0.52);
+    const headDepth = d.w * (d.id === 'chick' ? 0.8 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.72 : 0.62);
 
     // Four short legs make a stable, readable stance; proportions differ by species.
     for (const [forward, side] of [
@@ -2533,11 +2533,11 @@ const Game = {
     }
 
     const bodySize = d.id === 'pig'
-      ? [d.w * 0.96 * s, d.h * 0.62, d.d * 0.74 * s]
+      ? [d.w * 1.16 * s, d.h * 0.58, d.d * 0.76 * s]
       : d.id === 'sheep'
-        ? [d.w * 0.96 * s, d.h * 0.66, d.d * 0.76 * s]
+        ? [d.w * 1.08 * s, d.h * 0.74, d.d * 0.84 * s]
         : d.id === 'chick'
-          ? [d.w * 0.9 * s, d.h * 0.7, d.d * 0.9 * s]
+          ? [d.w * 1.02 * s, d.h * 0.86, d.d * 1.04 * s]
           : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
     this.drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
 
@@ -2549,11 +2549,16 @@ const Game = {
     } else if (d.id === 'sheep') {
       // Separate wool puffs form a rounded fleece silhouette around the darker face.
       const fleeceY = base[1] + legH + d.h * 0.68;
-      for (const [forward, side] of [
-        [-d.d * 0.38, 0], [0, -d.w * 0.4], [0, d.w * 0.4],
+      for (const [forward, side, yOffset, width, height, depth] of [
+        [-d.d * 0.4, 0, 0, 0.42, 0.26, 0.38],
+        [-d.d * 0.12, -d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
+        [-d.d * 0.12, d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
+        [d.d * 0.2, -d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
+        [d.d * 0.2, d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
+        [d.d * 0.42, 0, 0.015, 0.34, 0.24, 0.32],
       ]) {
-        this.drawBox(prog, point(forward, side, fleeceY),
-          [0.42 * s, 0.25 * s, 0.38 * s], d.body, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(forward, side, fleeceY + yOffset),
+          [width * s, height * s, depth * s], d.body, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'chick') {
       // A chest patch and projecting wings give the chick a smaller rounded outline.
@@ -2561,7 +2566,7 @@ const Game = {
         [d.w * 0.34 * s, d.h * 0.3, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
         this.drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY),
-          [0.055 * s, 0.19 * s, 0.25 * s], d.accent, [1, 1, 1], yaw, 1);
+          [0.07 * s, 0.22 * s, 0.29 * s], d.accent, [1, 1, 1], yaw, 1);
       }
     }
 
@@ -2572,7 +2577,7 @@ const Game = {
     const eyeY = headY + headHeight * 0.06 * s;
     const eyeSide = headWidth * 0.27;
     const eyeTile = d.id === 'wolf' ? T.wolf_eye : T.eye;
-    const eyeSize = d.id === 'chick' ? 0.13 : 0.12;
+    const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : 0.145;
     for (const side of [-1, 1]) {
       this.drawBox(prog, point(headFront, side * eyeSide, eyeY),
         [eyeSize * s, eyeSize * 1.08 * s, 0.045 * s], eyeTile, [1, 1, 1], yaw, 1);
@@ -2602,9 +2607,9 @@ const Game = {
         [0.21 * s, 0.16 * s, 0.2 * s], d.body, [1, 1, 1], yaw, 1);
     } else if (d.id === 'chick') {
       this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.58 * s),
-        [0.14 * s, 0.18 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+        [0.18 * s, 0.22 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
       this.drawBox(prog, point(headFront + 0.06, 0, headY - headHeight * 0.18 * s),
-        [0.18 * s, 0.12 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
+        [0.23 * s, 0.15 * s, 0.17 * s], d.beak, [1, 1, 1], yaw, 1);
     } else if (d.id === 'wolf') {
       // Keep the established original wolf read: grey muzzle, pointed ears, amber eyes, short tail.
       this.drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
