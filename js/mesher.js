@@ -32,6 +32,9 @@ const OPAQUE_BLOCK = BLOCKS.map(block => !!(block && block.opaque));
 const AO_OCCLUDES = new Uint8Array(256).fill(1);
 AO_OCCLUDES[0] = AO_OCCLUDES[9] = AO_OCCLUDES[10] = AO_OCCLUDES[12] = 0;
 AO_OCCLUDES[18] = AO_OCCLUDES[19] = AO_OCCLUDES[20] = AO_OCCLUDES[21] = 0;
+for (const block of BLOCKS) {
+  if (block && block.plant) AO_OCCLUDES[block.id] = 0;
+}
 
 const VERT_FLOATS = 9;
 

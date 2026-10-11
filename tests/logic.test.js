@@ -1215,6 +1215,30 @@ H.test('flowing-water blocks do not cast ambient occlusion', () => {
   H.assert(/AO_OCCLUDES\[18\]\s*=\s*AO_OCCLUDES\[19\]\s*=\s*AO_OCCLUDES\[20\]\s*=\s*AO_OCCLUDES\[21\]\s*=\s*0/.test(mesher),
     'all flowing-water levels should use the same non-occluding AO treatment as source water');
 });
+H.test('flower cutouts do not darken neighboring solid faces with ambient occlusion', () => {
+  const captureFirstOpaqueVertices = (plantId) => {
+    const { w, chunk, y, BASE } = scratchWorld(87);
+    w.setBlock(BASE, y, BASE, 3);
+    w.setBlock(BASE + 1, y, BASE + 1, plantId);
+
+    const gl = stubGL();
+    let opaqueVertices = null;
+    gl.bufferData = (target, data) => {
+      if (target === gl.ARRAY_BUFFER && opaqueVertices === null) opaqueVertices = Array.from(data);
+    };
+    g.buildChunkMesh(gl, w, chunk);
+    return opaqueVertices;
+  };
+
+  for (const plant of BLOCKS.filter(block => block && block.plant)) {
+    const vertices = captureFirstOpaqueVertices(plant.id);
+    H.assert(vertices && vertices.length >= 24 * g.VERT_FLOATS,
+      plant.name + ' should leave the adjacent stone mesh available for inspection');
+    // The first stone face is +X. Its first corner samples the flower diagonally
+    // outside the face; cutout foliage must not contribute baked ambient occlusion.
+    H.near(vertices[7], 1, 1e-6, plant.name + ' should not darken the stone face corner');
+  }
+});
 H.test('first-person hand preserves scene depth for the transparent pass', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   H.assert(!/clear\(gl\.DEPTH_BUFFER_BIT\)/.test(main),
