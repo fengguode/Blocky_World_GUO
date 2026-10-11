@@ -11,7 +11,8 @@
 class Bot {
   constructor(player, level) {
     this.p = player;
-    this.level = level || 1;          // 0 = easy, 1 = normal, 2 = hard
+    this.level = Number.isInteger(level) && level >= 0 && level <= 2 ? level : 1;
+                                      // 0 = easy, 1 = normal, 2 = hard
     this.state = 'approach';
     this.think = 0;
     this.attackCool = 0;

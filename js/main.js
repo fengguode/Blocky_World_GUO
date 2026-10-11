@@ -6,6 +6,35 @@
 const SAVE_KEY = 'blocky-world-local-save-v1';
 const ACTIVE_WORLD_KEY = 'blocky-world-selected-type';
 
+function migrateWorldSave(saved) {
+  if (!saved || saved.worldSize === WORLD_SIZE) return saved;
+  const hasExpandedCoordinates = saved.worldSize == null && (() => {
+    const isExpandedPoint = (x, z) => Number.isFinite(x) && Number.isFinite(z)
+      && x >= 0 && x < 20000 && z >= 0 && z < 20000
+      && (x >= 2000 || z >= 2000);
+    if (Array.isArray(saved.player1) && saved.player1.length === 3
+      && isExpandedPoint(saved.player1[0], saved.player1[2])) return true;
+    return Array.isArray(saved.edits) && saved.edits.some((edit) =>
+      Array.isArray(edit) && edit.length === 4 && isExpandedPoint(edit[0], edit[2]));
+  })();
+  const previousCentre = hasExpandedCoordinates ? 10008
+    : saved.worldSize === 20000 ? 10008
+      : saved.worldSize === 2000 ? 1000 : 104;
+  const offset = WORLD_CENTRE - previousCentre;
+  const migrated = Object.assign({}, saved, {
+    worldSize: WORLD_SIZE,
+    edits: (Array.isArray(saved.edits) ? saved.edits : []).map((edit) => {
+      if (!Array.isArray(edit) || edit.length !== 4) return edit;
+      const [x, y, z, id] = edit;
+      return [x + offset, y, z + offset, id];
+    }),
+  });
+  if (Array.isArray(saved.player1) && saved.player1.length === 3) {
+    migrated.player1 = [saved.player1[0] + offset, saved.player1[1], saved.player1[2] + offset];
+  }
+  return migrated;
+}
+
 const Game = {
   state: 'loading',       // loading | menu | play | fight | observe | paused
   canvas: null,
@@ -21,6 +50,7 @@ const Game = {
   lastTime: 0,
   lastFrameAt: null,
   frameInterval: 1000 / 60,
+  runtimeFailure: false,
   fpsWindowStart: 0,
   fpsWindowFrames: 0,
   measuredFps: 0,
@@ -50,7 +80,7 @@ const Game = {
      ============================================================ */
   async boot() {
     this.canvas = document.getElementById('gl-canvas');
-    this.isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    this.isTouch = isTouch();
 
     this.gl = createGL(this.canvas);
     if (!this.gl) {
@@ -102,9 +132,9 @@ const Game = {
     if (this.quality !== 'auto') return;   // the user pinned a setting
     const mem = navigator.deviceMemory || (this.isTouch ? 4 : 8);
     const cores = navigator.hardwareConcurrency || 4;
-    // Desktop GPUs rarely benefit from rendering a 2x device-pixel buffer
-    // for this low-poly scene. A 1.5x cap cuts pixel work by about 44%.
-    let dprCap = this.isTouch ? 2 : 1.5;
+    // Integrated desktop graphics benefit from a lower default pixel budget.
+    // Players can still increase view distance manually in Options.
+    let dprCap = this.isTouch ? 2 : 1.25;
     let dist = this.settings.renderDist;
 
     if (!this.settings.renderDistAuto) {
@@ -126,7 +156,10 @@ const Game = {
         dist = 5;
       }
     } else {
-      if (mem <= 4 || cores <= 4) { dist = 4; dprCap = 1.25; }
+      // Keep a smaller default world radius on every desktop; this reduces
+      // terrain draw work on integrated GPUs while leaving the slider usable.
+      dist = 4;
+      dprCap = 1.25;
     }
 
     this.dprCap = dprCap;
@@ -138,21 +171,64 @@ const Game = {
      per second. A single rAF source avoids the timer/rAF race that produced
      zero-length deltas and misleading 1000 FPS readings. */
   scheduleFrame() {
-    requestAnimationFrame((now) => {
-      if (this.lastFrameAt === null) {
-        this.lastFrameAt = now;
-      } else {
-        const elapsed = now - this.lastFrameAt;
-        if (elapsed >= this.frameInterval) {
-          // Preserve the 60 Hz phase on 120/144 Hz displays instead of
-          // drifting with the display's faster callback interval.
-          const intervals = Math.max(1, Math.floor(elapsed / this.frameInterval));
-          this.lastFrameAt += intervals * this.frameInterval;
-          this.loop(now);
+    window.requestAnimationFrame((now) => {
+      try {
+        if (!this.runtimeFailure) {
+          if (this.lastFrameAt === null) {
+            this.lastFrameAt = now;
+          } else {
+            const elapsed = now - this.lastFrameAt;
+            const deadlineTolerance = 1;
+            if (elapsed + deadlineTolerance >= this.frameInterval) {
+              const intervals = Math.max(1, Math.floor((elapsed + deadlineTolerance) / this.frameInterval));
+              this.lastFrameAt += intervals * this.frameInterval;
+              this.loop(now);
+            }
+          }
         }
+      } catch (error) {
+        this.handleRuntimeError(error);
       }
       this.scheduleFrame();
     });
+  },
+
+  async handleRuntimeError(error) {
+    if (this.runtimeFailure) return;
+    this.runtimeFailure = true;
+    console.error('Game paused after a runtime error:', error);
+    let recoveryStatus = 'failed';
+    try {
+      const result = this.save();
+      if (window.Network && Network.serverMode) {
+        const queued = result && result.status === 'queued';
+        const serverSaved = queued && await Network.flushSave(false, true);
+        recoveryStatus = serverSaved ? 'saved' : (result && result.recoveryCopy ? 'recovery' : 'failed');
+      } else {
+        recoveryStatus = result && result.status === 'saved' ? 'saved' : 'failed';
+      }
+    } catch (_) { /* Keep the recovery UI available even if persistence throws. */ }
+    if (this.state !== 'menu' && this.state !== 'loading') {
+      this.state = 'paused';
+      this.paused = true;
+      try {
+        document.getElementById('pause').classList.add('show');
+        UI.show('pause-menu-content', true);
+        UI.show('pause-character-panel', false);
+        UI.show('pause-extra', false);
+        const recoveryMessage = document.getElementById('runtime-error-message');
+        recoveryMessage.textContent = recoveryStatus === 'saved'
+          ? 'The game paused after an error. Your progress was saved. Reload the page to continue.'
+          : recoveryStatus === 'recovery'
+            ? 'The PC could not confirm the save, but a recovery copy is stored on this device. Reload to recover it.'
+            : 'The game paused after an error, but neither a save nor a recovery copy could be confirmed. Reloading may lose recent progress.';
+        recoveryMessage.classList.remove('hidden');
+        document.getElementById('btn-runtime-reload').classList.remove('hidden');
+        Touch.reset();
+        Touch.setVisible(false);
+        Input.releaseLock();
+      } catch (_) { /* Preserve the recovery copy if the UI also failed. */ }
+    }
   },
 
   setupGL() {
@@ -202,6 +278,7 @@ const Game = {
       uniform vec3 uFogColor;
       uniform float uAlphaCut;
       uniform float uIsLiquid;
+      uniform float uTime;
       uniform float uTintR;
       uniform float uTintG;
       uniform float uTintB;
@@ -213,8 +290,13 @@ const Game = {
         vec3 col = c.rgb * vLight;
         col *= vec3(uTintR, uTintG, uTintB);
         if (uIsLiquid > 0.5) {
-          // gentle wave on liquid surfaces
-          col *= 1.0 + 0.06 * sin(vWorld.x * 1.7 + vWorld.z * 1.1);
+          // Two moving light bands mimic travelling ripples and soft caustics.
+          float waveA = sin(vWorld.x * 0.42 + uTime * 1.15) *
+                        cos(vWorld.z * 0.34 - uTime * 0.82);
+          float waveB = sin((vWorld.x + vWorld.z) * 0.72 - uTime * 1.4);
+          float crest = smoothstep(0.92, 0.99, waveA + waveB * 0.28);
+          col *= 1.0 + waveA * 0.045 + waveB * 0.025;
+          col = mix(col, vec3(0.68, 0.88, 0.98), crest * 0.16);
         }
         col = mix(col, uFogColor, vFog);
         frag = vec4(col, c.a);
@@ -230,6 +312,7 @@ const Game = {
       uniform mat4 uMVP;
       uniform float uTile;
       uniform vec3 uCamPos;
+      uniform vec3 uBoxCenter;
       uniform float uFogNear;
       uniform float uFogFar;
       uniform vec3 uFogColor;
@@ -237,7 +320,6 @@ const Game = {
       out vec2 vUV;
       out float vTile;
       out vec3 vNormal;
-      out vec3 vWorld;
       out float vFog;
       out float vShade;
 
@@ -245,11 +327,12 @@ const Game = {
         vUV = aUV;
         vTile = uTile;
         vNormal = aNormal;
-        vWorld = aPos;
         // simple directional shading so boxy characters read as 3D
         float key = 0.45 + 0.55 * max(0.0, dot(aNormal, normalize(vec3(0.4, 0.9, 0.35))));
         vShade = key * mix(0.45, 1.0, uDayLight);
-        float d = distance(uCamPos, aPos);
+        // aPos is the cube's local vertex. Use the box's world-space center
+        // for fog so small character parts keep their material textures.
+        float d = distance(uCamPos, uBoxCenter);
         vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
         gl_Position = uMVP * vec4(aPos, 1.0);
       }`,
@@ -259,7 +342,6 @@ const Game = {
       in vec2 vUV;
       in float vTile;
       in vec3 vNormal;
-      in vec3 vWorld;
       in float vFog;
       in float vShade;
       uniform sampler2DArray uTex;
@@ -296,29 +378,38 @@ const Game = {
       uniform vec3 uBottom;
       uniform vec3 uSunDir;
       uniform float uStar;
+      uniform vec3 uForward;
+      uniform vec3 uRight;
+      uniform vec3 uUp;
+      uniform float uAspect;
+      uniform float uTanHalfFov;
       out vec4 frag;
 
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
       void main() {
-        float t = clamp(vNdc.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 dir = normalize(uForward + uRight * vNdc.x * uAspect * uTanHalfFov + uUp * vNdc.y * uTanHalfFov);
+        float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
         // indigo at the zenith easing into violet at the horizon
         vec3 col = mix(uBottom, uTop, pow(t, 0.65));
 
-        vec3 dir = normalize(vec3(vNdc, 0.55));
-        float d = max(0.0, dot(dir, uSunDir));
+        vec3 sun = normalize(uSunDir);
+        float d = max(0.0, dot(dir, sun));
 
         // warm counter-glow opposite the cool sky
         col += vec3(1.0, 0.72, 0.45) * pow(d, 6.0) * 0.13;
         col += vec3(1.0, 0.90, 0.72) * pow(d, 60.0) * 0.55;
+        if (sun.y > -0.05) col = mix(col, vec3(1.0,0.95,0.7), smoothstep(0.9985,0.9993,d));
+        float moon = max(0.0, dot(dir, -sun));
+        if (sun.y < 0.05) col = mix(col, vec3(0.78,0.86,1.0), smoothstep(0.9988,0.9995,moon));
 
         // a thin bright band right at the horizon
-        float horizon = 1.0 - smoothstep(0.0, 0.16, abs(vNdc.y));
+        float horizon = 1.0 - smoothstep(0.0, 0.16, abs(dir.y));
         col += vec3(0.35, 0.75, 1.0) * horizon * 0.10;
 
         // starfield
         if (uStar > 0.01) {
-          vec2 g = floor(vNdc * 110.0);
+          vec2 g = floor(vec2(atan(dir.z,dir.x), asin(dir.y)) * 110.0);
           float h = hash(g);
           if (h > 0.982) {
             float tw = 0.6 + 0.4 * hash(g + 3.7);
@@ -395,6 +486,15 @@ const Game = {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'F3') { this.showDebug = !this.showDebug; e.preventDefault(); }
       if (e.code === 'F10') { e.preventDefault(); this.togglePause(this.state !== 'paused'); }
+      // Pointer lock sends every mouse click to the canvas, including clicks
+      // aimed at the live-visit controls. Let the host open the mode picker
+      // from the keyboard; releasing the lock makes the overlay clickable.
+      if (e.code === 'KeyM' && window.Network &&
+          Network.visitRole === 'owner' && Network.visitActive) {
+        e.preventDefault();
+        Input.releaseLock();
+        Network.openVisitModePicker();
+      }
       if (e.code === 'Escape') {
         if (this.state === 'play' || this.state === 'fight' || this.state === 'observe') {
           this.togglePause(this.state !== 'paused');
@@ -414,8 +514,8 @@ const Game = {
         UI.toast('Photo saved!');
       }
       // number keys for the hotbar
-      if (this.state === 'play' && /^Digit[1-9]$/.test(e.code)) {
-        const n = parseInt(e.code.slice(5), 10) - 1;
+      if (this.state === 'play' && /^Digit[0-9]$/.test(e.code)) {
+        const n = (parseInt(e.code.slice(5), 10) + 9) % 10;
         this.selectSlot(n);
       }
     });
@@ -429,32 +529,46 @@ const Game = {
     const fill = document.getElementById('load-fill');
     const msg = document.getElementById('load-msg');
     UI.show('loading', true);
-
+    if (this.saved && this.saved.worldSize !== WORLD_SIZE) {
+      this.saved = migrateWorldSave(this.saved);
+      this.pendingWorldMigration = true;
+      if (window.Network && Network.serverMode && Network.visitRole !== 'visitor' && Network.visitRole !== 'pending') {
+        Network.savedWorld = this.saved;
+        Network.resetEditsPending = true;
+      }
+    }
+    if (this.world && this.gl) this.world.activeChunks.forEach(chunk => {
+      if (chunk.mesh) { disposeMesh(this.gl, chunk.mesh); chunk.mesh = null; }
+    });
+    this._renderChunks = null;
     const seed = this.pendingSeed !== undefined ? this.pendingSeed : (this.saved ? this.saved.seed : 1337);
     const worldType = this.pendingWorldType || this.activeWorldType || 'normal';
     World.world = new World(seed, this.saved && this.saved.edits, worldType);
     this.world = World.world;
 
-    // hand the world to the camera helper
-    await new Promise((resolve) => {
-      World.world.generateRadius(8, 8, radius, (p) => {
-        fill.style.width = Math.round(p * 100) + '%';
-        if (msg) msg.textContent = 'Carving the world… ' + Math.round(p * 100) + '%';
-      });
-      resolve();
-    });
+    this.renderDist = this.settings.renderDist;
+    const initialRadius = Math.ceil((28 + this.renderDist * CHUNK * 0.8 + CHUNK) / CHUNK);
+    const savedPos = this.saved && Array.isArray(this.saved.player1) && this.saved.player1.length === 3 &&
+      this.saved.player1.every(Number.isFinite) ? this.saved.player1 : null;
+    const savedX = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[0])) : WORLD_CENTRE;
+    const savedZ = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[2])) : WORLD_CENTRE;
+    const startCX = Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(savedX / CHUNK)));
+    const startCZ = Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(savedZ / CHUNK)));
+    await this.world.generateRadiusAsync(startCX, startCZ, initialRadius, (p) => {
+      fill.style.width = Math.round(p * 100) + '%';
+      if (msg) msg.textContent = 'Carving the world… ' + Math.round(p * 100) + '%';
+    }, true);
 
     if (msg) msg.textContent = 'Building shapes…';
     await frame();
     if (msg) {
-      msg.textContent = 'Building shapes… ' + CHUNKS_PER_SIDE + '×' + CHUNKS_PER_SIDE + ' chunks';
+      msg.textContent = 'Building nearby shapes…';
     }
     await frame();
 
     // Only mesh what is actually visible from the spawn. The rest is built on
     // demand by streamChunks as the player walks around, which keeps both the
     // loading time and the GPU memory down to what is on screen.
-    this.renderDist = this.settings.renderDist;
     const spawnHint = this.world.findSurfaceY(this.world.originX, this.world.originZ);
     Cam.pos = [this.world.originX, spawnHint + 14, this.world.originZ];
     Cam.yaw = 0.6;
@@ -463,7 +577,7 @@ const Game = {
     this.updateFrustum();
 
     const near = [];
-    this.world.chunks.forEach((c) => { if (c.generated && this.chunkInRange(c)) near.push(c); });
+    this.world.activeChunks.forEach((c) => { if (this.chunkInRange(c)) near.push(c); });
     for (let i = 0; i < near.length; i++) {
       const c = near[i];
       c.mesh = buildChunkMesh(this.gl, this.world, c);
@@ -474,6 +588,12 @@ const Game = {
         await frame();
       }
     }
+    this._renderChunks = near;
+    this._streamAt = null;
+    this._streamWorld = null;
+    this._streamKeep = null;
+    this._streamQueue = [];
+    this._generationQueue = [];
 
     // players
     const spawn = this.world.findSpawn();
@@ -500,10 +620,19 @@ const Game = {
     // restore saved position if we reloaded
     if (this.saved && this.saved.player1) {
       const s = this.saved.player1;
-      if (this.world.getBlock(s[0], s[1], s[2]) !== undefined) {
-        p1.pos = s.slice();
+      if (Array.isArray(s) && s.length === 3 && s.every(Number.isFinite)) {
+        p1.pos = [Math.max(1, Math.min(WORLD_SIZE - 1, s[0])),
+          Math.max(1, Math.min(WORLD_H - 2, s[1])),
+          Math.max(1, Math.min(WORLD_SIZE - 1, s[2]))];
+        this.clampToWorld(p1);
+        this.recoverPlayerPosition(p1, false);
       }
       if (this.saved.pick) { this.pick = this.saved.pick; }
+    }
+
+    if (this.pendingWorldMigration) {
+      if (!window.Network || !Network.serverMode || (Network.visitRole !== 'visitor' && Network.visitRole !== 'pending')) this.save(true);
+      this.pendingWorldMigration = false;
     }
 
     fill.style.width = '100%';
@@ -514,27 +643,26 @@ const Game = {
   // Rebuild one dirty chunk per frame. Keeping this to a small budget is
   // what stops placing a block from stuttering the whole game. Chunks that
   // were never meshed are skipped: streamChunks will pick them up when the
-  // player actually gets close enough to see them.
+  // player actually gets close enough to see them. Dirty meshes outside the
+  // cached camera neighbourhood can wait until that neighbourhood moves.
   updateDirtyChunks(budget) {
     const gl = this.gl;
     let n = 0;
-    this.world.chunks.forEach((c) => {
-      if (n >= budget) return;
-      if (!c.dirty || !c.generated) return;
-      if (c.mesh) {
-        disposeMesh(gl, c.mesh);
-        c.mesh = buildChunkMesh(gl, this.world, c);
-        c.dirty = false;
-        n++;
-      } else {
-        c.dirty = false;   // leave it to the streamer
-      }
-    });
+    const nearby = this._renderChunks || [];
+    for (const c of nearby) {
+      if (n >= budget) break;
+      if (!c.dirty || !c.generated) continue;
+      if (!c.mesh) continue; // streamChunks will mesh it when it enters view
+      disposeMesh(gl, c.mesh);
+      c.mesh = buildChunkMesh(gl, this.world, c);
+      c.dirty = false;
+      n++;
+    }
   },
 
   spawnAnimals(count) {
     this.animals = [];
-    const defs = ANIMALS;
+    const defs = ANIMALS.filter(def => !def.predator);
     const ox = this.world.originX, oz = this.world.originZ;
     const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
     for (let i = 0; i < count; i++) {
@@ -551,12 +679,113 @@ const Game = {
         }
       }
     }
+
+    // Three compact packs keep the wolves visibly social without filling the
+    // whole map with extra entities on lower-memory phones and tablets.
+    let packNumber = 0;
+    for (let pack = 0; pack < 3; pack++) {
+      let anchor = null;
+      for (let tries = 0; tries < 60 && !anchor; tries++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 8 + Math.random() * reach;
+        const x = Math.floor(ox + Math.cos(angle) * radius);
+        const z = Math.floor(oz + Math.sin(angle) * radius);
+        if (this.world.isStandable(x, z)) anchor = [x, z];
+      }
+      if (!anchor) continue;
+      const packId = 'wolf-pack-' + (++packNumber) + '-' + Math.floor(Math.random() * 1000000);
+      for (let member = 0; member < 3; member++) {
+        let placed = false;
+        for (let tries = 0; tries < 40 && !placed; tries++) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = member === 0 ? 0 : 1 + Math.random() * 3.5;
+          const x = Math.floor(anchor[0] + Math.cos(angle) * radius);
+          const z = Math.floor(anchor[1] + Math.sin(angle) * radius);
+          if (!this.world.isStandable(x, z)) continue;
+          const wolf = new Animal(animalById('wolf'), x + 0.5, this.world.findSurfaceY(x, z) + 1, z + 0.5);
+          wolf.packId = packId;
+          wolf.packLeader = this.animals.find(a => a.packId === packId) || wolf;
+          this.animals.push(wolf);
+          placed = true;
+        }
+      }
+    }
+  },
+
+  provokeWolfPack(wolf) {
+    if (!wolf || !wolf.def.predator || !wolf.packId) return;
+    for (const member of this.animals) {
+      if (member.packId === wolf.packId) member.aggressiveTimer = 20;
+    }
+  },
+
+  tryHitAnimal(player) {
+    if (!player || !player.forwardVec) return false;
+    const fwd = player.forwardVec([0, 0, 0]);
+    let target = null, best = Infinity;
+    for (const animal of this.animals) {
+      if (!animal.def.predator || animal.dead) continue;
+      const dx = animal.pos[0] - player.pos[0];
+      const dz = animal.pos[2] - player.pos[2];
+      const dist2 = dx * dx + dz * dz;
+      if (dist2 > 3.6 * 3.6 || Math.abs(animal.pos[1] - player.pos[1]) > 1.6) continue;
+      const dist = Math.sqrt(dist2) || 1;
+      if ((dx * fwd[0] + dz * fwd[2]) / dist < 0.58 || dist2 >= best) continue;
+      best = dist2;
+      target = animal;
+    }
+    if (!target) return false;
+    target.health--;
+    target.hitFlash = 0.22;
+    this.provokeWolfPack(target);
+    if (target.health <= 0) target.dead = true;
+    UI.toast('The wolf pack is angry!');
+    Audio.play('break');
+    return true;
+  },
+
+  updateAnimals(dt, player) {
+    const wolves = this.animals.filter(animal => animal.def.predator && !animal.dead);
+    const prey = this.animals.filter(animal => !animal.def.predator && !animal.dead);
+    const packs = new Map();
+    for (const wolf of wolves) {
+      if (!packs.has(wolf.packId)) packs.set(wolf.packId, []);
+      packs.get(wolf.packId).push(wolf);
+    }
+    for (const members of packs.values()) {
+      const leader = members[0];
+      let target = null, best = 22 * 22;
+      for (const candidate of prey) {
+        const dx = candidate.pos[0] - leader.pos[0], dz = candidate.pos[2] - leader.pos[2];
+        const d2 = dx * dx + dz * dz;
+        if (d2 < best) { best = d2; target = candidate; }
+      }
+      for (const wolf of members) {
+        wolf.packLeader = leader;
+        wolf.preyTarget = target;
+      }
+    }
+
+    for (const animal of prey) {
+      let nearestWolf = null, nearestDist = 8 * 8;
+      for (const wolf of wolves) {
+        if (wolf.preyTarget !== animal) continue;
+        const dx = animal.pos[0] - wolf.pos[0], dz = animal.pos[2] - wolf.pos[2];
+        const d2 = dx * dx + dz * dz;
+        if (d2 < nearestDist) { nearestDist = d2; nearestWolf = wolf; }
+      }
+      animal.fleeFrom = nearestWolf;
+    }
+    for (const animal of this.animals) animal.update(dt, this.world, player);
+    this.animals = this.animals.filter(animal => !animal.dead);
   },
 
   /* ============================================================
      state transitions
      ============================================================ */
   startPlay() {
+    this.restoreSharedArena();
+    this.players.length = 2;
     this.mode = 'play';
     this.state = 'play';
     this.paused = false;
@@ -569,6 +798,13 @@ const Game = {
     Touch.relabel('play');
     Input.requestLock(this.canvas);
     this.players[0].creative = true;
+    this.players[0].selectedSlot = this.selectedSlot;
+    this.players[0].buildUseTime = 0;
+    this.players[0].ko = this.players[0].blocked = false;
+    this.players[0].hp = this.players[0].maxHp;
+    this.recoverPlayerPosition(this.players[0], false);
+    Touch.reset();
+    this._breakHeld = this._useHeld = this._flyHeld = this._camToggleHeld = false;
     this.players[0].flying = true;
     this.players[0].flying = false;   // start on the ground so kids can just walk
     if (window.Network && Network.visitRole) {
@@ -577,10 +813,13 @@ const Game = {
     }
     Cam.thirdPerson = true;
     Audio.play('select');
-    UI.toast('Tap BREAK to mine, PLACE to build. V changes the view.');
+    UI.toast('PLACE uses your selected block or shovel. BREAK mines. V changes the view.');
   },
 
   startFight() {
+    this.restoreSharedArena();
+    this.players.length = 2;
+    this.sharedFightStarted = false;
     this.mode = 'fight';
     this.state = 'fight';
     this.paused = false;
@@ -605,9 +844,7 @@ const Game = {
       this.bot = new Bot(this.players[1], this.pick.botLevel);
     }
 
-    const ax = Math.floor(this.world.originX);
-    const az = Math.floor(this.world.originZ);
-    this.world.buildArena(ax, az, 16);
+    this.ensureFightArena();
     Fight.reset(this.players[0], this.players[1]);
     Cam.yaw = Math.PI / 2;
     Cam.pitch = -0.12;
@@ -615,7 +852,199 @@ const Game = {
     Audio.play('select');
   },
 
+  ensureFightArena() {
+    const shared = window.Network && Network.visitRole && Network.sharedArenaCenter;
+    const ax = Math.max(18, Math.min(WORLD_SIZE - 19, Math.floor(shared ? shared[0] : this.world.originX)));
+    const az = Math.max(18, Math.min(WORLD_SIZE - 19, Math.floor(shared ? shared[1] : this.world.originZ)));
+    const arena = this.world.arena;
+    if (this.sharedArenaBackup && arena && arena.x === ax && arena.z === az) return;
+    this.restoreSharedArena();
+    // Arena writes skip ungenerated chunks: load the complete footprint first.
+    for (let z = Math.floor((az - 18) / CHUNK); z <= Math.floor((az + 18) / CHUNK); z++) {
+      for (let x = Math.floor((ax - 18) / CHUNK); x <= Math.floor((ax + 18) / CHUNK); x++) {
+        const chunk = this.world.getChunk(x, z, true);
+        if (!chunk.generated) this.world.generateChunk(chunk);
+      }
+    }
+    this.captureSharedArena(ax, az);
+    this.world.buildArena(ax, az, 16);
+    this._renderChunks = null;
+  },
+
+  captureSharedArena(ax, az) {
+    if (this.sharedArenaBackup || !this.world) return;
+    const cx = Math.floor((ax === undefined ? this.world.originX : ax) / CHUNK), cz = Math.floor((az === undefined ? this.world.originZ : az) / CHUNK);
+    const radius = Math.ceil(20 / CHUNK);
+    const chunks = [];
+    for (let z = Math.max(0, cz - radius); z <= Math.min(CHUNKS_PER_SIDE - 1, cz + radius); z++) {
+      for (let x = Math.max(0, cx - radius); x <= Math.min(CHUNKS_PER_SIDE - 1, cx + radius); x++) {
+        const chunk = this.world.getChunk(x, z, false);
+        if (chunk && chunk.generated) chunks.push({ chunk, blocks: chunk.blocks.slice(), maxY: chunk.maxY });
+      }
+    }
+    this.sharedArenaBackup = {
+      chunks, arena: this.world.arena,
+      players: this.players.map(player => player ? {
+        pos: player.pos.slice(), vel: player.vel.slice(), yaw: player.yaw, pitch: player.pitch,
+        creative: player.creative, flying: player.flying,
+      } : null),
+    };
+  },
+
+  restoreSharedArena() {
+    if (!this.sharedArenaBackup) return;
+    for (const saved of this.sharedArenaBackup.chunks) {
+      saved.chunk.blocks.set(saved.blocks);
+      saved.chunk.maxY = saved.maxY;
+      saved.chunk.dirty = true;
+      this.world.computeLight(saved.chunk);
+    }
+    this.world.arena = this.sharedArenaBackup.arena;
+    this.sharedArenaBackup.players.forEach((saved, i) => {
+      const player = this.players[i];
+      if (!saved || !player) return;
+      player.pos = saved.pos.slice(); player.vel = saved.vel.slice();
+      player.yaw = saved.yaw; player.pitch = saved.pitch;
+      player.creative = saved.creative; player.flying = saved.flying;
+    });
+    this.sharedArenaBackup = null;
+    this._renderChunks = null;
+  },
+
+  startHostedFightPreview() {
+    this.startFight();
+    this.hostedFightPreview = true;
+    this.sharedFightWaiting = false;
+    this.sharedFightStarted = false;
+    this.bot = null;
+    Fight.roundActive = false;
+    this.players[1].networkRemote = true;
+    this.players[1].networkRemoteVisible = false;
+    document.getElementById('shared-fight-dialog').classList.add('hidden');
+    Touch.reset();
+    Fight.banner('Waiting for a friend', 1.5);
+    UI.toast('Fight Arena is open. You can move while waiting for a friend.');
+  },
+
+  openSharedFightChoice() {
+    this.ensureFightArena();
+    Fight.reset(this.players[0], this.players[1]);
+    Fight.roundActive = false;
+    this.bot = null;
+    this.mode = this.state = 'fight';
+    this.paused = true;
+    this.sharedFightStarted = false;
+    this.sharedFightWaiting = true;
+    this.hostedFightPreview = false;
+    document.body.classList.add('playing');
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('pause').classList.remove('show');
+    document.getElementById('observe-hud').classList.remove('show');
+    document.getElementById('shared-fight-dialog').classList.remove('hidden');
+    UI.show('hud', true);
+    Touch.reset(); Touch.setVisible(false);
+    Input.releaseLock();
+    Touch.relabel('fight');
+    UI.updateHUD(this.players[0], 'fight', 'Fight Arena — waiting for the shared match');
+    if (window.Network) Network.updateFightLobby();
+  },
+
+  startSharedFight(choice) {
+    if (!['duel', 'coop'].includes(choice) || !window.Network || !Network.visitActive) return;
+    this.sharedFightStarted = true;
+    this.hostedFightPreview = false;
+    this.sharedFightWaiting = false;
+    Touch.reset();
+    this._hitHeld = this._useHeld = this._flyHeld = false;
+    Network.fightLocalInput = null;
+    Network.fightActionHeld = { attack: false, special: false, ult: false, altAttack: false };
+    Network.fightActionSeq = { attack: 0, special: 0, ult: 0, altAttack: 0 };
+    this.sharedFightChoice = choice;
+    this.mode = 'fight';
+    this.state = 'fight';
+    this.paused = false;
+    document.body.classList.add('playing');
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('shared-fight-dialog').classList.add('hidden');
+    document.getElementById('observe-hud').classList.remove('show');
+    document.getElementById('pause').classList.remove('show');
+    UI.show('hud', true);
+    Touch.setVisible(true);
+    Touch.relabel('fight');
+    this.ensureFightArena();
+
+    const local = this.players[0], remote = this.players[1];
+    remote.networkRemote = true;
+    remote.networkRemoteVisible = true;
+    const owner = Network.visitRole === 'owner' ? local : remote;
+    const visitor = Network.visitRole === 'visitor' ? local : remote;
+    if (Network.visitRole === 'owner') {
+      visitor.char = characterById(Network.remotePlayerState && Network.remotePlayerState.characterId || this.pick.p2);
+    } else {
+      owner.char = characterById(Network.remotePlayerState && Network.remotePlayerState.characterId || this.pick.p2);
+    }
+    owner.maxHp = owner.char.hp;
+    visitor.maxHp = visitor.char.hp;
+    this.bot = null;
+    const fighters = choice === 'coop' ? new Player(this.world, characterById('golem'), true) : null;
+    if (fighters) {
+      fighters.networkRemote = Network.visitRole === 'visitor';
+      fighters.networkRemoteVisible = true;
+      this.players[2] = fighters;
+      this.bot = new Bot(fighters, this.pick.botLevel || 1);
+    } else this.players.length = 2;
+    Fight.reset(owner, visitor, fighters, choice === 'coop');
+    Cam.thirdPerson = true;
+    Cam.yaw = local.yaw;
+    Cam.pitch = -0.12;
+    Input.requestLock(this.canvas);
+    Audio.play('select');
+  },
+
+  serializeSharedFightState() {
+    if (!Fight.players[0] || !Fight.players[1]) return null;
+    return {
+      players: Fight.players.filter(Boolean).map(p => ({
+        pos: p.pos, vel: p.vel, yaw: p.yaw, characterId: p.char.id,
+        hp: p.hp, maxHp: p.maxHp, ultMeter: p.ultMeter, ko: p.ko,
+        koTimer: p.koTimer, invuln: p.invuln, onGround: p.onGround,
+        walkAnim: p.walkAnim, swing: p.swing ? { attack: p.swing.attack, t: p.swing.t,
+          windup: p.swing.windup, active: p.swing.active, recover: p.swing.recover,
+          hit: p.swing.hit, ranged: p.swing.ranged } : null,
+        swingTotal: p.swingTotal, attacking: p.attacking,
+      })),
+      roundActive: Fight.roundActive,
+      roundTime: Fight.roundTime,
+      winnerIndex: Fight.players.indexOf(Fight.winner),
+    };
+  },
+
+  applySharedFightState(state) {
+    if (!state || !Array.isArray(state.players)) return;
+    for (let i = 0; i < state.players.length; i++) {
+      const p = Fight.players[i];
+      const src = state.players[i];
+      if (!p || !src) continue;
+      for (let axis = 0; axis < 3; axis++) {
+        p.pos[axis] += (src.pos[axis] - p.pos[axis]) * 0.65;
+        p.vel[axis] = src.vel[axis];
+      }
+      p.yaw = src.yaw;
+      p.char = characterById(src.characterId);
+      p.hp = src.hp; p.maxHp = src.maxHp; p.ultMeter = src.ultMeter;
+      p.combo = src.combo || 0;
+      p.ko = src.ko; p.koTimer = src.koTimer; p.invuln = src.invuln;
+      p.onGround = src.onGround; p.walkAnim = src.walkAnim;
+      p.swing = src.swing ? Object.assign({}, src.swing, { spec: p.char.attacks[src.swing.attack] }) : null;
+      p.swingTotal = src.swingTotal; p.attacking = src.attacking;
+    }
+    Fight.roundActive = state.roundActive;
+    Fight.winner = Number.isInteger(state.winnerIndex) && state.winnerIndex >= 0 ? Fight.players[state.winnerIndex] : null;
+  },
+
   startObserve() {
+    this.restoreSharedArena();
+    this.players.length = 2;
     this.mode = 'observe';
     this.state = 'observe';
     this.paused = false;
@@ -640,12 +1069,32 @@ const Game = {
       : 'F5 changes view · P takes a photo');
   },
 
+  enterSharedMode(mode, hostAction) {
+    const next = ['play', 'fight', 'observe'].includes(mode) ? mode : 'play';
+    if (hostAction && window.Network && Network.visitRole === 'owner') {
+      Network.setVisitMode(next);
+      return;
+    }
+    if (next === 'play') this.startPlay();
+    else if (next === 'observe') this.startObserve();
+    else if (window.Network && Network.visitRole === 'owner' && !Network.visitActive) this.startHostedFightPreview();
+    else if (window.Network && Network.visitRole) this.openSharedFightChoice();
+    else this.startFight();
+  },
+
   toMenu() {
+    this.restoreSharedArena();
     if (window.Network && Network.serverMode && Network.visitRole) {
       Network.endVisit();
       return;
     }
+    this.runtimeFailure = false;
+    this.sharedFightWaiting = this.sharedFightStarted = false;
+    document.getElementById('runtime-error-message').classList.add('hidden');
+    document.getElementById('btn-runtime-reload').classList.add('hidden');
+    document.getElementById('shared-fight-dialog').classList.add('hidden');
     this.state = 'menu';
+    this._menuRenderChunks = null;
     this.paused = false;
     Input.releaseLock();
     Touch.setVisible(false);
@@ -661,18 +1110,53 @@ const Game = {
     this.save();
   },
 
+  recoverPlayerPosition(player, force) {
+    if (!player || !this.world) return;
+    const clear = (x, y, z) => {
+      for (let by = Math.floor(y + 0.001); by <= Math.floor(y + 1.779); by++) {
+        for (let bz = Math.floor(z - 0.32); bz <= Math.floor(z + 0.32); bz++) {
+          for (let bx = Math.floor(x - 0.32); bx <= Math.floor(x + 0.32); bx++) {
+            if (isSolid(this.world.getBlock(bx, by, bz))) return false;
+          }
+        }
+      }
+      return true;
+    };
+    const [x, y, z] = player.pos;
+    if (!force && clear(x, y, z)) return;
+    // Move only the character; valid cave saves and all existing blocks remain.
+    const firstY = force ? this.world.findSurfaceY(Math.floor(x), Math.floor(z)) + 1.001 : Math.ceil(y) + 0.001;
+    for (let candidate = firstY; candidate <= WORLD_H - 2; candidate++) {
+      if (!clear(x, candidate, z)) continue;
+      player.pos = [x, candidate, z]; player.vel = [0, 0, 0];
+      player.ko = player.blocked = false; player.onGround = false;
+      return;
+    }
+  },
+
   togglePause(on) {
     if (this.state === 'menu' || this.state === 'loading') return;
     if (on) {
       this.state = 'paused';
       this.paused = true;
       document.getElementById('pause').classList.add('show');
+      UI.show('pause-menu-content', true); UI.show('pause-character-panel', false); UI.show('pause-extra', false);
+      UI.show('btn-pause-rescue', this.mode === 'play');
+      Touch.reset(); Touch.setVisible(false);
       document.getElementById('menu-extra').innerHTML = '';
       Input.releaseLock();
     } else {
+      this.runtimeFailure = false;
+      document.getElementById('runtime-error-message').classList.add('hidden');
+      document.getElementById('btn-runtime-reload').classList.add('hidden');
+      if (this.sharedFightWaiting && window.Network && Network.visitRole && Network.sharedMode === 'fight') {
+        this.openSharedFightChoice();
+        return;
+      }
       this.paused = false;
       this.state = this.mode;
       document.getElementById('pause').classList.remove('show');
+      Touch.reset(); Touch.setVisible(true);
       Input.requestLock(this.canvas);
     }
   },
@@ -696,10 +1180,28 @@ const Game = {
   },
 
   selectSlot(i) {
-    this.selectedSlot = Math.max(0, Math.min(HOTBAR_BLOCKS.length - 1, i));
-    this.players[0].selectedSlot = this.selectedSlot;
+    this.selectedSlot = Math.max(0, Math.min(HOTBAR_ITEMS.length - 1, i));
+    if (this.players[0]) this.players[0].selectedSlot = this.selectedSlot;
     UI.setActiveSlot(this.selectedSlot);
+    if (this.players[0]) UI.updateEquipmentStatus(this.players[0], this.mode);
     Audio.play('select');
+  },
+
+  changeCharacter(id) {
+    const next = characterById(id);
+    this.pick.p1 = next.id;
+    const player = this.players[0];
+    if (player) {
+      const healthRatio = player.maxHp > 0 ? player.hp / player.maxHp : 1;
+      player.char = next;
+      player.maxHp = next.hp;
+      player.hp = Math.max(player.ko ? 0 : 1, Math.min(next.hp, Math.round(healthRatio * next.hp)));
+      player.climbNormal = null;
+      this.save();
+      UI.updateEquipmentStatus(player, this.mode);
+    } else this.save();
+    UI.toast('Now playing as ' + next.name);
+    return next;
   },
 
   newWorld() {
@@ -761,7 +1263,7 @@ const Game = {
     UI.toast(worldType === 'flat' ? 'Flat world ready.' : 'Normal world ready.');
   },
 
-  async enterSharedWorld(sharedWorld) {
+  async enterSharedWorld(sharedWorld, sharedMode) {
     const localPick = this.pick.p1;
     this.activeWorldType = sharedWorld.worldType === 'flat' ? 'flat' : 'normal';
     this.pendingWorldType = this.activeWorldType;
@@ -790,11 +1292,12 @@ const Game = {
       this.players[1].pos = [spawn[0] + 3, spawn[1], spawn[2]];
     }
     this.state = 'menu';
-    this.startPlay();
+    this.enterSharedMode(sharedMode || 'play', false);
   },
 
   async restorePersonalWorld() {
     if (!window.Network || !Network.savedWorld) return;
+    this.restoreSharedArena();
     this.state = 'loading';
     this.paused = true;
     this.saved = Network.savedWorld;
@@ -827,7 +1330,10 @@ const Game = {
       const snapshot = {
         worldType: this.activeWorldType,
         seed: this.world ? this.world.seed : 1337,
-        player1: p ? p.pos.slice() : null,
+        worldSize: WORLD_SIZE,
+        // Arena visits are temporary: keep the personal-world return position.
+        player1: this.sharedArenaBackup && this.sharedArenaBackup.players[0]
+          ? this.sharedArenaBackup.players[0].pos.slice() : (p ? p.pos.slice() : null),
         slot: this.selectedSlot,
         pick: this.pick,
         settings: this.settings,
@@ -837,10 +1343,12 @@ const Game = {
         }) : [],
       };
       if (window.Network && Network.serverMode) {
-        if (Network.visitRole === 'owner' && Network.visitActive) return;
-        Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
-      } else localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
-    } catch (e) { /* storage may be blocked; the game still works */ }
+        if (Network.visitRole === 'owner' && Network.visitActive) return false;
+        return Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
+      }
+      localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
+      return { status: 'saved' };
+    } catch (e) { return false; /* storage may be blocked; the game still works */ }
   },
 
   load() {
@@ -882,14 +1390,13 @@ const Game = {
     } catch (e) { this.saved = null; }
   },
 
-  /* Keep a player inside the playable square. The world's bedrock floor
-     stops falls, but the 8 block margin between the 200x200 playfield and
-     the chunk edge needs a hard wall or you could walk into unmeshed
-     terrain and fall through. */
+  /* Keep a player inside the playable square. */
   clampToWorld(p) {
-    const half = WORLD_SIZE / 2 - 1;
-    const lo = WORLD_CENTRE - half;
-    const hi = WORLD_CENTRE + half;
+    // Match the chunk and save bounds while keeping the player's 0.32-block
+    // collision radius inside the edge blocks.
+    const padding = 0.321;
+    const lo = MIN_EDGE + padding;
+    const hi = MAX_EDGE - padding;
     if (p.pos[0] < lo) { p.pos[0] = lo; p.vel[0] = 0; }
     if (p.pos[0] > hi) { p.pos[0] = hi; p.vel[0] = 0; }
     if (p.pos[2] < lo) { p.pos[2] = lo; p.vel[2] = 0; }
@@ -903,6 +1410,7 @@ const Game = {
     if (this.state !== 'play') return;
     const p = p1;
     const world = this.world;
+    p.buildUseTime = Math.max(0, (p.buildUseTime || 0) - dt);
 
     // mouse wheel + touch slot taps
     if (Input.mouse.wheel) this.selectSlot(this.selectedSlot + Input.mouse.wheel);
@@ -917,13 +1425,17 @@ const Game = {
     const breakHeld = Input.mouse.left || Touch.btn.hit;
     const breakJustPressed = Input.mouse.leftPressed || (Touch.btn.hit && !this._breakHeld);
     const placeJustPressed = Input.mouse.rightPressed || (Touch.btn.use && !this._useHeld);
+    const animalHit = breakJustPressed && this.tryHitAnimal(p);
 
-    if (hit.hit) {
+    const item = HOTBAR_ITEMS[this.selectedSlot] || HOTBAR_ITEMS[0];
+    if (breakJustPressed || placeJustPressed) p.buildUseTime = 0.3;
+    if (hit.hit && !animalHit) {
       const b = BLOCKS[hit.id];
-      if (breakJustPressed) {
+      // PLACE uses the selected item: tools remove, blocks build.
+      if (breakJustPressed || (placeJustPressed && item.kind === 'tool')) {
         if (b && b.unbreakable) {
           UI.toast('That block is too tough to break!');
-        } else if (!p.creative && b && b.hardness && p.breakProgress !== hit.id) {
+        } else if (item.kind !== 'tool' && !p.creative && b && b.hardness && p.breakProgress !== hit.id) {
           // survival-ish timing
           p.breakProgress = hit.id;
           p.breakTime = (p.breakTime || 0) + dt;
@@ -943,11 +1455,11 @@ const Game = {
       }
 
       // place
-      if (placeJustPressed) {
+      if (placeJustPressed && !breakJustPressed && item.kind === 'block') {
         const nx = hit.x + hit.nx, ny = hit.y + hit.ny, nz = hit.z + hit.nz;
         const target = world.getBlock(nx, ny, nz);
         if (target === 0 || isLiquid(target)) {
-          const id = HOTBAR_BLOCKS[this.selectedSlot];
+          const id = item.id;
           // don't place a block inside a player
           const wouldHitPlayer = this.players.some(pl =>
             nx + 1 > pl.pos[0] - 0.32 && nx < pl.pos[0] + 0.32 &&
@@ -995,11 +1507,11 @@ const Game = {
       mx += Touch.move.x;
       mz += -Touch.move.y;
       jump = jump || Touch.btn.jump;
-      sneak = sneak || Touch.btn.use;
+      sneak = sneak || (this.state !== 'play' && Touch.btn.use);
       const l = Touch.consumeLook();
-      // Touch dragging is in CSS pixels, so scale by canvas size to keep
-      // the feel consistent from a small phone up to a desktop monitor.
-      const gain = 26 / Math.max(400, window.innerWidth);
+      // A typical 150px thumb stroke on a 390px iPhone turns roughly 60° at
+      // the default sensitivity, so aiming does not require a screen-wide drag.
+      const gain = 1200 / Math.max(400, window.innerWidth);
       ldx += l.x * gain;
       ldy += l.y * gain;
     }
@@ -1055,6 +1567,13 @@ const Game = {
     };
   },
 
+  cameraViewToggleRequested() {
+    const touchView = Touch.enabled && Touch.btn.view;
+    const requested = Input.hit('KeyV') || (touchView && !this._camToggleHeld);
+    this._camToggleHeld = touchView;
+    return requested;
+  },
+
   /* ============================================================
      update
      ============================================================ */
@@ -1078,14 +1597,16 @@ const Game = {
       // Camera view toggle: third person shows your character, first person
       // puts the camera in their eyes. Default is third person because you can
       // see who you are and where you are going.
-      const wantThird = Input.hit('KeyV') ||
-        (Touch.btn.hit && Touch.enabled && !this._camToggleHeld);
-      if (wantThird) {
+      if (this.cameraViewToggleRequested()) {
         Cam.thirdPerson = !Cam.thirdPerson;
+        const viewButton = document.getElementById('touch-view');
+        if (viewButton) {
+          viewButton.textContent = Cam.thirdPerson ? '3RD' : '1ST';
+          viewButton.setAttribute('aria-label', Cam.thirdPerson ? 'Switch to first-person view' : 'Switch to third-person view');
+        }
         UI.toast(Cam.thirdPerson ? 'Third person' : 'First person');
         Audio.play('view');
       }
-      this._camToggleHeld = Touch.btn.hit;
 
       // flight toggle — the FLY button on touch, the F key on desktop
       const flyToggle = Input.hit('KeyF') || (Touch.btn.fly && !this._flyHeld);
@@ -1109,8 +1630,8 @@ const Game = {
         if (this.stepTimer <= 0) { Audio.play('step'); this.stepTimer = 0.34; }
       }
 
-      // animals wander around
-      for (const a of this.animals) a.update(dt, this.world);
+      // Animals use one shared pass so packs can coordinate their target.
+      this.updateAnimals(dt, p1);
       Particles.update(dt, this.world);
 
       // Stop anyone walking off the edge of the world, and catch anyone who
@@ -1119,42 +1640,63 @@ const Game = {
       this.clampToWorld(p1);
 
       UI.updateHUD(p1, 'play',
-        'Playing as <b>' + p1.char.name + '</b><br>Blocks: <b>' + Object.keys(this.world.chunks).length +
-        '</b> chunks<br>Fly: <b>' + (p1.flying ? 'on' : 'off') + '</b>');
+        'Playing as <b>' + p1.char.name + '</b><br>Chunks: <b>' + this.world.activeChunks.size +
+        '</b><br>Fly: <b>' + (p1.flying ? 'on' : 'off') + '</b>');
 
     } else if (this.state === 'fight') {
-      // P1: mouse look + WASD
       Cam.look(inp.ldx, inp.ldy);
       p1.yaw = Cam.yaw;
       p1.pitch = Cam.pitch;
-      p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
-
-      // inp.pad is null when no controller is attached, so read it defensively
       const pad = inp.pad || {};
-      // P1 attacks: mouse buttons on desktop, the big HIT/SKILL buttons on touch
       const p1Attack = Input.mouse.leftPressed || Input.mouse.left || pad.attack || (Touch.btn.hit && !this._hitHeld);
       const p1Special = Input.mouse.rightPressed || pad.special || (Touch.btn.use && !this._useHeld);
       const p1Ult = Input.down('KeyL') || pad.ult || (Touch.btn.fly && !this._flyHeld);
+      const p1Alt = Input.down('KeyK');
       this._hitHeld = Touch.btn.hit;
       this._useHeld = Touch.btn.use;
       this._flyHeld = Touch.btn.fly;
-
-      this.handleFightInput(p1, p2, {
-        attack: p1Attack,
-        special: p1Special,
-        ult: p1Ult,
-        altAttack: Input.down('KeyK'),
-      });
-
-      // P2: gamepad, computer opponent, or keyboard
-      const i2 = this.gatherInput2(dt);
-      if (i2.turn) p2.yaw += i2.turn * 2.4 * dt;
-      p2.update(dt, i2.mx, i2.mz, i2.jump, i2.sneak);
-      this.clampToWorld(p1);
-      this.clampToWorld(p2);
-      this.handleFightInput(p2, p1, i2);
-
-      Fight.update(dt, p1, p2);
+      const connected = window.Network && Network.visitActive && Network.sharedMode === 'fight';
+      const hostWaiting = window.Network && Network.visitRole === 'owner' && Network.sharedMode === 'fight' && !Network.visitActive;
+      if (hostWaiting) {
+        // An empty hosted arena allows movement but has no active opponent.
+        p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
+        this.clampToWorld(p1);
+      } else if (connected) {
+        Network.setSharedFightInput({ mx: inp.mx, mz: inp.mz, jump: inp.jump, sneak: inp.sneak,
+          yaw: p1.yaw, attack: p1Attack, special: p1Special, ult: p1Ult, altAttack: p1Alt });
+        if (Network.visitRole === 'visitor') {
+          // The host is authoritative for combat; visitors send input and render
+          // the latest validated fighter snapshot.
+          UI.updateHUD(p1, 'fight', 'Waiting for the host combat simulation…');
+        } else {
+          p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
+          const remote = Network.fightRemoteInput || {};
+          p2.yaw = Number.isFinite(remote.yaw) ? remote.yaw : p2.yaw;
+          p2.update(dt, remote.mx || 0, remote.mz || 0, remote.jump === true, remote.sneak === true);
+          this.clampToWorld(p1); this.clampToWorld(p2);
+          this.handleFightInput(p1, this.findFightOpponent(p1), { attack: p1Attack, special: p1Special, ult: p1Ult, altAttack: p1Alt });
+          for (const action of Network.fightRemoteActions.splice(0)) {
+            const input = { attack: action === 'attack', special: action === 'special', ult: action === 'ult', altAttack: action === 'altAttack' };
+            this.handleFightInput(p2, this.findFightOpponent(p2), input);
+          }
+          if (this.sharedFightChoice === 'coop' && this.players[2] && this.bot) {
+            const target = this.findFightOpponent(this.players[2]);
+            const cmd = target ? this.bot.think_opponent(target, dt) : {};
+            this.players[2].update(dt, cmd.mx || 0, cmd.mz || 0, cmd.jump === true, false);
+            this.handleFightInput(this.players[2], target, cmd);
+          }
+          Fight.update(dt, p1, p2);
+        }
+      } else {
+        p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
+        this.handleFightInput(p1, p2, { attack: p1Attack, special: p1Special, ult: p1Ult, altAttack: p1Alt });
+        const i2 = this.gatherInput2(dt);
+        if (i2.turn) p2.yaw += i2.turn * 2.4 * dt;
+        p2.update(dt, i2.mx, i2.mz, i2.jump, i2.sneak);
+        this.clampToWorld(p1); this.clampToWorld(p2);
+        this.handleFightInput(p2, p1, i2);
+        Fight.update(dt, p1, p2);
+      }
 
       // The camera itself is positioned once per frame in render(), so that
       // there is exactly one owner of the view matrices. Doing it here as well
@@ -1162,9 +1704,12 @@ const Game = {
       // third-person orbit settle at two speeds and could never settle at all.
 
       const ultReady = p1.ultMeter >= p1.maxUlt;
-      const vsName = p2.char.name + (this.bot ? ' (computer)' : '');
+      const sharedCoop = window.Network && Network.visitActive && this.sharedFightChoice === 'coop' && Fight.players[2];
+      const matchup = hostWaiting ? 'Fight Arena — waiting for a friend' : sharedCoop
+        ? '<b>' + Fight.players[0].char.name + ' + ' + Fight.players[1].char.name + '</b> vs <b>' + Fight.players[2].char.name + ' (computer)</b>'
+        : '<b>' + p1.char.name + '</b> vs <b>' + p2.char.name + (this.bot ? ' (computer)' : '') + '</b>';
       UI.updateHUD(p1, 'fight',
-        '<b>' + p1.char.name + '</b> vs <b>' + vsName + '</b><br>' +
+        matchup + '<br>' +
         (this.isTouch
           ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap FLY!' : Math.round(p1.ultMeter) + '%') + '</b>'
           : p1.char.ultName + ': <b>' + (ultReady ? 'READY! press L' : Math.round(p1.ultMeter) + '%') + '</b>'));
@@ -1192,20 +1737,23 @@ const Game = {
       }
 
       Observer.update(dt, this.aspect());
+      if (window.Network && Network.visitRole && (Network.visitRole === 'owner' || Network.visitRole === 'visitor')) {
+        Network.updateRemotePlayer(p2, dt);
+      }
       const v = Observer.view();
       document.getElementById('obs-view-name').textContent = v.name;
       document.getElementById('obs-coords').textContent =
         'x ' + Observer.pos[0].toFixed(1) + '   y ' + Observer.pos[1].toFixed(1) + '   z ' + Observer.pos[2].toFixed(1);
       document.getElementById('obs-hint').textContent =
         this.isTouch ? '▲▼ height · tap JUMP to change view · FLY to photo' : v.hint + ' · P photo · F10 menu';
-      // keep the world alive so animals still wander
-      for (const a of this.animals) a.update(dt, this.world);
+      // keep the world alive so animals still move while being observed
+      this.updateAnimals(dt, null);
       Particles.update(dt, this.world);
     }
   },
 
   handleFightInput(attacker, defender, i) {
-    if (attacker.ko) return;
+    if (!attacker || !defender || attacker.ko) return;
     if (attacker.swing) return;   // busy with the current swing
 
     if (i.ult) { Fight.useUltimate(attacker, defender); return; }
@@ -1228,6 +1776,10 @@ const Game = {
     }
   },
 
+  findFightOpponent(player) {
+    return Fight.nearestOpponent(player) || this.players.find(candidate => candidate && candidate !== player) || null;
+  },
+
   doAttack(p, index) {
     const a = p.char.attacks[index];
     if (!a) return;
@@ -1240,34 +1792,26 @@ const Game = {
      render
      ============================================================ */
   aspect() {
-    return this.canvas.height / Math.max(1, this.canvas.width);
+    return Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
   },
 
   dayLightFactor() {
     if (!this.settings.dayNight) return 1;
     // 0 at night, 1 at noon
     const p = this.dayPhase;
-    const s = Math.sin(p * Math.PI * 2);
+    const s = -Math.cos(p * Math.PI * 2);
     return Math.max(0.12, Math.min(1, s * 0.62 + 0.52));
   },
 
-  /* A cool futurist sky: indigo zenith fading to a violet horizon, with a
-     warm amber counter-glow where the sun sits. Two moons, because one
-     looked lonely against all that cyan. */
+  // Bright blue daytime, readable moonlit night, and warm dawn/dusk.
   skyColors() {
-    const f = this.dayLightFactor();
-    const night = 1 - f;
-    const top = [
-      0.03 + f * 0.10,
-      0.05 + f * 0.22,
-      0.13 + f * 0.46,
-    ];
-    const bottom = [
-      0.14 + f * 0.30,
-      0.10 + f * 0.28,
-      0.30 + f * 0.36,
-    ];
-    return { top, bottom, star: Math.max(0, night - 0.3) * 1.7, night };
+    const f = this.dayLightFactor(); const t = (f - 0.12) / 0.88;
+    const dawn = Math.max(0, 1 - Math.abs(f - 0.45) * 4);
+    const mix = (a,b) => a.map((v,i) => v + (b[i] - v) * t);
+    const top = mix([0.025,0.035,0.10], [0.20,0.52,0.92]);
+    const bottom = mix([0.10,0.13,0.24], [0.72,0.86,1.0]);
+    bottom[0] += dawn * 0.12;
+    return { top, bottom, star: Math.max(0, 1 - t * 2), night: 1 - t };
   },
 
   render(dt) {
@@ -1306,8 +1850,8 @@ const Game = {
     const sky = this.skyColors();
     const dayF = this.dayLightFactor();
     this._frameDayLight = dayF;
-    const sunAngle = this.dayPhase * Math.PI * 2;
-    const sunDir = [Math.cos(sunAngle) * 0.4, Math.sin(sunAngle), Math.cos(sunAngle) * 0.6];
+    const sunAngle = (this.settings.dayNight ? this.dayPhase : 0.5) * Math.PI * 2;
+    const sunDir = [Math.sin(sunAngle), -Math.cos(sunAngle), 0.25];
 
     // --- sky ---
     gl.useProgram(this.skyProg);
@@ -1315,6 +1859,13 @@ const Game = {
     gl.uniform3f(this.skyProg.u.uBottom, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform3f(this.skyProg.u.uSunDir, sunDir[0], sunDir[1], sunDir[2]);
     gl.uniform1f(this.skyProg.u.uStar, sky.star);
+    // Extract camera basis from the view matrix (also supports Observe cameras).
+    const view = Cam.view;
+    gl.uniform3f(this.skyProg.u.uForward, -view[2], -view[6], -view[10]);
+    gl.uniform3f(this.skyProg.u.uRight, view[0], view[4], view[8]);
+    gl.uniform3f(this.skyProg.u.uUp, view[1], view[5], view[9]);
+    gl.uniform1f(this.skyProg.u.uAspect, aspect);
+    gl.uniform1f(this.skyProg.u.uTanHalfFov, Math.tan(Cam.fov / 2));
     gl.depthMask(false);
     gl.disable(gl.DEPTH_TEST);
     gl.bindVertexArray(this.quadVAO);
@@ -1338,6 +1889,7 @@ const Game = {
     gl.uniform1f(prog.u.uFogFar, fogFar);
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
+    gl.uniform1f(prog.u.uTime, this.time);
 
     // opaque
     gl.uniform1f(prog.u.uAlphaCut, 0.5);
@@ -1348,19 +1900,48 @@ const Game = {
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
-    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.CULL_FACE);
 
-    this.world.chunks.forEach((c) => {
-      if (!c.mesh || !c.mesh.opaque) return;
-      if (!this.chunkInRange(c)) return;
+    let renderChunks;
+    if (this.state === 'menu') {
+      // The menu camera orbits while streaming continues in the background.
+      // Cache every meshed chunk so the menu backdrop can rotate freely
+      // without traversing a larger world map on every frame.
+      if (!this._menuRenderChunks || this._menuWorld !== this.world) {
+        this._menuRenderChunks = [];
+        for (const c of this.world.activeChunks) if (c.mesh) this._menuRenderChunks.push(c);
+        this._menuWorld = this.world;
+      }
+      renderChunks = this._menuRenderChunks;
+    } else {
+      renderChunks = this._renderChunks || this.world.activeChunks;
+    }
+    // Distance/frustum eligibility is identical for both terrain passes, so
+    // calculate it once and reuse this list for opaque and transparent meshes.
+    const visibleChunks = this._visibleRenderChunks || (this._visibleRenderChunks = []);
+    visibleChunks.length = 0;
+    for (const c of renderChunks) {
+      if (c.mesh && this.chunkInRange(c)) visibleChunks.push(c);
+    }
+    for (const c of visibleChunks) {
+      if (!c.mesh || !c.mesh.opaque) continue;
       gl.bindVertexArray(c.mesh.opaque.vao);
       gl.drawElements(gl.TRIANGLES, c.mesh.opaque.count, gl.UNSIGNED_INT, 0);
-    });
+    }
+
+    // Alpha-cut foliage writes depth where its texel is solid, hiding leaves
+    // behind it while preserving the transparent gaps between leaf clusters.
+    gl.uniform1f(prog.u.uAlphaCut, 0.5);
+    for (const c of visibleChunks) {
+      if (!c.mesh || !c.mesh.cutout) continue;
+      gl.bindVertexArray(c.mesh.cutout.vao);
+      gl.drawElements(gl.TRIANGLES, c.mesh.cutout.count, gl.UNSIGNED_INT, 0);
+    }
 
     // --- characters, animals, particles (uses its own program internally) ---
     this.renderEntities(prog, dayF);
 
-    // --- transparent: water and cutout last, blended ---
+    // --- transparent water ---
     // renderEntities switches to progBox for the characters, so we have to
     // re-bind the terrain program and restore every uniform it uses before
     // drawing water. Forgetting this leaves the uniforms pointing at the
@@ -1370,6 +1951,7 @@ const Game = {
     gl.uniform3f(prog.u.uCamPos, camPos[0], camPos[1], camPos[2]);
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
+    gl.uniform1f(prog.u.uTime, this.time);
     gl.uniform1f(prog.u.uTintR, 1);
     gl.uniform1f(prog.u.uTintG, 1);
     gl.uniform1f(prog.u.uTintB, 1);
@@ -1380,12 +1962,11 @@ const Game = {
     gl.uniform1f(prog.u.uAlphaCut, 0.02);
     gl.uniform1f(prog.u.uIsLiquid, 1);
 
-    this.world.chunks.forEach((c) => {
-      if (!c.mesh || !c.mesh.trans) return;
-      if (!this.chunkInRange(c)) return;
+    for (const c of visibleChunks) {
+      if (!c.mesh || !c.mesh.trans) continue;
       gl.bindVertexArray(c.mesh.trans.vao);
       gl.drawElements(gl.TRIANGLES, c.mesh.trans.count, gl.UNSIGNED_INT, 0);
-    });
+    }
 
     gl.depthMask(true);
     gl.disable(gl.BLEND);
@@ -1462,10 +2043,9 @@ const Game = {
   },
 
   /* ---- chunk streaming -------------------------------------------------
-     The world is only 200x200, so all of it is generated up front. Meshing
-     all 169 chunks at load was slow and held far more GPU memory than the
-     view needs. Instead we mesh chunks as the player approaches and release
-     the buffers for chunks well behind.
+     Generate and mesh only a local region, then release distant chunk arrays
+     and GPU buffers. Sparse edits remain indexed and are reapplied if a chunk
+     is generated again later.
 
      The budget is in milliseconds, not in chunks. A single chunk mesh costs
      around 13ms on this hardware, so "two chunks per frame" silently meant
@@ -1474,80 +2054,111 @@ const Game = {
   streamChunks(msBudget) {
     const camPos = (this.state === 'observe') ? Observer.pos : Cam.pos;
     const keep = this.viewDistance();
+    const streamKeep = keep + CHUNK;
     // Release a little beyond the visible radius so walking back and forth
     // does not thrash the buffers, but still bounds GPU memory.
     const drop = keep * 1.35;
     const budget = msBudget === undefined ? 6 : msBudget;
-
-    // nearest first, so the chunks you are about to see are built first
-    const wanted = [];
-    for (const c of this.world.chunks.values()) {
-      if (!c.generated) continue;
-      const minX = c.cx * CHUNK, minZ = c.cz * CHUNK;
-      const d = Math.hypot(minX + CHUNK / 2 - camPos[0], minZ + CHUNK / 2 - camPos[2]);
-      if (d > keep) {
-        // far away: release the mesh to free memory, but keep the data
-        if (c.mesh && d > drop) { disposeMesh(this.gl, c.mesh); c.mesh = null; }
-        continue;
-      }
-      if (!c.mesh) wanted.push({ c, d });
-    }
-    wanted.sort((a, b) => a.d - b.d);
-    if (!wanted.length) return 0;
-
-    // The leftover list is cached so walking around does not re-sort every
-    // frame; it is invalidated whenever the queue empties or the camera moves
-    // far enough that priorities could have changed.
+    // Rebuild only the bounded neighbourhood after crossing a chunk boundary.
     const moved = !this._streamAt ||
-      Math.hypot(camPos[0] - this._streamAt[0], camPos[2] - this._streamAt[2]) > CHUNK;
-    if (moved || !this._streamQueue || !this._streamQueue.length) {
+      Math.floor(camPos[0] / CHUNK) !== Math.floor(this._streamAt[0] / CHUNK) ||
+      Math.floor(camPos[2] / CHUNK) !== Math.floor(this._streamAt[2] / CHUNK);
+    const worldChanged = this._streamWorld !== this.world;
+    const distanceChanged = this._streamKeep !== keep;
+    const refresh = moved || worldChanged || distanceChanged || !Array.isArray(this._streamQueue);
+    if (refresh) {
+      // Generate and mesh nearest chunks first; never scan the full world.
+      const wanted = [];
+      const generate = [];
+      const renderChunks = [];
+      const centerCX = Math.floor(camPos[0] / CHUNK);
+      const centerCZ = Math.floor(camPos[2] / CHUNK);
+      const radius = Math.ceil(streamKeep / CHUNK) + 1;
+      const minCX = Math.max(0, centerCX - radius);
+      const maxCX = Math.min(CHUNKS_PER_SIDE - 1, centerCX + radius);
+      const minCZ = Math.max(0, centerCZ - radius);
+      const maxCZ = Math.min(CHUNKS_PER_SIDE - 1, centerCZ + radius);
+      for (let cz = minCZ; cz <= maxCZ; cz++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          const minX = cx * CHUNK, minZ = cz * CHUNK;
+          const dx = Math.max(minX - camPos[0], 0, camPos[0] - (minX + CHUNK));
+          const dz = Math.max(minZ - camPos[2], 0, camPos[2] - (minZ + CHUNK));
+          const d = Math.hypot(dx, dz);
+          if (d > streamKeep) continue;
+          const c = this.world.getChunk(cx, cz, true);
+          if (!c.generated) {
+            generate.push({ c, d });
+            continue;
+          }
+          renderChunks.push(c);
+          if (!c.mesh) wanted.push({ c, d });
+        }
+      }
+      for (const c of this.world.activeChunks) {
+        const minX = c.cx * CHUNK, minZ = c.cz * CHUNK;
+        const dx = Math.max(minX - camPos[0], 0, camPos[0] - (minX + CHUNK));
+        const dz = Math.max(minZ - camPos[2], 0, camPos[2] - (minZ + CHUNK));
+        if (Math.hypot(dx, dz) <= drop) continue;
+        if (c.mesh) { disposeMesh(this.gl, c.mesh); c.mesh = null; }
+        c.release();
+        this.world.activeChunks.delete(c);
+        if (!this.world.editsByChunk.has(this.world.key(c.cx, c.cz))) {
+          this.world.chunks.delete(this.world.key(c.cx, c.cz));
+        }
+      }
+      generate.sort((a, b) => a.d - b.d);
+      wanted.sort((a, b) => a.d - b.d);
+      this._generationQueue = generate;
       this._streamQueue = wanted;
+      this._renderChunks = renderChunks;
       this._streamAt = [camPos[0], camPos[1], camPos[2]];
+      this._streamWorld = this.world;
+      this._streamKeep = keep;
     }
-
     const start = performance.now();
     let built = 0;
-    // Always build at least one, otherwise a single expensive chunk could
-    // never be scheduled at all and the gap would stay missing forever.
-    do {
+    const generationTurn = this._generationQueue && this._generationQueue.length &&
+      ((this._streamTurn = (this._streamTurn || 0) + 1) & 1) === 1;
+    if (generationTurn) {
+      const next = this._generationQueue.shift();
+      const c = next.c;
+      if (!c.generated) this.world.generateChunk(c);
+      this._renderChunks.push(c);
+      this._streamQueue.push(next);
+      built++;
+    }
+    if (this._streamQueue.length && !generationTurn) do {
       const next = this._streamQueue.shift();
       if (!next || next.c.mesh) break;
       next.c.mesh = buildChunkMesh(this.gl, this.world, next.c);
       next.c.dirty = false;
       built++;
-    } while (this._streamQueue.length &&
-      performance.now() - start < budget);
+    } while (this._streamQueue.length && performance.now() - start < budget);
 
+    if (built && this.state === 'menu') this._menuRenderChunks = null;
     return built;
   },
 
   // Draw a textured box at a world position with Y rotation.
   // alpha < 1 makes it translucent (used for auras, sparks and the block outline).
-  drawBox(prog, center, size, tile, tint, rotY, alpha) {
+  drawBox(prog, center, size, tile, tint, rotY, alpha, basis) {
     const gl = this.gl;
     const p = this.progBox;
-    gl.useProgram(p);
 
     const model = M4.composeTRS(this._boxModel, center, size, rotY || 0);
+    if (basis) {
+      for (let col = 0; col < 3; col++) {
+        for (let row = 0; row < 3; row++) model[col * 4 + row] = basis[col][row] * size[col];
+      }
+    }
     const mvp = M4.multiply(this._boxMvp, Cam.viewProj, model);
 
-    const camPos = (this.state === 'observe') ? Observer.pos : Cam.pos;
-    const fogFar = 40 + this.renderDist * CHUNK * 0.85;
-
     gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
-    gl.uniform3f(p.u.uCamPos, camPos[0], camPos[1], camPos[2]);
-    gl.uniform1f(p.u.uFogNear, fogFar * 0.42);
-    gl.uniform1f(p.u.uFogFar, fogFar);
-    gl.uniform3f(p.u.uFogColor, 0.72, 0.82, 0.95);
-    gl.uniform1f(p.u.uDayLight, this._frameDayLight);
+    gl.uniform3f(p.u.uBoxCenter, center[0], center[1], center[2]);
     gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, alpha === undefined ? 1 : alpha);
     gl.uniform1f(p.u.uTile, tile || 0);
     gl.uniform1f(p.u.uUseTex, tile === undefined || tile === null ? 0 : 1);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.blockTex);
-    gl.uniform1i(p.u.uTex, 0);
 
     gl.bindVertexArray(this.cube.vao);
     gl.drawElements(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0);
@@ -1555,6 +2166,21 @@ const Game = {
 
   renderEntities(prog, dayF) {
     const gl = this.gl;
+    const boxProg = this.progBox;
+    const camPos = (this.state === 'observe') ? Observer.pos : Cam.pos;
+    const fogFar = 40 + this.renderDist * CHUNK * 0.85;
+    // These values are shared by every character part, animal, projectile,
+    // and particle in this pass; upload them once instead of once per cube.
+    gl.useProgram(boxProg);
+    gl.uniform3f(boxProg.u.uCamPos, camPos[0], camPos[1], camPos[2]);
+    gl.uniform1f(boxProg.u.uFogNear, fogFar * 0.42);
+    gl.uniform1f(boxProg.u.uFogFar, fogFar);
+    const entitySky = this.skyColors().bottom;
+    gl.uniform3f(boxProg.u.uFogColor, entitySky[0], entitySky[1], entitySky[2]);
+    gl.uniform1f(boxProg.u.uDayLight, dayF);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.blockTex);
+    gl.uniform1i(boxProg.u.uTex, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -1570,6 +2196,9 @@ const Game = {
     // players
     for (const p of this.players) {
       if (p.networkRemote && !p.networkRemoteVisible) continue;
+      // The camera is inside the local character's head in first-person play;
+      // drawing that enclosing mesh would obstruct the view.
+      if (this.state === 'play' && p === this.players[0] && !Cam.thirdPerson) continue;
       this.drawCharacter(prog, p, dayF);
     }
 
@@ -1589,7 +2218,46 @@ const Game = {
       this.drawBox(prog, p.pos, [s, s, s], p.def.tile, [1, 1, 1], p.spin, Math.min(1, p.life * 2));
     }
 
+    // Camera-relative hand is drawn last so nearby terrain never hides it.
+    if (this.state === 'play' && !Cam.thirdPerson && this.players[0]) {
+      // Keep scene depth intact: the hand should be occluded by nearby blocks,
+      // and clearing here would also let the later transparent-water pass draw
+      // over opaque terrain.
+      this.drawBuildHand(prog, this.players[0], true);
+    }
     gl.disable(gl.BLEND);
+  },
+
+  drawBuildHand(prog, player, firstPerson, base, armAngle) {
+    const item = HOTBAR_ITEMS[player.selectedSlot] || HOTBAR_ITEMS[0];
+    const k = Math.sin(Math.PI * Math.min(1, (player.buildUseTime || 0) / 0.3));
+    const yaw = firstPerson ? Cam.yaw : player.yaw;
+    const right = [Math.cos(yaw), 0, -Math.sin(yaw)];
+    const angle = firstPerson ? -Cam.pitch + k * 0.65 : armAngle;
+    const up = [-Math.sin(yaw) * Math.sin(angle), Math.cos(angle), -Math.cos(yaw) * Math.sin(angle)];
+    const back = [Math.sin(yaw) * Math.cos(angle), Math.sin(angle), Math.cos(yaw) * Math.cos(angle)];
+    const basis = [right, up, back];
+    let hand;
+    if (firstPerson) {
+      const fwd = Cam.forward([0, 0, 0]);
+      const cameraUp = [Math.sin(yaw) * Math.sin(Cam.pitch), Math.cos(Cam.pitch), Math.cos(yaw) * Math.sin(Cam.pitch)];
+      hand = Cam.pos.map((v, i) => v + fwd[i] * (0.72 - k * 0.14) + right[i] * 0.28 - cameraUp[i] * (0.28 + k * 0.08));
+      const wrist = hand.map((v, i) => v + back[i] * 0.14);
+      this.drawBox(prog, wrist, [0.14, 0.14, 0.3], player.char.shirt, [1,1,1], 0, 1, basis);
+    } else {
+      hand = base.map((v, i) => v + right[i] * 0.36 + (i === 1 ? 1.35 : 0) - up[i] * 0.62);
+    }
+    this.drawBox(prog, hand, [0.17,0.17,0.17], player.char.skin, [1,1,1], 0, 1, basis);
+    if (item.kind === 'block') {
+      const center = hand.map((v, i) => v - back[i] * 0.15 + up[i] * 0.07);
+      this.drawBox(prog, center, [0.28,0.28,0.28], BLOCKS[item.id].tiles.all || BLOCKS[item.id].tiles.side || BLOCKS[item.id].tiles.top, [1,1,1], 0, 1, basis);
+    } else {
+      this.drawBox(prog, hand, [0.055,0.48,0.055], T.planks, [1,1,1], 0, 1, basis);
+      const blade = hand.map((v, i) => v - up[i] * 0.29);
+      this.drawBox(prog, blade, [0.22,0.18,0.06], T.steel, [1,1,1], 0, 1, basis);
+      const grip = hand.map((v, i) => v + up[i] * 0.25);
+      this.drawBox(prog, grip, [0.14,0.06,0.07], T.planks, [1,1,1], 0, 1, basis);
+    }
   },
 
   drawCharacter(prog, p, dayF) {
@@ -1607,6 +2275,10 @@ const Game = {
       if (atk === 0) { armR = -k * 2.2; armL = k * 0.6; }
       else if (atk === 1) { armL = k * 2.0; armR = -k * 0.8; }
       else { armR = -k * 2.6; armL = -k * 2.6; }
+    }
+    if (this.state === 'play' && p === this.players[0]) {
+      const use = Math.sin(Math.PI * Math.min(1, (p.buildUseTime || 0) / 0.3));
+      armR = -0.45 - use * 1.1;
     }
     let legL = -walk * 0.7, legR = walk * 0.7;
     if (p.ko) { legL = 0.9; legR = 0.9; }
@@ -1639,9 +2311,14 @@ const Game = {
       this.drawBox(prog, point(0.193, -0.025, chestY + 0.055), [0.045, 0.045, 0.018], T.wool, tint, yaw, 1);
       this.drawBox(prog, point(0.193, 0.025, chestY - 0.055), [0.045, 0.045, 0.018], c.shirt, tint, yaw, 1);
     }
+    if (c.dressSkirt) {
+      this.drawBox(prog, [base[0], base[1] + legH + 0.12, base[2]],
+        [0.68, 0.34, 0.42], c.shirt, tint, yaw, 1);
+    }
     // arms
     this.drawLimb(prog, base, yaw, [-0.36, legH + bodyH - 0.15, 0], armL, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
     this.drawLimb(prog, base, yaw, [0.36, legH + bodyH - 0.15, 0], armR, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
+    if (this.state === 'play' && p === this.players[0]) this.drawBuildHand(prog, p, false, base, armR);
     // head
     const headY = base[1] + legH + bodyH + 0.3;
     this.drawBox(prog, [base[0], headY, base[2]], [0.5, 0.5, 0.5], c.skin, tint, yaw, 1);
@@ -1694,7 +2371,8 @@ const Game = {
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const cx = base[0] + rx * offset[0];
     const cz = base[2] + rz * offset[0];
-    this.drawBox(prog, [cx, base[1] + midY, cz + midZ], size, tile, tint, yaw, 1);
+    const basis = [[rx, 0, rz], [-Math.sin(yaw) * sa, ca, -Math.cos(yaw) * sa], [Math.sin(yaw) * ca, sa, Math.cos(yaw) * ca]];
+    this.drawBox(prog, [cx + Math.sin(yaw) * midZ, base[1] + midY, cz + Math.cos(yaw) * midZ], size, tile, tint, yaw, 1, basis);
   },
 
   drawProjectile(prog, projectile) {
@@ -1823,6 +2501,20 @@ const Game = {
         [0.1 * s, 0.12 * s, 0.1 * s], d.accent, [1, 1, 1], yaw, 1);
       this.drawBox(prog, point(headFront + 0.05, 0, headY - headHeight * 0.16 * s),
         [0.14 * s, 0.1 * s, 0.12 * s], d.beak, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'wolf') {
+      // Grey muzzle, pointed ears, amber eyes and a short dark tail.
+      this.drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
+        [0.3 * s, 0.2 * s, 0.1 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+      for (const side of [-1, 1]) {
+        this.drawBox(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
+          [0.12 * s, 0.22 * s, 0.12 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(headFront + 0.02, side * eyeSide, eyeY),
+          [0.06 * s, 0.07 * s, 0.03 * s], T.wolf_eye, [1, 1, 1], yaw, 1);
+      }
+      this.drawBox(prog, [base[0] - fx * d.d * 0.52 * s, base[1] + legH + d.h * 0.42,
+        base[2] - fz * d.d * 0.52 * s], [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+
+
     }
   },
 
@@ -1848,6 +2540,9 @@ const Game = {
     this.lastTime = now;
     this.frameCount = (this.frameCount || 0) + 1;
 
+    // Loading owns generation/meshing; streaming the half-built world can evict
+    // its chunks and compete for memory on iPads.
+    if (this.state === 'loading') { Input.endFrame(); return; }
     const inp = this.gatherInput();
 
     if (!this.paused && this.state !== 'menu' && this.state !== 'loading') {
@@ -1864,8 +2559,8 @@ const Game = {
     }
 
     // Rebuild edited chunks first, then top up the view with new ones.
+    this.streamChunks();
     this.updateDirtyChunks(1);
-    if (this.state !== 'menu') this.streamChunks();
     this.updateFrustum();
     this.render(dt);
 
@@ -1888,7 +2583,7 @@ const Game = {
         'fps ' + this.measuredFps + ' / 60' +
         '\nstate ' + this.state +
         '\npos ' + (p1 ? p1.pos.map(v => v.toFixed(1)).join(' ') : '-') +
-        '\nchunks ' + this.world.chunks.size +
+        '\nchunks ' + this.world.activeChunks.size +
         '\nday ' + this.dayLightFactor().toFixed(2) +
         '\nparts ' + Particles.list.length,
         true);

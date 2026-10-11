@@ -181,9 +181,9 @@ const Observer = {
     this.pos[2] += (fwd[2] * mz + right[2] * mx) * sp * dt;
 
     // keep inside the playable square
-    const half = WORLD_SIZE / 2;
-    this.pos[0] = Math.max(WORLD_CENTRE - half, Math.min(WORLD_CENTRE + half, this.pos[0]));
-    this.pos[2] = Math.max(WORLD_CENTRE - half, Math.min(WORLD_CENTRE + half, this.pos[2]));
+    const max = WORLD_SIZE - 0.001;
+    this.pos[0] = Math.max(0, Math.min(max, this.pos[0]));
+    this.pos[2] = Math.max(0, Math.min(max, this.pos[2]));
     this.pos[1] = Math.max(1, Math.min(WORLD_H + 20, this.pos[1]));
 
     if (Input.mouse.wheel) {

@@ -13,6 +13,14 @@ if ($env:BLOCKY_PORT -match '^\d+$') {
 }
 $rule = 'Blocky World (local network)'
 
+# The server uses this documented range for its default port and fallback.
+# Refuse stale or altered values so the helper cannot open an unrelated port.
+if ($port -lt 8080 -or $port -gt 8090) {
+    Write-Host 'The saved server port is outside Blocky World’s allowed range (8080–8090). Start the game server again, then retry.' -ForegroundColor Red
+    pause
+    exit 1
+}
+
 # Refuse to open a stale port when the manually started game server is offline.
 $listening = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
 if (-not $listening) {
@@ -28,7 +36,7 @@ if (-not ([Security.Principal.WindowsPrincipal]$id).IsInRole(
     Write-Host ''
     Write-Host 'This needs administrator rights. Opening an elevated window...' -ForegroundColor Yellow
     Start-Process powershell -Verb RunAs -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '"' + $PSCommandPath + '"', '-NoRelaunch'
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '"' + $PSCommandPath + '"'
     )
     return
 }
@@ -47,7 +55,7 @@ New-NetFirewallRule -DisplayName $rule `
     -Protocol TCP `
     -LocalPort $port `
     -Profile Private `
-    -Program 'C:\Program Files\nodejs\node.exe' | Out-Null
+    -RemoteAddress LocalSubnet | Out-Null
 
 Write-Host 'Rule added:' -ForegroundColor Green
 Get-NetFirewallRule -DisplayName $rule |

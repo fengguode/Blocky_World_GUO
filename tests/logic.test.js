@@ -17,9 +17,9 @@ const H = require('./harness');
 const g = H.load({ seed: 1337 });
 
 const {
-  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE,
+  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS,
   CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, ANIMALS,
-  Player, Fight, Bot, Particles, PROJ_DEFS, Game, M4, Observer, Cam,
+  Player, Fight, Bot, Particles, PROJ_DEFS, Game, M4, Observer, Cam, migrateWorldSave,
 } = g;
 
 const CX = Math.floor(WORLD_CENTRE);
@@ -39,8 +39,10 @@ function flatWorld(seed) {
   for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1],
     [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
     const n = w.getChunk(CENTRE_CHUNK + dx, CENTRE_CHUNK + dz, true);
+    n.allocate();
     n.blocks.fill(0);
     n.generated = true;
+    w.activeChunks.add(n);
     w.computeLight(n);
   }
   return w;
@@ -58,6 +60,7 @@ function scratchWorld(seed) {
   const w = new World(seed === undefined ? 900 : seed);
   const c = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
   w.generateChunk(c);
+  c.allocate();
   c.blocks.fill(0);
   w.computeLight(c);
   return { w, chunk: c, y: 30, BASE: CENTRE_CHUNK * 16 + 4 };
@@ -107,6 +110,9 @@ function quadCount(mesh) {
 }
 function transQuadCount(mesh) {
   return (mesh && mesh.trans ? mesh.trans.count : 0) / 6;
+}
+function cutoutQuadCount(mesh) {
+  return (mesh && mesh.cutout ? mesh.cutout.count : 0) / 6;
 }
 
 // A throwaway GL stub: the mesher only needs buffer bookkeeping.
@@ -183,27 +189,98 @@ H.test('block predicates agree with the table', () => {
    ============================================================ */
 H.suite('World size');
 
-H.test('the world is 200 x 200 x 100 as specified', () => {
-  H.eq(WORLD_SIZE, 200, 'length and width');
+H.test('the world is 200000 x 200000 x 100 as specified', () => {
+  H.eq(WORLD_SIZE, 200000, 'length and width');
   H.eq(WORLD_H, 100, 'height');
-  H.eq(CHUNKS_PER_SIDE, 13, '200 blocks needs a 13 chunk wide grid');
-  H.eq(CHUNKS_PER_SIDE * CHUNK, 208, 'the chunk grid covers 208 blocks');
+  H.eq(CHUNKS_PER_SIDE, 12500, '200000 blocks needs a 12500 chunk wide grid');
+  H.eq(CHUNKS_PER_SIDE * CHUNK, 200000, 'the chunk grid covers 200000 blocks');
 });
 
-H.test('the whole chunk grid generates', () => {
+H.test('only the requested startup neighborhood is generated', () => {
   const w = new World(91);
-  w.generateRadius(0, 0, 6, null);
-  H.eq(w.chunks.size, CHUNKS_PER_SIDE * CHUNKS_PER_SIDE,
-    'every chunk should exist, got ' + w.chunks.size);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  H.eq(w.activeChunks.size, 25, 'the 5 by 5 startup neighborhood is generated');
+  H.assert(w.chunks.size < CHUNKS_PER_SIDE * CHUNKS_PER_SIDE,
+    'the full map must not be generated all at once');
 });
 
-H.test('the playable square is centred and 200 across', () => {
+H.test('old saves migrate to the expanded center without losing edits', () => {
+  const old = { seed: 12, player1: [104, 40, 104], edits: [[100, 25, 120, 3]] };
+  const migrated = migrateWorldSave(old);
+  H.eq(migrated.worldSize, WORLD_SIZE, 'expanded dimensions are stored');
+  H.eq(migrated.player1[0], WORLD_CENTRE, 'old player x is centered');
+  H.eq(migrated.player1[2], WORLD_CENTRE, 'old player z is centered');
+  H.eq(migrated.edits[0][0], WORLD_CENTRE - 4, 'old edit x is preserved and translated');
+  H.eq(migrated.edits[0][2], WORLD_CENTRE + 16, 'old edit z is preserved and translated');
+  H.eq(old.player1[0], 104, 'migration leaves the original save untouched');
+});
+
+H.test('missing-size 20000-world saves keep their layout while moving to the new center', () => {
+  const old = {
+    seed: 12,
+    player1: [10001, 40, 9999],
+    edits: [[10000, 25, 10016, 3], [9990, 26, 10016, 4]],
+  };
+  const migrated = migrateWorldSave(old);
+  H.eq(migrated.worldSize, WORLD_SIZE, 'expanded dimensions are recorded');
+  const offset = WORLD_CENTRE - 10008;
+  H.eq(migrated.player1[0], old.player1[0] + offset, 'player x moves with the world center');
+  H.eq(migrated.player1[2], old.player1[2] + offset, 'player z moves with the world center');
+  H.eq(migrated.edits[0][0], old.edits[0][0] + offset, 'edit x moves with the world center');
+  H.eq(migrated.edits[0][2], old.edits[0][2] + offset, 'edit z moves with the world center');
+  H.eq(migrated.edits[1][3], old.edits[1][3], 'edit block id is preserved');
+  H.eq(old.worldSize, undefined, 'the source save remains unchanged');
+});
+
+H.test('tagged 20000-world saves migrate by the center offset and retain edits', () => {
+  const old = { worldSize: 20000, seed: 7, player1: [10001, 42, 10012], edits: [[9999, 28, 10020, 6]] };
+  const migrated = migrateWorldSave(old);
+  const offset = WORLD_CENTRE - 10008;
+  H.eq(migrated.worldSize, WORLD_SIZE, 'expanded dimensions are recorded');
+  H.eq(migrated.player1[0], old.player1[0] + offset, 'player x shifts with the center');
+  H.eq(migrated.player1[2], old.player1[2] + offset, 'player z shifts with the center');
+  H.eq(migrated.edits[0][0], old.edits[0][0] + offset, 'edit x shifts with the center');
+  H.eq(migrated.edits[0][2], old.edits[0][2] + offset, 'edit z shifts with the center');
+  H.eq(migrated.edits[0][3], old.edits[0][3], 'the block id is preserved');
+});
+
+H.test('ambiguous and empty missing-size saves retain the legacy migration', () => {
+  const empty = { seed: 12, edits: [] };
+  const migratedEmpty = migrateWorldSave(empty);
+  H.eq(migratedEmpty.worldSize, WORLD_SIZE, 'empty save records expanded dimensions');
+  H.eq(migratedEmpty.edits.length, 0, 'empty save remains empty');
+
+  const ambiguous = { player1: [104, 40, 120], edits: [[100, 25, 120, 3]] };
+  const migrated = migrateWorldSave(ambiguous);
+  H.eq(migrated.player1[0], WORLD_CENTRE, 'ambiguous legacy player uses original-map center');
+  H.eq(migrated.edits[0][0], WORLD_CENTRE - 4, 'ambiguous legacy edit is retained and translated');
+});
+
+H.test('explicit 200x200 saves still migrate from their declared size', () => {
+  const old = { worldSize: 200, seed: 12, player1: [104, 40, 104], edits: [[100, 25, 120, 3]] };
+  const migrated = migrateWorldSave(old);
+  H.eq(migrated.worldSize, WORLD_SIZE, 'expanded dimensions are stored');
+  H.eq(migrated.player1[0], WORLD_CENTRE, 'declared 200-world player is centered');
+  H.eq(migrated.edits[0][0], WORLD_CENTRE - 4, 'declared 200-world edit is preserved and translated');
+});
+
+H.test('2000x2000 saves migrate by preserving their existing center and edits', () => {
+  const old = { worldSize: 2000, seed: 12, player1: [1000, 40, 1000], edits: [[1000, 25, 1200, 3]] };
+  const migrated = migrateWorldSave(old);
+  H.eq(migrated.worldSize, WORLD_SIZE, 'expanded dimensions are stored');
+  H.eq(migrated.player1[0], WORLD_CENTRE, 'old player x is centered');
+  H.eq(migrated.player1[2], WORLD_CENTRE, 'old player z is centered');
+  H.eq(migrated.edits[0][0], WORLD_CENTRE, 'old edit x is preserved and translated');
+  H.eq(migrated.edits[0][2], WORLD_CENTRE + 200, 'old edit z is preserved and translated');
+  H.eq(old.player1[0], 1000, 'migration leaves the original save untouched');
+});
+
+H.test('the playable square is centred and 200000 across', () => {
   const w = new World(92);
-  w.generateRadius(0, 0, 6, null);
   H.eq(w.isInsideWorld(CX, CX), true, 'the centre is inside');
-  H.eq(w.isInsideWorld(CX - 100, CX), true, '100 west is the edge');
-  H.eq(w.isInsideWorld(CX - 101, CX), false, '101 west is outside');
-  H.eq(w.isInsideWorld(CX, CX + 101), false, '101 north is outside');
+  H.eq(w.isInsideWorld(0, 0), true, 'the southwest corner is inside');
+  H.eq(w.isInsideWorld(199999, 199999), true, 'the northeast corner is inside');
+  H.eq(w.isInsideWorld(200000, CX), false, 'the east edge is exclusive');
 });
 
 H.test('a player cannot walk off the edge of the world', () => {
@@ -334,9 +411,9 @@ H.test('water never sits above sea level', () => {
   // Scan the whole world rather than one chunk: whether a given chunk holds
   // any water depends on the seed, and a test should not hinge on that.
   const w = new World(25);
-  w.generateRadius(0, 0, 6, null);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 6, null);
   let sawWater = 0;
-  for (const c of w.chunks.values()) {
+  for (const c of w.activeChunks) {
     if (!c.generated) continue;
     for (let i = 0; i < c.blocks.length; i++) {
       if (c.blocks[i] !== 12) continue;
@@ -468,6 +545,14 @@ H.test('setBlock round-trips through getBlock', () => {
   H.eq(w.getBlock(CX, 40, CX), 11);
   H.eq(w.setBlock(CX, 40, CX, 0), true);
   H.eq(w.getBlock(CX, 40, CX), 0);
+});
+
+H.test('saved flowing-water levels restore with world edits', () => {
+  const w = new World(26, [[CX, 40, CX, 21]]);
+  const chunk = w.getChunk(CENTRE_CHUNK, CENTRE_CHUNK, true);
+  w.generateChunk(chunk);
+  H.eq(w.getBlock(CX, 40, CX), 21, 'the saved flow level is restored');
+  H.eq(g.isLiquid(w.getBlock(CX, 40, CX)), true, 'restored flowing water stays liquid');
 });
 
 H.test('edits outside the vertical limits are rejected', () => {
@@ -675,6 +760,88 @@ H.test('two touching blocks hide the shared face', () => {
   H.eq(quadCount(buildChunk(w, chunk)), 10, '6+6-2 = 10');
 });
 
+H.test('meshing reads the correct east and south neighbour chunks at seams', () => {
+  const w = new World(59);
+  const chunk = w.getChunk(100, 200, true);
+  const east = w.getChunk(101, 200, true);
+  const south = w.getChunk(100, 201, true);
+  for (const c of [chunk, east, south]) { c.allocate(); c.generated = true; }
+  chunk.set(15, 10, 8, 3);
+  east.set(0, 10, 8, 3);
+  chunk.set(8, 10, 15, 3);
+  south.set(8, 10, 0, 3);
+  H.eq(quadCount(buildChunk(w, chunk)), 10, 'both cross-chunk shared faces are hidden');
+});
+
+H.test('ambient occlusion samples adjacent tangent cells on all face corners', () => {
+  const here = g.pidx(8, 20, 8);
+  const axes = [0, 1, 2];
+  const offset = vector => g.pidx(8 + vector[0], 20 + vector[1], 8 + vector[2]) - here;
+  for (const face of g.FACES) {
+    const tangentAxes = axes.filter(axis => face.n[axis] === 0);
+    for (let cornerIndex = 0; cornerIndex < 4; cornerIndex++) {
+      const corner = face.corners[cornerIndex];
+      const sideA = face.n.slice(), sideB = face.n.slice(), diagonal = face.n.slice();
+      sideA[tangentAxes[0]] += corner[tangentAxes[0]] === 0 ? -1 : 1;
+      sideB[tangentAxes[1]] += corner[tangentAxes[1]] === 0 ? -1 : 1;
+      diagonal[tangentAxes[0]] += corner[tangentAxes[0]] === 0 ? -1 : 1;
+      diagonal[tangentAxes[1]] += corner[tangentAxes[1]] === 0 ? -1 : 1;
+      const expected = [offset(sideA), offset(sideB), offset(diagonal)];
+      H.assert(JSON.stringify(face.aoOffsets[cornerIndex]) === JSON.stringify(expected),
+        'AO offsets must follow the two tangent axes');
+
+      g._padBlocks.fill(0);
+      H.eq(g.aoAt(here, cornerIndex, face), 3, 'empty surroundings have no occlusion');
+      g._padBlocks[here + expected[0]] = 3;
+      H.eq(g.aoAt(here, cornerIndex, face), 2, 'an adjacent first-side blocker darkens the corner');
+      g._padBlocks[here + expected[1]] = 3;
+      H.eq(g.aoAt(here, cornerIndex, face), 0, 'two adjacent side blockers fully occlude the corner');
+      g._padBlocks.fill(0);
+      g._padBlocks[here + expected[2]] = 3;
+      H.eq(g.aoAt(here, cornerIndex, face), 2, 'an adjacent diagonal blocker darkens the corner');
+
+      g._padBlocks.fill(0);
+      const distant = face.n.slice();
+      distant[tangentAxes[0]] += (corner[tangentAxes[0]] === 0 ? -2 : 2);
+      g._padBlocks[here + offset(distant)] = 3;
+      H.eq(g.aoAt(here, cornerIndex, face), 3, 'a blocker two blocks away has no effect');
+    }
+  }
+});
+
+H.test('opaque and transparent mesh buffers grow independently', () => {
+  for (const transparentFirst of [false, true]) {
+    const { w, chunk } = scratchWorld(58);
+    const bands = transparentFirst
+      ? [{ id: 10, from: 1, to: 21 }, { id: 3, from: 40, to: 43 }]
+      : [{ id: 3, from: 1, to: 21 }, { id: 10, from: 40, to: 43 }];
+    let opaqueCells = 0, transparentCells = 0;
+    for (const { id, from, to } of bands) {
+      for (let y = from; y < to; y++) {
+        for (let z = 0; z < CHUNK; z++) {
+          for (let x = 0; x < CHUNK; x++) {
+            if ((x + y + z) & 1) continue;
+            chunk.blocks[Chunk.idx(x, y, z)] = id;
+            if (id === 3) opaqueCells++; else transparentCells++;
+          }
+        }
+      }
+    }
+    const gl = stubGL();
+    const arrayBufferLengths = [];
+    gl.bufferData = (target, data) => {
+      if (target === gl.ARRAY_BUFFER) arrayBufferLengths.push(data.length);
+    };
+    const mesh = g.buildChunkMesh(gl, w, chunk);
+    const opaqueVertices = opaqueCells * 6 * 4;
+    const transparentVertices = transparentCells * 6 * 4;
+    H.eq(mesh.opaque.count, opaqueCells * 6 * 6, 'opaque indices cover every visible face');
+    H.eq(mesh.trans.count, transparentCells * 6 * 6, 'transparent indices cover every visible face');
+    H.eq(arrayBufferLengths[0], opaqueVertices * 9, 'opaque vertices fit their own buffer');
+    H.eq(arrayBufferLengths[1], transparentVertices * 9, 'transparent vertices fit their own buffer');
+  }
+});
+
 H.test('a 2x2x2 cube culls all its interior faces', () => {
   const { w, chunk, y, BASE } = scratchWorld(54);
   for (let dx = 0; dx < 2; dx++) {
@@ -697,22 +864,107 @@ H.test('a 4x4x4 cube renders only its six outer faces', () => {
 
 H.test('water goes to the transparent pass', () => {
   const { w, chunk, y, BASE } = scratchWorld(55);
-  w.setBlock(BASE, y, BASE, 12);
+  chunk.blocks[Chunk.idx(BASE - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 12;
   const mesh = buildChunk(w, chunk);
   H.eq(quadCount(mesh), 0, 'water must not be opaque');
   H.eq(transQuadCount(mesh), 6, 'water has six transparent faces');
 });
 
+H.test('water spreads across a surface for at most four blocks', () => {
+  const { w, chunk, y, BASE } = scratchWorld(65);
+  for (let dx = -5; dx <= 5; dx++) {
+    for (let dz = -5; dz <= 5; dz++) {
+      chunk.blocks[Chunk.idx(BASE + dx - chunk.cx * CHUNK, y - 1, BASE + dz - chunk.cz * CHUNK)] = 3;
+    }
+  }
+  w.setBlock(BASE, y, BASE, 12);
+  H.eq(w.getBlock(BASE + 1, y, BASE), 18, 'first flow cell retains strength four');
+  H.eq(w.getBlock(BASE + 4, y, BASE), 21, 'fourth cell is the last flowing block');
+  H.eq(w.getBlock(BASE + 5, y, BASE), 0, 'water does not spread beyond its bound');
+});
+
+H.test('flowing water retracts when its only source is removed', () => {
+  const { w, chunk, y, BASE } = scratchWorld(67);
+  for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++)
+    chunk.blocks[Chunk.idx(BASE + dx - chunk.cx * CHUNK, y - 1, BASE + dz - chunk.cz * CHUNK)] = 3;
+  w.setBlock(BASE, y, BASE, 12);
+  H.assert(g.isLiquid(w.getBlock(BASE + 1, y, BASE)), 'the source creates a nearby flow');
+  w.setBlock(BASE, y, BASE, 0);
+  H.eq(w.getBlock(BASE + 1, y, BASE), 0, 'unsupported eastward flow drains');
+  H.eq(w.getBlock(BASE - 1, y, BASE), 0, 'unsupported westward flow drains');
+});
+
+H.test('flowing water remains supported by a second source', () => {
+  const { w, chunk, y, BASE } = scratchWorld(68);
+  for (let dx = -5; dx <= 8; dx++) for (let dz = -5; dz <= 5; dz++)
+    chunk.blocks[Chunk.idx(BASE + dx - chunk.cx * CHUNK, y - 1, BASE + dz - chunk.cz * CHUNK)] = 3;
+  w.setBlock(BASE, y, BASE, 12);
+  w.setBlock(BASE + 3, y, BASE, 12);
+  w.setBlock(BASE, y, BASE, 0);
+  H.assert(g.isLiquid(w.getBlock(BASE + 1, y, BASE)), 'the second source refills its nearby channel');
+});
+
+H.test('flowing water attenuates sunlight and carries block light', () => {
+  const { w, chunk, y, BASE } = scratchWorld(69);
+  chunk.blocks[Chunk.idx(BASE - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 18;
+  chunk.blocks[Chunk.idx(BASE + 2 - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 11;
+  w.computeLight(chunk);
+  H.eq(w.getLight(BASE, y, BASE), 14, 'flowing water attenuates vertical sunlight');
+  H.assert(w.getBlockLight(BASE + 1, y, BASE) > 0, 'block light passes through flowing water');
+});
+H.test('flowing water continues lateral sunlight propagation', () => {
+  const { w, chunk, y, BASE } = scratchWorld(70);
+  const localX = BASE - chunk.cx * CHUNK, localZ = BASE - chunk.cz * CHUNK;
+  chunk.light.fill(0);
+  chunk.blocks[Chunk.idx(localX, y, localZ)] = 18;
+  chunk.light[Chunk.idx(localX, y, localZ)] = 10;
+  w.bspreadSun(chunk);
+  H.eq(chunk.light[Chunk.idx(localX + 1, y, localZ)], 9,
+    'sunlight should spread out of a flowing-water cell');
+});
+H.test('water refills a dug cell after a placed block is removed', () => {
+  const { w, chunk, y, BASE } = scratchWorld(66);
+  for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++)
+    chunk.blocks[Chunk.idx(BASE + dx - chunk.cx * CHUNK, y - 1, BASE + dz - chunk.cz * CHUNK)] = 3;
+  chunk.blocks[Chunk.idx(BASE - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 12;
+  w.setBlock(BASE, y, BASE, 3);
+  H.eq(w.getBlock(BASE, y, BASE), 3, 'the placed block stays in the world');
+  H.assert(g.isLiquid(w.getBlock(BASE + 1, y, BASE)), 'water is displaced into a nearby empty cell');
+  w.setBlock(BASE, y, BASE, 0);
+  H.assert(g.isLiquid(w.getBlock(BASE, y, BASE)), 'water flows back into the cleared cell');
+});
+
+H.test('leaves go to the depth-writing cutout pass', () => {
+  const { w, chunk, y, BASE } = scratchWorld(64);
+  w.setBlock(BASE, y, BASE, 9);
+  const mesh = buildChunk(w, chunk);
+  H.eq(quadCount(mesh), 0, 'leaves keep their texture holes');
+  H.eq(cutoutQuadCount(mesh), 6, 'leaf faces render with depth writes');
+  H.eq(transQuadCount(mesh), 0, 'leaves are not blended with the background');
+});
+H.test('flowing-water blocks do not cast ambient occlusion', () => {
+  const mesher = fs.readFileSync(path.join(__dirname, '..', 'js', 'mesher.js'), 'utf8');
+  H.assert(/AO_OCCLUDES\[18\]\s*=\s*AO_OCCLUDES\[19\]\s*=\s*AO_OCCLUDES\[20\]\s*=\s*AO_OCCLUDES\[21\]\s*=\s*0/.test(mesher),
+    'all flowing-water levels should use the same non-occluding AO treatment as source water');
+});
+H.test('first-person hand preserves scene depth for the transparent pass', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  H.assert(!/clear\(gl\.DEPTH_BUFFER_BIT\)/.test(main),
+    'the first-person hand must not clear terrain depth before transparent water renders');
+  H.assert(/drawBuildHand\(prog, this\.players\[0\], true\)/.test(main),
+    'the first-person hand remains rendered');
+});
+
 H.test('water hides its faces against other water', () => {
   const { w, chunk, y, BASE } = scratchWorld(56);
-  w.setBlock(BASE, y, BASE, 12);
-  w.setBlock(BASE + 1, y, BASE, 12);
+  chunk.blocks[Chunk.idx(BASE - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 12;
+  chunk.blocks[Chunk.idx(BASE + 1 - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 12;
   H.eq(transQuadCount(buildChunk(w, chunk)), 10);
 });
 
 H.test('water is culled behind an opaque block', () => {
   const { w, chunk, y, BASE } = scratchWorld(57);
-  w.setBlock(BASE, y, BASE, 12);
+  chunk.blocks[Chunk.idx(BASE - chunk.cx * CHUNK, y, BASE - chunk.cz * CHUNK)] = 12;
   w.setBlock(BASE + 1, y, BASE, 3);
   const mesh = buildChunk(w, chunk);
   H.eq(quadCount(mesh), 6, 'the stone renders fully');
@@ -1016,6 +1268,37 @@ H.test('the healing character recovers after landing a hit', () => {
    ============================================================ */
 H.suite('Characters');
 
+H.test('changing character keeps the current world and current health proportion', () => {
+  const t = H.load({ boot: false });
+  const player = {
+    char: characterById('steve'), hp: 60, maxHp: 100, ko: false,
+    pos: [4, 20, 6], selectedSlot: 0, climbNormal: [1, 0, 0],
+  };
+  t.Game.players = [player];
+  t.Game.world = { seed: 12345, edits: new Map() };
+  const changed = t.Game.changeCharacter('doll');
+  H.eq(changed.id, 'doll', 'the requested character should be selected');
+  H.eq(player.char.id, 'doll', 'the active player should change immediately');
+  H.eq(player.maxHp, 85, 'the new character health should be applied');
+  H.eq(player.hp, 51, 'current health percentage should be preserved');
+  H.eq(player.climbNormal, null, 'character-specific movement state should reset');
+  H.eq(t.Game.pick.p1, 'doll', 'the chosen character should be remembered for this profile');
+  H.eq(t.Game.world.seed, 12345, 'character change should not replace the current world');
+});
+
+H.test('creative inventory summary shows outfit, selected item and unlimited block stock', () => {
+  const t = H.load({ boot: false });
+  t.Game.selectedSlot = 2;
+  t.UI.updateEquipmentStatus({ char: characterById('doll') }, 'play');
+  const summary = t.document.getElementById('equipment-status');
+  H.assert(summary.textContent.includes('Dolly'), 'the active character should be visible');
+  H.assert(summary.textContent.includes('Sparkle Power'), 'the active outfit should be visible');
+  H.assert(summary.textContent.includes(BLOCKS[HOTBAR_BLOCKS[2]].name), 'the selected item should be visible');
+  H.assert(summary.textContent.includes('PLACE builds'), 'block placement guidance should be visible');
+  H.assert(summary.textContent.includes(BLOCKS[HOTBAR_BLOCKS[2]].name), 'the selected block should be visible');
+  H.assert(summary.textContent.includes('∞'), 'creative block stock should be shown as unlimited');
+});
+
 H.test('every character is complete and coherent', () => {
   for (const c of CHARACTERS) {
     H.assert(c.id && c.name && c.style && c.desc, c.id + ' needs a name, style and description');
@@ -1069,6 +1352,31 @@ H.test('characters are genuinely differentiated', () => {
     'two characters share an ultimate name');
 });
 
+H.test('each character outfit uses a role-patterned texture', () => {
+  const roles = [
+    ['steve', 'builder_shirt', [246, 194, 82]],
+    ['alex', 'ranger_shirt', [242, 184, 78]],
+    ['spider', 'climber_shirt', [246, 204, 91]],
+    ['doll', 'dolly_dress', [255, 221, 112]],
+    ['ninja', 'fire_ninja', [246, 112, 54]],
+  ];
+  for (const [id, textureName, accent] of roles) {
+    const character = characterById(id);
+    const tile = g.ATLAS[character.shirt];
+    H.eq(tile.name, textureName, id + ' should use its own outfit texture');
+    let foundAccent = false;
+    for (let i = 0; i < tile.data.length; i += 4) {
+      if (tile.data[i] === accent[0] && tile.data[i + 1] === accent[1] && tile.data[i + 2] === accent[2]) {
+        foundAccent = true;
+        break;
+      }
+    }
+    H.assert(foundAccent, id + ' should have its role accent pattern');
+  }
+  H.eq(g.ATLAS[characterById('golem').shirt].name, 'cobble',
+    'the golem should keep its stone material');
+});
+
 H.test('the menu stat bars use values between zero and one', () => {
   for (const c of CHARACTERS) {
     for (const k of ['power', 'speed', 'range']) {
@@ -1080,6 +1388,14 @@ H.test('the menu stat bars use values between zero and one', () => {
 H.test('characterById falls back safely', () => {
   H.eq(g.characterById('does-not-exist').id, 'steve');
   H.eq(g.characterById('ninja').name, 'Fire Ninja');
+});
+
+H.test('a tab keeps its profile authorization identity across page reloads', () => {
+  const tabStorage = H.makeStorage();
+  const firstLoad = H.load({ boot: false, load: false, sessionStorage: tabStorage });
+  const reload = H.load({ boot: false, load: false, sessionStorage: tabStorage });
+  H.eq(reload.PAGE_AUTH_ID, firstLoad.PAGE_AUTH_ID);
+  H.assert(/^[a-f0-9]{32}$/.test(firstLoad.PAGE_AUTH_ID), 'page identity must remain a random 128-bit hex token');
 });
 
 H.test('every animal definition is usable', () => {
@@ -1274,9 +1590,9 @@ H.test('the shockwave ultimate hits a nearby target', () => {
   H.assert(victim.hp < hp, 'the stomp should hit a nearby target');
 });
 
-H.test('the web ultimate holds the enemy in place', () => {
+H.test('the beacon ultimate holds the enemy in place', () => {
   // Keep both fighters well inside the arena, well clear of the wall, so the
-  // cocoon has a clear line to reach the target.
+  // signal burst has a clear line to reach the target.
   const w = arenaWorld();
   const a = new Player(w, characterById('spider'));
   const b = new Player(w, characterById('golem'));
@@ -1411,6 +1727,14 @@ H.test('the bot always returns a usable command', () => {
       H.assert(typeof cmd[k] === 'boolean', k + ' must be a boolean');
     }
   }
+});
+
+H.test('difficulty zero selects the easy bot profile', () => {
+  const w = arenaWorld();
+  const player = new Player(w, characterById('golem'));
+  const bot = new Bot(player, 0);
+  H.eq(bot.level, 0, 'zero is a valid difficulty, not a missing value');
+  H.eq(bot.mistakeRate, 0.42, 'easy mode uses the easy mistake rate');
 });
 
 H.test('the bot closes the distance to its opponent', () => {
@@ -1561,6 +1885,80 @@ H.test('a hard bot lands a consistent amount of damage', () => {
    ============================================================ */
 H.suite('Animals');
 
+H.test('world animal spawning creates compact wolf packs', () => {
+  const w = arenaWorld();
+  const previousWorld = Game.world;
+  const previousDist = Game.renderDist;
+  Game.world = w;
+  Game.renderDist = 3;
+  w.originX = CX;
+  w.originZ = CX;
+  Game.spawnAnimals(8);
+  const wolves = Game.animals.filter(a => a.def.id === 'wolf');
+  H.eq(wolves.length, 9, 'three groups of three wolves');
+  H.eq(new Set(wolves.map(a => a.packId)).size, 3, 'wolves are split into packs');
+  Game.world = previousWorld;
+  Game.renderDist = previousDist;
+});
+
+H.test('a wolf attack makes its whole pack aggressive toward the player', () => {
+  const w = arenaWorld();
+  const packId = 'test-pack';
+  const wolves = [0, 1, 2].map(i => {
+    const wolf = new g.Animal(g.animalById('wolf'), CX + 5.5 + i * 0.4, w.arena.y + 1, CX + 5.5);
+    wolf.packId = packId;
+    return wolf;
+  });
+  Game.animals = wolves;
+  Game.provokeWolfPack(wolves[1]);
+  H.assert(wolves.every(wolf => wolf.aggressiveTimer > 0), 'every wolf in the attacked wolf’s pack reacts');
+  Game.animals = [];
+});
+
+H.test('an unprovoked wolf hunts nearby animals without targeting the player', () => {
+  const w = arenaWorld();
+  const wolf = new g.Animal(g.animalById('wolf'), CX + 4.5, w.arena.y + 1, CX + 5.5);
+  const sheep = new g.Animal(g.animalById('sheep'), CX + 8.5, w.arena.y + 1, CX + 5.5);
+  wolf.preyTarget = sheep;
+  const before = Math.hypot(wolf.pos[0] - sheep.pos[0], wolf.pos[2] - sheep.pos[2]);
+  for (let i = 0; i < 60; i++) wolf.update(1 / 60, w, null);
+  const after = Math.hypot(wolf.pos[0] - sheep.pos[0], wolf.pos[2] - sheep.pos[2]);
+  H.assert(after < before, 'wolf should move toward its animal prey');
+  H.eq(wolf.aggressiveTimer, 0, 'hunting does not make a calm wolf attack the player');
+});
+
+H.test('a wolf only bites the player after the pack is provoked', () => {
+  const w = arenaWorld();
+  const wolf = new g.Animal(g.animalById('wolf'), CX + 5.5, w.arena.y + 1, CX + 5.5);
+  const player = { pos: wolf.pos.slice(), ko: false, hp: 100, takeDamage(amount) { this.hp -= amount; } };
+  wolf.biteCooldown = 0;
+  for (let i = 0; i < 12; i++) wolf.update(1 / 60, w, player);
+  H.eq(player.hp, 100, 'a calm wolf must not damage the player');
+  wolf.pos = player.pos.slice();
+  wolf.biteCooldown = 0;
+  wolf.aggressiveTimer = 5;
+  wolf.update(1 / 60, w, player);
+  H.assert(player.hp < 100, 'a provoked wolf should bite a nearby player');
+});
+
+H.test('hitting a wolf provokes its pack', () => {
+  const w = arenaWorld();
+  const player = new g.Player(w, g.characterById('steve'), false);
+  player.pos = [CX + 5.5, w.arena.y + 1, CX + 5.5];
+  player.yaw = 0;
+  const packId = 'hit-test-pack';
+  const wolves = [0, 1, 2].map(i => {
+    const wolf = new g.Animal(g.animalById('wolf'), CX + 5.5, w.arena.y + 1, CX + 5 - i * 1.0);
+    wolf.packId = packId;
+    return wolf;
+  });
+  Game.animals = wolves;
+  H.assert(Game.tryHitAnimal(player), 'the nearest wolf in front should be hit');
+  H.eq(wolves[0].health, 3, 'the hit should injure the chosen wolf');
+  H.assert(wolves.every(wolf => wolf.aggressiveTimer > 0), 'the whole pack should react');
+  Game.animals = [];
+});
+
 H.test('an animal stays on the ground', () => {
   const w = arenaWorld();
   const a = new g.Animal(ANIMALS[0], CX + 5.5, w.arena.y + 3, CX + 5.5);
@@ -1691,6 +2089,13 @@ H.test('every cube face normal points outward', () => {
    ============================================================ */
 H.suite('Camera');
 
+H.test('projection aspect uses width divided by height at every screen shape', () => {
+  const t = H.load({ boot: false });
+  t.Game.canvas = { width: 390, height: 844 };
+  H.near(t.Game.aspect(), 390 / 844, 0.0001, 'portrait viewport');
+  t.Game.canvas = { width: 844, height: 390 };
+  H.near(t.Game.aspect(), 844 / 390, 0.0001, 'landscape viewport');
+});
 H.test('pitch is clamped short of straight up and down', () => {
   Cam.pitch = 0;
   for (let i = 0; i < 50; i++) Cam.look(0, 500);
@@ -1804,7 +2209,7 @@ H.test('cycling observe views wraps around cleanly', () => {
 H.suite('Touch controls');
 
 /* These check the touch layer and the quality profile. They deliberately load
-   without booting a world: each boot generates 169 chunks, and half a dozen of
+   without booting a world: each boot generates a local neighborhood, and half a dozen of
    them in a row would blow the suite's time budget for no extra coverage. */
 H.test('the touch layer knows when it is needed', () => {
   const desktop = H.load({ touch: false, boot: false });
@@ -1813,6 +2218,185 @@ H.test('the touch layer knows when it is needed', () => {
   const phone = H.load({ touch: true, boot: false });
   phone.Touch.init();
   H.eq(phone.Touch.enabled, true, 'a touch device should enable touch');
+});
+
+H.test('showing touch controls removes the hidden state', () => {
+  const t = H.load({ touch: true, boot: false });
+  const layer = t.document.getElementById('touch-ui');
+  H.assert(layer.classList.contains('hidden'), 'touch controls start hidden in the menu');
+  t.Touch.setVisible(true);
+  H.assert(!layer.classList.contains('hidden'), 'the game must remove hidden when play starts');
+  t.Touch.setVisible(false);
+  H.assert(layer.classList.contains('hidden'), 'the game must hide controls when returning to menu');
+});
+
+H.test('mobile action and view buttons release when a finger lifts', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.Touch.init();
+  const button = t.document.getElementById('touch-jump');
+  const start = button.eventListeners.touchstart[0];
+  const end = button.eventListeners.touchend[0];
+  start({ preventDefault() {} });
+  H.eq(t.Touch.btn.jump, true, 'pressing jump should activate it');
+  end({ cancelable: true, preventDefault() {} });
+  H.eq(t.Touch.btn.jump, false, 'lifting a finger must release jump');
+
+  const view = t.document.getElementById('touch-view');
+  view.eventListeners.touchstart[0]({ preventDefault() {} });
+  H.eq(t.Touch.btn.view, true, 'pressing the view button should request a perspective change');
+  view.eventListeners.touchend[0]({ cancelable: true, preventDefault() {} });
+  H.eq(t.Touch.btn.view, false, 'lifting the view button must release it');
+});
+
+H.test('BREAK never toggles camera view and touch VIEW toggles once per press', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.Touch.enabled = true;
+  t.Touch.btn.hit = true;
+  H.eq(t.Game.cameraViewToggleRequested(), false, 'BREAK is only a mining action');
+
+  t.Touch.btn.hit = false;
+  t.Touch.btn.view = true;
+  H.eq(t.Game.cameraViewToggleRequested(), true, 'a new VIEW press changes perspective');
+  H.eq(t.Game.cameraViewToggleRequested(), false, 'holding VIEW cannot toggle repeatedly');
+  t.Touch.btn.view = false;
+  H.eq(t.Game.cameraViewToggleRequested(), false, 'releasing VIEW does not toggle');
+  t.Touch.btn.view = true;
+  H.eq(t.Game.cameraViewToggleRequested(), true, 'a later VIEW press changes perspective again');
+});
+
+H.test('touch can select a hotbar slot after UI builds the slots', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.Game.players = [{ selectedSlot: 0 }];
+  t.Touch.init();
+  t.UI.init();
+  const bar = t.document.getElementById('hotbar');
+  const click = bar.eventListeners.click[0];
+  const slot = { dataset: { slot: '4' } };
+  click({ target: { closest: (selector) => selector === '.slot' ? slot : null } });
+  H.eq(t.Game.selectedSlot, 4, 'a tap on a built slot should select its block');
+  H.eq(t.Game.players[0].selectedSlot, 4, 'the selected block should reach the player');
+});
+
+H.test('a typical thumb-width touch swipe makes a useful camera turn', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.windowStub.innerWidth = 390;
+  t.Touch.look.x = 150;
+  const input = t.Game.gatherInput();
+  t.Cam.yaw = 0;
+  t.Cam.look(input.ldx, 0);
+  H.near(Math.abs(t.Cam.yaw), Math.PI / 3, 0.08,
+    'a 150px swipe at default sensitivity should turn about 60 degrees');
+});
+
+H.test('mobile auth and menu panels retain vertical touch scrolling', () => {
+  const css = fs.readFileSync(path.join(H.ROOT, 'style.css'), 'utf8');
+  const menuStart = css.indexOf('#menu {');
+  const menuBlock = css.slice(menuStart, css.indexOf('}', menuStart));
+  const cardStart = css.indexOf('.menu-card {');
+  const cardBlock = css.slice(cardStart, css.indexOf('}', cardStart));
+  const authStart = css.indexOf('.auth-screen {');
+  const authBlock = css.slice(authStart, css.indexOf('}', authStart));
+  const authCardStart = css.indexOf('.auth-card {');
+  const authCardBlock = css.slice(authCardStart, css.indexOf('}', authCardStart));
+  H.assert(/overflow-y:\s*auto/.test(menuBlock) && /-webkit-overflow-scrolling:\s*touch/.test(menuBlock),
+    'the full-screen menu overlay should own vertical momentum scrolling');
+  H.assert(/align-items:\s*flex-start/.test(menuBlock),
+    'tall menu content must start at the top instead of overflowing its centered scroll origin');
+  H.assert(/touch-action:\s*none/.test(menuBlock),
+    'the menu must let its touch handler own iOS swipe scrolling');
+  H.assert(!/overflow-y:\s*auto/.test(cardBlock), 'the menu card must not create a competing nested scroll area');
+  H.assert(/touch-action:\s*pan-y/.test(authBlock), 'sign-in screen should allow vertical touch scrolling');
+  H.assert(/align-items:\s*flex-start/.test(authBlock) && /overflow-y:\s*auto/.test(authBlock),
+    'tall sign-in forms must remain reachable in the screen scroll area');
+  H.assert(/margin-block:\s*auto/.test(authCardBlock), 'short sign-in content should still center when it fits');
+  const root = css.match(/html, body\s*\{([^}]*)\}/);
+  H.assert(root && !/touch-action:\s*none/.test(root[1]),
+    'the root page must not block touch gestures for scrollable child panels');
+
+  const t = H.load({ touch: true, boot: false });
+  const menu = t.document.getElementById('menu');
+  menu.scrollTop = 40;
+  menu.scrollHeight = 700;
+  menu.clientHeight = 500;
+  t.Touch.init();
+  const menuTouchStart = menu.eventListeners.touchstart[0];
+  const menuMove = menu.eventListeners.touchmove[0];
+  const menuEnd = menu.eventListeners.touchend[0];
+  let menuPrevented = 0;
+  menuTouchStart({ changedTouches: [{ identifier: 9, clientX: 200, clientY: 300 }] });
+  menuMove({ changedTouches: [{ identifier: 9, clientX: 204, clientY: 295 }], cancelable: true, preventDefault() { menuPrevented++; } });
+  H.eq(menu.scrollTop, 40, 'small finger drift while tapping must not move the menu');
+  H.eq(menuPrevented, 0, 'small finger drift must not cancel a menu button tap');
+  menuEnd({ changedTouches: [{ identifier: 9 }] });
+  menuTouchStart({ changedTouches: [{ identifier: 10, clientX: 200, clientY: 300 }] });
+  menuMove({ changedTouches: [{ identifier: 10, clientX: 205, clientY: 220 }], cancelable: true, preventDefault() { menuPrevented++; } });
+  H.eq(menu.scrollTop, 120, 'vertical menu swipe should move the full-screen scroll area with the finger');
+  H.eq(menuPrevented, 1, 'deliberate vertical menu swipe should prevent Safari from competing with the manual scroll');
+  menuEnd({ changedTouches: [{ identifier: 10 }] });
+
+  let canceledTap = false;
+  for (const end of t.documentListeners.touchend || []) {
+    end({ cancelable: true, target: { closest: () => null }, preventDefault() { canceledTap = true; } });
+  }
+  H.assert(!canceledTap, 'global touchend handling must not cancel quick menu or auth taps');
+  const move = t.listeners.touchmove[0];
+  let prevented = 0;
+  move({ changedTouches: [{ identifier: 44, clientX: 20, clientY: 30 }],
+    cancelable: true, preventDefault() { prevented++; } });
+  H.eq(prevented, 0, 'untracked panel touches must not cancel native scrolling');
+  t.Touch.lookId = 44;
+  move({ changedTouches: [{ identifier: 44, clientX: 24, clientY: 34 }],
+    cancelable: true, preventDefault() { prevented++; } });
+  H.eq(prevented, 1, 'game-owned look drags must still suppress page gestures');
+});
+
+H.test('pagehide live-visit sync carries page authentication on a keepalive request', () => {
+  const requests = [];
+  const t = H.load({ boot: false, fetch: (url, options) => {
+    requests.push({ url, options });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ state: 'active', cursor: 3 }) });
+  } });
+  const network = t.Network;
+  network.serverMode = true;
+  network.profile = { id: 'p1' };
+  network.ready = true;
+  network.visitRole = 'owner';
+  network.visitActive = true;
+  network.savedWorld = { seed: 123, edits: [], revision: 2 };
+  network.pendingSave = { seed: 123, edits: [[120, 8, 121, 4]], revision: 2 };
+  network.visitPlayerState = () => ({ x: 1, y: 2, z: 3 });
+  network.visitEditDelta = () => [[120, 8, 121, 4]];
+  network.saveOnPageHide();
+
+  H.eq(requests.length, 1, 'pagehide should queue one authenticated visit sync');
+  H.eq(requests[0].url, '/api/visit/sync', 'visit state should use the live-sync route');
+  H.eq(requests[0].options.keepalive, true, 'the request should be allowed to finish during navigation');
+  H.assert(/^[a-f0-9]{32}$/.test(requests[0].options.headers['X-BW-Page']),
+    'the server-required page auth header must accompany pagehide sync');
+  H.assert(t.storage.getItem('blocky-world-server-recovery-v1:p1'),
+    'the unsent world snapshot must remain recoverable while the visit sync is queued');
+});
+
+H.test('pagehide world flush uses the authenticated keepalive fetch path', async () => {
+  const requests = [];
+  const t = H.load({ boot: false, fetch: (url, options) => {
+    requests.push({ url, options });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ revision: 2 }) });
+  } });
+  const network = t.Network;
+  network.serverMode = true;
+  network.profile = { id: 'p2' };
+  network.ready = true;
+  network.savedWorld = { seed: 123, edits: [], revision: 2 };
+  network.pendingSave = { seed: 123, edits: [], revision: 2 };
+  network.saveOnPageHide();
+  await new Promise(resolve => setImmediate(resolve));
+
+  H.eq(requests.length, 1, 'pagehide should queue the pending world flush');
+  H.eq(requests[0].url, '/api/world', 'world changes should use the normal authenticated save route');
+  H.eq(requests[0].options.keepalive, true, 'world saving should survive page navigation');
+  H.assert(/^[a-f0-9]{32}$/.test(requests[0].options.headers['X-BW-Page']),
+    'the server-required page auth header must accompany pagehide saves');
 });
 
 H.test('the quality profile trims weak phones but not desktops', () => {
@@ -1835,6 +2419,26 @@ H.test('the quality profile trims weak phones but not desktops', () => {
   H.eq(weakDesktop.Game.settings.renderDist, 4, 'a weaker desktop should shorten the automatic view');
   H.assert(weakDesktop.Game.dprCap <= 1.25,
     'a weaker desktop should receive a lower pixel cap, got ' + weakDesktop.Game.dprCap);
+});
+
+H.test('the visit owner can open shared mode controls while pointer locked', () => {
+  const t = H.load({ boot: false });
+  let released = 0, opened = 0, prevented = false;
+  t.Network.visitRole = 'owner';
+  t.Network.visitActive = true;
+  t.Input.releaseLock = () => { released++; };
+  t.Network.openVisitModePicker = () => { opened++; };
+  t.Game.bindGlobalKeys();
+  const keydown = t.listeners.keydown[t.listeners.keydown.length - 1];
+  keydown({ code: 'KeyM', preventDefault: () => { prevented = true; } });
+  H.eq(released, 1, 'release pointer lock so the overlay receives clicks');
+  H.eq(opened, 1, 'show the shared mode picker');
+  H.eq(prevented, true, 'do not trigger browser defaults');
+
+  t.Network.visitRole = 'visitor';
+  keydown({ code: 'KeyM', preventDefault: () => { prevented = false; } });
+  H.eq(released, 1, 'visitors cannot open the owner mode picker');
+  H.eq(opened, 1, 'visitors leave mode changes to the owner');
 });
 
 H.test('render distance stays playable on every device profile', () => {
@@ -1963,6 +2567,7 @@ H.test('settings survive a save and reload', () => {
   const first = H.load({ storage: shared, boot: false });
   // Pick values the defaults can never be, so a mix-up cannot pass.
   first.Game.settings.renderDist = 3;
+  first.Game.settings.renderDistAuto = false;
   first.Game.settings.dayNight = false;
   first.Game.settings.sfx = false;
   first.Game.pick.p1 = 'ninja';
@@ -2146,7 +2751,8 @@ H.test('the hotbar selection is clamped', () => {
   Game.selectSlot(-5);
   H.eq(Game.selectedSlot, 0);
   Game.selectSlot(99);
-  H.eq(Game.selectedSlot, g.HOTBAR_BLOCKS.length - 1);
+  H.eq(Game.selectedSlot, 9, 'the shovel is the tenth selectable hotbar item');
+  H.eq(g.HOTBAR_BLOCKS.length, 9, 'the shovel tool does not increase the block inventory count');
   Game.selectSlot(3);
   H.eq(Game.selectedSlot, 3);
 });
@@ -2158,7 +2764,7 @@ H.suite('Regressions');
 
 H.test('the spawn chunk is always generated', () => {
   const w = new World(81);
-  w.generateRadius(0, 0, 6, null);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 6, null);
   const s = w.findSpawn();
   const c = w.getChunk(Math.floor(s[0] / CHUNK), Math.floor(s[2] / CHUNK), false);
   H.assert(c && c.generated, 'the spawn chunk must be generated');
@@ -2168,7 +2774,7 @@ H.test('the spawn chunk is always generated', () => {
 
 H.test('arena construction finishes quickly and completely', () => {
   const w = new World(82);
-  w.generateRadius(0, 0, 6, null);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 6, null);
   const t0 = Date.now();
   const arena = w.buildArena(Math.floor(w.originX), Math.floor(w.originZ), 16);
   const ms = Date.now() - t0;
@@ -2289,9 +2895,61 @@ H.test('chunk streaming respects a time budget rather than a chunk count', () =>
   H.assert(built <= 12, 'a 4ms budget built ' + built + ' chunks, which is unbounded work');
 });
 
+H.test('stationary streaming does not rescan a completed chunk queue', () => {
+  const t = H.load({ boot: true });
+  t.Cam.pos = t.Game.players[0].pos.slice();
+  const cx = Math.floor(t.Cam.pos[0] / CHUNK), cz = Math.floor(t.Cam.pos[2] / CHUNK);
+  t.Cam.pos[0] = cx * CHUNK + 8;
+  t.Cam.pos[2] = cz * CHUNK + 8;
+  const originalViewDistance = t.Game.viewDistance;
+  t.Game.viewDistance = () => 20;
+  t.Game._streamAt = null;
+  t.Game._streamQueue = undefined;
+
+  t.Game.streamChunks(4);
+  const firstChunkCount = t.Game.world.chunks.size;
+  t.Game.streamChunks(4);
+  H.eq(t.Game.world.chunks.size, firstChunkCount, 'stationary frames should not create more chunks');
+
+  t.Cam.pos[0] = (cx + 6) * CHUNK + 0.1;
+  t.Game.streamChunks(4);
+  H.assert(t.Game.world.chunks.size > firstChunkCount, 'crossing a chunk boundary should request the newly visible edge');
+
+  const replacement = new World(15);
+  replacement.generateRadius(cx + 6, cz, 1, null);
+  t.Game.world = replacement;
+  t.Game.streamChunks(4);
+  H.assert(replacement.chunks.size > 9, 'replacing the world should populate the local chunk window');
+  H.assert(t.Game._renderChunks.every(c => replacement.activeChunks.has(c)), 'the render list should belong to the active world');
+
+  const distanceChunkCount = replacement.chunks.size;
+  t.Game.renderDist++;
+  t.Game.viewDistance = originalViewDistance;
+  t.Game.streamChunks(4);
+  H.assert(replacement.chunks.size > distanceChunkCount, 'changing view distance should expand the local chunk window');
+});
+
+H.test('dirty mesh updates only traverse the nearby render set', () => {
+  const t = H.load({ boot: true });
+  t.Cam.pos = t.Game.players[0].pos.slice();
+  const chunks = t.Game.world.activeChunks;
+  const originalForEach = chunks.forEach.bind(chunks);
+  let fullWorldScans = 0;
+  chunks.forEach = (...args) => { fullWorldScans++; return originalForEach(...args); };
+  t.Game.streamChunks(4);
+  const visible = Array.from(chunks).find(c => c.mesh);
+  H.assert(visible, 'the test world should have a meshed nearby chunk');
+  t.Game._renderChunks = [visible];
+  visible.dirty = true;
+
+  t.Game.updateDirtyChunks(1);
+  H.eq(visible.dirty, false, 'a dirty nearby mesh should be rebuilt');
+  H.eq(fullWorldScans, 0, 'dirty mesh work should not enumerate the full world map');
+});
+
 H.test('building the arena stays interactive', () => {
   const w = new World(72);
-  w.generateRadius(0, 0, 6, null);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 6, null);
   const t0 = Date.now();
   w.buildArena(Math.floor(w.originX), Math.floor(w.originZ), 16);
   const ms = Date.now() - t0;
@@ -2300,7 +2958,7 @@ H.test('building the arena stays interactive', () => {
 
 H.test('a single block edit relights quickly', () => {
   const w = new World(73);
-  w.generateRadius(0, 0, 6, null);
+  w.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 6, null);
   const t0 = Date.now();
   const x = Math.floor(w.originX);
   for (let i = 0; i < 20; i++) w.setBlock(x, 30 + i, x, i % 2 ? 3 : 0);
@@ -2308,18 +2966,79 @@ H.test('a single block edit relights quickly', () => {
   H.assert(per < 40, 'a block edit took ' + per.toFixed(1) + 'ms');
 });
 
-H.test('generating the whole 200x200 world completes promptly', () => {
-  const w = new World(74);
-  const t0 = Date.now();
-  w.generateRadius(0, 0, 6, null);
-  const ms = Date.now() - t0;
-  H.assert(ms < 6000, 'world generation took ' + ms + 'ms');
-  H.eq(w.chunks.size, CHUNKS_PER_SIDE * CHUNKS_PER_SIDE, 'every chunk');
-});
 
 /* ============================================================
    run
    ============================================================ */
+H.test('a frame error saves progress and leaves a recoverable pause', () => {
+  const pendingFrames = [];
+  const oldRaf = g.windowStub.requestAnimationFrame;
+  const oldLoop = Game.loop;
+  const oldSave = Game.save;
+  const oldError = console.error;
+  const oldState = Game.state;
+  const oldPaused = Game.paused;
+  const oldFailure = Game.runtimeFailure;
+  let saved = false;
+  g.windowStub.requestAnimationFrame = callback => { pendingFrames.push(callback); return pendingFrames.length; };
+  console.error = () => {};
+  Game.state = 'play';
+  Game.paused = false;
+  Game.runtimeFailure = false;
+  Game.lastFrameAt = 0;
+  Game.frameInterval = 16;
+  Game.save = () => { saved = true; return { status: 'saved' }; };
+  Game.loop = () => { throw new Error('simulated frame crash'); };
+  try {
+    Game.scheduleFrame();
+    pendingFrames.shift()(20);
+    H.eq(saved, true, 'the world save is attempted before showing recovery');
+    H.eq(Game.runtimeFailure, true, 'the failed loop is held until the player chooses what to do');
+    H.eq(Game.state, 'paused', 'the player sees a pause state rather than a dead loop');
+    H.eq(g.document.getElementById('runtime-error-message').classList.contains('hidden'), false,
+      'the recovery instructions are visible');
+    H.assert(/progress was saved/.test(g.document.getElementById('runtime-error-message').textContent),
+      'the recovery message should only say saved for a confirmed local save');
+    H.eq(pendingFrames.length, 1, 'animation scheduling survives the exception');
+  } finally {
+    g.windowStub.requestAnimationFrame = oldRaf;
+    console.error = oldError;
+    Game.loop = oldLoop;
+    Game.save = oldSave;
+    Game.state = oldState;
+    Game.paused = oldPaused;
+    Game.runtimeFailure = oldFailure;
+  }
+});
+H.test('server save failure is not reported as confirmed progress', async () => {
+  const network = g.Network;
+  const oldSave = Game.save;
+  const oldFlush = network.flushSave;
+  const oldServerMode = network.serverMode;
+  const oldState = Game.state;
+  const oldPaused = Game.paused;
+  const oldFailure = Game.runtimeFailure;
+  network.serverMode = true;
+  network.flushSave = async () => false;
+  Game.save = () => ({ status: 'queued', recoveryCopy: false });
+  Game.state = 'play';
+  Game.paused = false;
+  Game.runtimeFailure = false;
+  try {
+    await Game.handleRuntimeError(new Error('simulated unsaved crash'));
+    const message = g.document.getElementById('runtime-error-message').textContent;
+    H.assert(/neither a save nor a recovery copy could be confirmed/.test(message),
+      'a failed server flush without a local copy must report possible data loss');
+    H.assert(!/progress was saved/.test(message), 'never claim the server save succeeded');
+  } finally {
+    Game.save = oldSave;
+    network.flushSave = oldFlush;
+    network.serverMode = oldServerMode;
+    Game.state = oldState;
+    Game.paused = oldPaused;
+    Game.runtimeFailure = oldFailure;
+  }
+});
 if (require.main === module) {
   process.exit(H.main(process.argv.slice(2)));
 }

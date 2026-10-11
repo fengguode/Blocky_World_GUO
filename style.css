@@ -50,7 +50,6 @@ html, body {
   color: var(--text);
   user-select: none;
   -webkit-user-select: none;
-  touch-action: none;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -61,6 +60,7 @@ html, body {
   height: 100%;
   display: block;
   cursor: crosshair;
+  touch-action: none;
   image-rendering: pixelated;
 }
 
@@ -82,7 +82,8 @@ html, body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 10;
+  /* Keep interactive HUD controls above the full-screen touch zones. */
+  z-index: 25;
 }
 
 #hud.hidden { display: none; }
@@ -156,12 +157,32 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: transform 0.12s, border-color 0.12s, background 0.12s, box-shadow 0.12s;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
 }
 .slot.active {
   border-color: var(--cyan);
   background: rgba(95, 227, 255, 0.12);
   transform: translateY(-5px) scale(1.06);
   box-shadow: 0 0 0 1px var(--cyan), 0 0 20px rgba(95, 227, 255, 0.45);
+}
+.equipment-status {
+  position: absolute;
+  left: 50%;
+  bottom: 98px;
+  transform: translateX(-50%);
+  max-width: min(94vw, 720px);
+  padding: 7px 12px;
+  border: 1px solid rgba(145, 205, 255, 0.32);
+  border-radius: 12px;
+  background: rgba(8, 13, 28, 0.78);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
 }
 .slot canvas { width: 38px; height: 38px; image-rendering: pixelated; }
 .slot .num {
@@ -329,20 +350,26 @@ html, body {
   inset: 0;
   z-index: 40;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: max(12px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
   background:
     radial-gradient(ellipse 80% 60% at 50% 40%, rgba(20, 60, 100, 0.35), transparent 70%),
     linear-gradient(180deg, rgba(5, 8, 20, 0.88), rgba(3, 5, 14, 0.96));
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  touch-action: none;
 }
 #menu.hidden { display: none; }
 
 .menu-card {
   width: min(700px, 92vw);
-  max-height: 92vh;
-  overflow-y: auto;
+  /* The menu overlay is the single scroll area on narrow screens. */
+  flex: 0 0 auto;
+  margin-block: auto;
   padding: 34px 38px;
   text-align: center;
 }
@@ -609,10 +636,12 @@ kbd {
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
 
 /* ---------- pause / settings ---------- */
+#btn-game-settings { position: fixed; z-index: 85; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); padding: 10px 12px; pointer-events: auto; touch-action: manipulation; }
+#pause .menu-card { touch-action: pan-y; }
 #pause {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 120;
   display: none;
   align-items: center;
   justify-content: center;
@@ -620,7 +649,7 @@ kbd {
   backdrop-filter: blur(4px);
 }
 #pause.show { display: flex; }
-#pause .menu-card { width: min(520px, 92vw); }
+#pause .menu-card { width: min(520px, 92vw); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* ---------- character select ---------- */
 .chars {
@@ -644,6 +673,12 @@ kbd {
 .char-card .cname { font-size: 17px; font-weight: 700; }
 .char-card .cstyle { font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; opacity: 0.6; margin: 2px 0 8px; }
 .char-card .cdesc { font-size: 12px; line-height: 1.55; opacity: 0.8; }
+.character-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; margin: 10px 0; }
+.character-choice { display: flex; flex-direction: column; align-items: flex-start; min-height: 56px; padding: 9px 12px; border-radius: 10px; text-align: left; text-transform: none; letter-spacing: 0; }
+.character-choice.selected { border-color: var(--mint); background: rgba(91, 242, 192, 0.12); }
+.choice-name { font-size: 15px; font-weight: 800; }
+.choice-style { margin-top: 3px; font-size: 11px; color: var(--text-mute); }
+.character-current { margin: 8px 0; font-size: 12px; color: var(--text-dim); line-height: 1.45; }
 .stat-line { display: flex; align-items: center; gap: 7px; font-size: 10px; margin-top: 5px; opacity: 0.7; }
 .stat-line .track { flex: 1; height: 5px; border-radius: 3px; background: rgba(0,0,0,0.4); overflow: hidden; }
 .stat-line .track i { display: block; height: 100%; background: var(--accent); }
@@ -873,16 +908,33 @@ body.touch:not(.playing) #touch-stick { opacity: 0; }
 .tbtn-jump { background: rgba(74, 144, 217, 0.88); }
 .tbtn-fly  { background: rgba(154, 160, 166, 0.88); }
 
+/* Keep camera choice separate from BREAK so changing perspective never mines a block. */
+#touch-view {
+  position: absolute;
+  top: calc(max(16px, env(safe-area-inset-top)) + 30px);
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 2;
+  width: 64px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(46, 122, 170, 0.92);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  pointer-events: auto;
+}
+#touch-view.hidden { display: none !important; }
+
 /* the primary button sits in the lower-right, under the thumb */
 #touch-buttons { grid-auto-flow: dense; }
 .tbtn-hit { order: 3; }
 
 /* ---------- small screens & phones ---------- */
 @media (max-width: 760px) {
-  .slot { width: 42px; height: 42px; }
-  .slot canvas { width: 30px; height: 30px; }
+  .slot { width: min(38px, calc((100vw - 40px) / 10)); height: 42px; flex: 0 0 min(38px, calc((100vw - 40px) / 10)); }
+  .slot canvas { width: clamp(22px, 7vw, 30px); height: clamp(22px, 7vw, 30px); }
   .bar { width: 120px; height: 13px; }
-  .hotbar { bottom: 12px; gap: 3px; padding: 4px; }
+  .hotbar { bottom: max(12px, env(safe-area-inset-bottom)); gap: 2px; padding: 4px; }
+  .equipment-status { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px); max-width: calc(100vw - 20px); font-size: 10px; padding: 6px 9px; }
   .status-row { bottom: 62px; gap: 8px; }
   .menu-card h1 { font-size: 27px; }
   .menu-card h2 { font-size: 12px; margin-bottom: 16px; }
@@ -918,16 +970,17 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-body { touch-action: none; }
-
 /* ---------- local profile sign-in ---------- */
 .auth-screen {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
   background:
     radial-gradient(ellipse 80% 65% at 50% 20%, rgba(77, 120, 198, 0.42), transparent 72%),
@@ -938,6 +991,8 @@ body { touch-action: none; }
 .auth-screen.hidden { display: none; }
 .auth-card {
   width: min(440px, 100%);
+  flex: 0 0 auto;
+  margin-block: auto;
   padding: 30px clamp(20px, 6vw, 38px);
   border: 1px solid rgba(145, 205, 255, 0.32);
   border-radius: 26px;
@@ -984,6 +1039,7 @@ body { touch-action: none; }
 .visit-lobby p { margin: 6px 0; color: var(--text-dim); font-size: 13px; line-height: 1.4; }
 .visit-lobby .visit-owner { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
 .visit-lobby .visit-owner button { min-height: 46px; }
+.visit-lobby select { width: 100%; min-height: 48px; margin: 8px 0; padding: 8px 12px; border-radius: 12px; }
 .visit-hud { position: fixed; z-index: 80; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 24px)); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 10px; border: 1px solid rgba(145, 205, 255, 0.4); border-radius: 18px; background: rgba(9, 15, 33, 0.92); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 13px; text-align: center; pointer-events: auto; touch-action: manipulation; }
 .visit-hud.hidden { display: none; }
 .visit-hud button { min-height: 44px; padding: 8px 14px; }
@@ -991,9 +1047,16 @@ body { touch-action: none; }
 .visit-request { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; width: 100%; }
 .visit-request.hidden { display: none; }
 .visit-request span { flex: 1 1 100%; color: var(--text-dim); }
+.visit-mode-dialog { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); background: rgba(5, 10, 24, .76); touch-action: manipulation; }
+.visit-mode-dialog.hidden { display: none; }
+.visit-mode-dialog .menu-card { width: min(520px, 100%); max-height: 90dvh; overflow-y: auto; }
+.visit-mode-dialog p { color: var(--text-dim); }
 @media (max-width: 760px) {
   .visit-lobby { padding: 11px; }
   .visit-lobby .visit-owner { align-items: stretch; flex-direction: column; }
   .visit-hud { top: max(8px, env(safe-area-inset-top)); width: calc(100vw - 16px); padding: 8px; border-radius: 15px; }
   .visit-hud button { min-height: 48px; }
 }
+
+/* Shared visibility state for gameplay buttons and nested panels. */
+.hidden { display: none !important; }
