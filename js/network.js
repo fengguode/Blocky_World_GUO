@@ -61,7 +61,7 @@ const Network = {
         this.serverEdits = this.indexEdits(this.savedWorld.edits);
         this.lastSavedSeed = this.savedWorld.seed;
         this.ready = true;
-        this.restoreRecovery();
+        await this.restoreRecovery();
       } else {
         this.showLogin();
       }
@@ -78,19 +78,25 @@ const Network = {
     return data;
   },
 
+  adoptWorldType(worldType, world) {
+    worldType = worldType === 'flat' ? 'flat' : 'normal';
+    this.activeWorldType = worldType;
+    this.savedWorld = Object.assign({}, world, { worldType });
+    this.saveRevision = Number.isSafeInteger(world.revision) ? world.revision : 0;
+    this.serverRevision = this.saveRevision;
+    this.serverEdits = this.indexEdits(world.edits);
+    this.lastSavedSeed = world.seed;
+    try { localStorage.setItem('blocky-world-selected-type', worldType); } catch (_) {}
+    if (typeof Game !== 'undefined') Game.activeWorldType = worldType;
+    return this.savedWorld;
+  },
+
   async activateWorld(worldType) {
     worldType = worldType === 'flat' ? 'flat' : 'normal';
     if (worldType === this.activeWorldType) return this.savedWorld;
     if (this.pendingSave && !(await this.flushSave())) throw new Error('The current world could not be saved.');
     const data = await this.request('/api/world?type=' + worldType);
-    this.savedWorld = data.world;
-    this.saveRevision = Number.isSafeInteger(data.world.revision) ? data.world.revision : 0;
-    this.serverRevision = this.saveRevision;
-    this.serverEdits = this.indexEdits(data.world.edits);
-    this.lastSavedSeed = data.world.seed;
-    this.activeWorldType = worldType;
-    try { localStorage.setItem('blocky-world-selected-type', worldType); } catch (_) {}
-    return this.savedWorld;
+    return this.adoptWorldType(worldType, data.world);
   },
 
   async startGameIfAllowed() {
@@ -243,7 +249,11 @@ const Network = {
   saveWorld(world, options) {
     if (this.visitRole === 'visitor' || this.visitRole === 'pending') return;
     if (!this.serverMode || !this.profile || !this.ready) return;
-    world.worldType = Game.activeWorldType;
+    const worldType = world.worldType === 'flat' ? 'flat' :
+      (world.worldType === 'normal' ? 'normal' : this.activeWorldType);
+    world.worldType = worldType;
+    this.activeWorldType = worldType;
+    if (typeof Game !== 'undefined') Game.activeWorldType = worldType;
     if (options && options.resetEdits) this.resetEditsPending = true;
     world.revision = ++this.saveRevision;
     this.savedWorld = world;
@@ -673,21 +683,27 @@ const Network = {
     try { localStorage.removeItem(this.recoveryKey()); } catch (_) { /* server save remains authoritative */ }
   },
 
-  restoreRecovery() {
-    if (!this.profile) return;
+  async restoreRecovery() {
+    if (!this.profile) return false;
     try {
       const raw = localStorage.getItem(this.recoveryKey());
       if (!raw) return false;
       const recovery = JSON.parse(raw);
       if (!recovery || !recovery.world || !Array.isArray(recovery.world.edits)) return false;
+      const recoveryType = recovery.world.worldType === 'flat' ? 'flat' : 'normal';
+      if (recoveryType !== this.activeWorldType) {
+        const data = await this.request('/api/world?type=' + recoveryType);
+        this.adoptWorldType(recoveryType, data.world);
+      }
       if (recovery.baseRevision !== this.serverRevision) {
         this.recoveryConflict = recovery;
         this.showRecoveryConflict();
         return true;
       }
-      this.savedWorld = recovery.world;
-      this.activeWorldType = recovery.world.worldType === 'flat' ? 'flat' : 'normal';
-      try { localStorage.setItem('blocky-world-selected-type', this.activeWorldType); } catch (_) {}
+      this.savedWorld = Object.assign({}, recovery.world, { worldType: recoveryType });
+      this.activeWorldType = recoveryType;
+      try { localStorage.setItem('blocky-world-selected-type', recoveryType); } catch (_) {}
+      Game.activeWorldType = recoveryType;
       this.saveRevision = this.serverRevision;
       this.resetEditsPending = recovery.replaceEdits === true || recovery.world.seed !== this.lastSavedSeed;
       this.saveWorld(this.savedWorld);
@@ -711,9 +727,10 @@ const Network = {
     if (!this.recoveryConflict) return;
     const recovery = this.recoveryConflict;
     this.recoveryConflict = null;
-    this.savedWorld = Object.assign({}, recovery.world);
     this.activeWorldType = recovery.world.worldType === 'flat' ? 'flat' : 'normal';
+    this.savedWorld = Object.assign({}, recovery.world, { worldType: this.activeWorldType });
     try { localStorage.setItem('blocky-world-selected-type', this.activeWorldType); } catch (_) {}
+    Game.activeWorldType = this.activeWorldType;
     this.saveRevision = this.serverRevision;
     this.resetEditsPending = true;
     this.ready = true;
