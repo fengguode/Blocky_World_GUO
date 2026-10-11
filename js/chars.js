@@ -120,9 +120,9 @@ function characterById(id) {
 
 /* ---------- friendly animals ---------- */
 const ANIMALS = [
-  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 0.9, h: 0.9, d: 1.3, speed: 1.1, tame: 'Oink!' },
-  { id: 'sheep',  name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 0.9, h: 1.0, d: 1.3, speed: 1.0, tame: 'Baa!' },
-  { id: 'chick',  name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.6, h: 0.7, d: 0.6, speed: 1.4, tame: 'Peep!' },
+  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 1.08, h: 0.94, d: 1.42, speed: 1.1, tame: 'Oink!' },
+  { id: 'sheep',  name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 1.16, h: 1.1, d: 1.36, speed: 1.0, tame: 'Baa!' },
+  { id: 'chick',  name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.7, h: 0.76, d: 0.72, speed: 1.4, tame: 'Peep!' },
   { id: 'wolf',   name: 'Wolf', body: T.wolf, face: T.wolf_face, accent: T.wolf_dark, leg: T.wolf_dark, w: 1.0, h: 1.0, d: 1.5, speed: 2.5, predator: true, tame: 'A wolf pack!' },
 ];
 

@@ -2418,9 +2418,8 @@ const Game = {
     const d = a.def;
     const s = a.scale;
     const yaw = a.yaw;
-    const walk = Math.sin(a.walkAnim) * 0.7;
     const base = a.pos;
-    const legH = d.h * 0.45;
+    const legH = d.h * 0.42;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const point = (forward, side, y) => [
@@ -2428,96 +2427,107 @@ const Game = {
       y,
       base[2] + fz * forward * s + rz * side * s,
     ];
+    const bodyY = base[1] + legH + d.h * 0.32;
+    const headY = base[1] + legH + d.h * 0.8;
+    const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
+    const headWidth = d.w * (d.id === 'sheep' ? 0.58 : 0.72);
+    const headHeight = d.h * (d.id === 'sheep' ? 0.46 : 0.52);
+    const headDepth = d.w * (d.id === 'sheep' ? 0.48 : 0.62);
 
-    // legs
-    for (const [ox, ang] of [[-0.22, walk], [0.22, -walk]]) {
-      this.drawBox(prog,
-        [base[0] + rx * ox * s, base[1] + legH / 2, base[2] + rz * ox * s],
+    // Four short legs make a stable, readable stance; proportions differ by species.
+    for (const [forward, side] of [
+      [-d.d * 0.29, -d.w * 0.29], [-d.d * 0.29, d.w * 0.29],
+      [d.d * 0.28, -d.w * 0.29], [d.d * 0.28, d.w * 0.29],
+    ]) {
+      this.drawBox(prog, point(forward, side, base[1] + legH * 0.5),
         [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, 1);
     }
-    // body
-    this.drawBox(prog,
-      [base[0], base[1] + legH + d.h * 0.32, base[2]],
-      [d.w * s, d.h * 0.64, d.d * s], d.body, [1, 1, 1], yaw, 1);
 
-    // Distinct pixel patches, wool tufts and wings break up the one-colour body shapes.
+    const bodySize = d.id === 'pig'
+      ? [d.w * 0.96 * s, d.h * 0.62, d.d * 0.74 * s]
+      : d.id === 'sheep'
+        ? [d.w * 0.96 * s, d.h * 0.66, d.d * 0.76 * s]
+        : d.id === 'chick'
+          ? [d.w * 0.9 * s, d.h * 0.7, d.d * 0.9 * s]
+          : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
+    this.drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
+
     if (d.id === 'pig') {
-      for (const side of [-1, 1]) {
-        this.drawBox(prog, point(-0.12, side * (d.w * 0.5 + 0.012), base[1] + legH + d.h * 0.36),
-          [0.025 * s, 0.2 * s, 0.28 * s], d.accent, [1, 1, 1], yaw, 1);
-      }
+      // The pig skin tile carries its flank patches, keeping the body detail in one draw.
+      // One short tail box is enough to read from behind without another draw call.
+      this.drawBox(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
+        [0.14 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
     } else if (d.id === 'sheep') {
-      for (const [forward, side] of [[-0.28, 0], [0.08, -0.31], [0.08, 0.31]]) {
-        this.drawBox(prog, point(forward, side, base[1] + legH + d.h * 0.68),
-          [0.27 * s, 0.18 * s, 0.24 * s], d.body, [1, 1, 1], yaw, 1);
+      // Separate wool puffs form a rounded fleece silhouette around the darker face.
+      const fleeceY = base[1] + legH + d.h * 0.68;
+      for (const [forward, side] of [
+        [-d.d * 0.38, 0], [0, -d.w * 0.4], [0, d.w * 0.4],
+      ]) {
+        this.drawBox(prog, point(forward, side, fleeceY),
+          [0.42 * s, 0.25 * s, 0.38 * s], d.body, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'chick') {
+      // A chest patch and projecting wings give the chick a smaller rounded outline.
+      this.drawBox(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
+        [d.w * 0.34 * s, d.h * 0.3, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(-0.02, side * (d.w * 0.5 + 0.018), base[1] + legH + d.h * 0.34),
-          [0.04 * s, 0.2 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY),
+          [0.055 * s, 0.19 * s, 0.25 * s], d.accent, [1, 1, 1], yaw, 1);
       }
     }
 
-    // head
-    const headY = base[1] + legH + d.h * 0.78;
-    const headForward = d.d * 0.4;
-    const headWidth = d.w * 0.7;
-    const headHeight = d.h * 0.5;
-    const headDepth = d.w * 0.6;
     this.drawBox(prog, point(headForward, 0, headY),
       [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
 
-    const headFront = headForward + headDepth * 0.5 + 0.02;
-    const eyeY = headY + headHeight * 0.08 * s;
+    const headFront = headForward + headDepth * 0.5 + 0.025;
+    const eyeY = headY + headHeight * 0.06 * s;
     const eyeSide = headWidth * 0.27;
+    const eyeTile = d.id === 'wolf' ? T.wolf_eye : T.eye;
+    const eyeSize = d.id === 'chick' ? 0.13 : 0.12;
     for (const side of [-1, 1]) {
       this.drawBox(prog, point(headFront, side * eyeSide, eyeY),
-        [0.085 * s, 0.095 * s, 0.03 * s], T.eye, [1, 1, 1], yaw, 1);
+        [eyeSize * s, eyeSize * 1.08 * s, 0.045 * s], eyeTile, [1, 1, 1], yaw, 1);
     }
 
     if (d.id === 'pig') {
-      // Two upright pixels and a broad snout make the pig's face unmistakable.
+      const earY = headY + headHeight * 0.62 * s;
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headForward - 0.015, side * headWidth * 0.36,
-          headY + headHeight * 0.55 * s), [0.11 * s, 0.16 * s, 0.1 * s], d.accent, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(headForward + 0.015, side * headWidth * 0.37, earY),
+          [0.12 * s, 0.18 * s, 0.15 * s], d.accent, [1, 1, 1], yaw, 1);
       }
-      const snoutY = headY - headHeight * 0.16 * s;
-      this.drawBox(prog, point(headFront + 0.025, 0, snoutY),
-        [0.24 * s, 0.17 * s, 0.08 * s], d.accent, [1, 1, 1], yaw, 1);
+      const snoutY = headY - headHeight * 0.2 * s;
+      this.drawBox(prog, point(headFront + 0.035, 0, snoutY),
+        [0.34 * s, 0.22 * s, 0.11 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headFront + 0.07, side * 0.055, snoutY),
-          [0.035 * s, 0.06 * s, 0.02 * s], T.eye, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(headFront + 0.075, side * 0.075, snoutY),
+          [0.045 * s, 0.075 * s, 0.025 * s], T.eye, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'sheep') {
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headForward, side * headWidth * 0.55, headY + 0.015),
-          [0.12 * s, 0.08 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+        this.drawBox(prog, point(headForward, side * headWidth * 0.56, headY + 0.015),
+          [0.14 * s, 0.09 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
       }
-      this.drawBox(prog, point(headFront + 0.025, 0, headY - headHeight * 0.22 * s),
-        [0.16 * s, 0.12 * s, 0.06 * s], d.accent, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headFront + 0.03, 0, headY - headHeight * 0.22 * s),
+        [0.18 * s, 0.13 * s, 0.07 * s], d.accent, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
+        [0.21 * s, 0.16 * s, 0.2 * s], d.body, [1, 1, 1], yaw, 1);
     } else if (d.id === 'chick') {
-      // A stepped crest and orange beak give the chick a clear little silhouette.
-      this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.55 * s),
-        [0.1 * s, 0.12 * s, 0.1 * s], d.accent, [1, 1, 1], yaw, 1);
-      this.drawBox(prog, point(headFront + 0.05, 0, headY - headHeight * 0.16 * s),
-        [0.14 * s, 0.1 * s, 0.12 * s], d.beak, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.58 * s),
+        [0.14 * s, 0.18 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+      this.drawBox(prog, point(headFront + 0.06, 0, headY - headHeight * 0.18 * s),
+        [0.18 * s, 0.12 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
     } else if (d.id === 'wolf') {
-      // Grey muzzle, pointed ears, amber eyes and a short dark tail.
+      // Keep the established original wolf read: grey muzzle, pointed ears, amber eyes, short tail.
       this.drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
         [0.3 * s, 0.2 * s, 0.1 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
         this.drawBox(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
           [0.12 * s, 0.22 * s, 0.12 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
-        this.drawBox(prog, point(headFront + 0.02, side * eyeSide, eyeY),
-          [0.06 * s, 0.07 * s, 0.03 * s], T.wolf_eye, [1, 1, 1], yaw, 1);
       }
-      this.drawBox(prog, [base[0] - fx * d.d * 0.52 * s, base[1] + legH + d.h * 0.42,
-        base[2] - fz * d.d * 0.52 * s], [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
-
-
+      this.drawBox(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
+        [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
     }
   },
-
   saveScreenshot() {
     try {
       const url = this.canvas.toDataURL('image/png');
