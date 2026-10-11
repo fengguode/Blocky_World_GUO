@@ -2557,6 +2557,15 @@ H.test('Fight and Observe show their existing touch action on the shared action 
   H.assert(!action.classList.contains('touch-action-observe'), 'Play clears mode styling');
 });
 
+H.test('touch controls help uses the visible Fight and Observe action labels', () => {
+  const t = H.load({ touch: true, boot: false });
+  const box = { innerHTML: '', querySelector: () => ({ onclick: null }) };
+  t.Game.isTouch = true;
+  t.UI.showControls(box);
+  H.assert(box.innerHTML.includes('ULT when the bar is full'), 'help names the visible Fight action');
+  H.assert(box.innerHTML.includes('PHOTO, in Observe mode'), 'help names the visible Observe action');
+});
+
 H.test('BREAK never toggles camera view and touch VIEW toggles once per press', () => {
   const t = H.load({ touch: true, boot: false });
   t.Touch.enabled = true;

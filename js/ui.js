@@ -232,9 +232,9 @@ const UI = {
         ['Fly down', 'FLY (tap to switch flying on)'],
         ['Hit an enemy', 'HIT'],
         ['Use a special move', 'SKILL'],
-        ['Ultimate move', 'FLY when the bar is full'],
+        ['Ultimate move', 'ULT when the bar is full'],
         ['Change camera view', 'JUMP, in Observe mode'],
-        ['Take a photo', 'FLY, in Observe mode'],
+        ['Take a photo', 'PHOTO, in Observe mode'],
         ['Pause menu', 'Pause button on iOS, or the menu on desktop'],
       ];
     } else {
