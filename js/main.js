@@ -2468,28 +2468,31 @@ const Game = {
     const spin = projectile.spin;
 
     if (d.kind === 'web') {
-      // A bright pixel lattice reads as a web shot instead of a plain glass cube.
-      this.drawBox(prog, [x, y, z], [size * 0.56, size * 0.56, size * 0.56], T.glass, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.16, size * 0.16], T.shirt_cyan, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 0.16, size * 1.45, size * 0.16], T.shirt_cyan, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 1.05, size * 0.12, size * 0.12], T.wool, [1, 1, 1], spin + 0.78, 1);
+      // Threaded spokes and a linen-bright knot keep the web distinct from a
+      // glass cube while its existing cyan palette stays recognizable.
+      this.drawBox(prog, [x, y, z], [size * 0.56, size * 0.56, size * 0.56], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.16, size * 0.16], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.16, size * 1.45, size * 0.16], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.05, size * 0.12, size * 0.12], d.tile, [1, 1, 1], spin + 0.78, 1);
       return;
     }
 
     if (d.kind === 'star') {
-      // Staggered bars make a chunky four-point star with a warm pixel core.
-      this.drawBox(prog, [x, y, z], [size * 0.38, size * 1.45, size * 0.32], T.glowstone, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.38, size * 0.32], T.glowstone, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 0.62, size * 0.62, size * 0.38], T.beak, [1, 1, 1], spin, 1);
-      this.drawBox(prog, [x, y, z], [size * 0.20, size * 0.20, size * 0.42], T.wool, [1, 1, 1], spin, 1);
+      // Interlocking stepped bars retain the star silhouette; gold facets and
+      // a cool bright core keep its existing luminous palette.
+      this.drawBox(prog, [x, y, z], [size * 0.38, size * 1.45, size * 0.32], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.45, size * 0.38, size * 0.32], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.62, size * 0.62, size * 0.38], d.tile, [1, 1, 1], spin, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.20, size * 0.20, size * 0.42], d.tile, [1, 1, 1], spin, 1);
       return;
     }
 
     if (d.kind === 'shuriken') {
-      // Two crossed steel blades and a hot centre make the spinning weapon legible at a glance.
-      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], T.steel, [1, 1, 1], spin + 0.78, 1);
-      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], T.steel, [1, 1, 1], spin - 0.78, 1);
-      this.drawBox(prog, [x, y, z], [size * 0.34, size * 0.34, size * 0.24], T.hero_red, [1, 1, 1], spin, 1);
+      // Crossed steel blades with a red pixel hub preserve the original
+      // palette while giving the spinning silhouette more readable facets.
+      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], d.tile, [1, 1, 1], spin + 0.78, 1);
+      this.drawBox(prog, [x, y, z], [size * 1.5, size * 0.2, size * 0.18], d.tile, [1, 1, 1], spin - 0.78, 1);
+      this.drawBox(prog, [x, y, z], [size * 0.34, size * 0.34, size * 0.24], d.tile, [1, 1, 1], spin, 1);
       return;
     }
 

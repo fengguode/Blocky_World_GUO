@@ -175,6 +175,62 @@ H.test('every world block texture has a limited-color pixel motif', () => {
   }
 });
 
+H.test('the representative plank tile keeps its violet palette with three clustered tones', () => {
+  const block = g.BLOCKS.find(b => b.id === 8);
+  H.eq(block.tiles.all, g.T.planks, 'the sample uses the existing Planks block material');
+  const tile = g.ATLAS[g.T.planks];
+  const colors = new Set();
+  for (let i = 0; i < tile.data.length; i += 4) {
+    colors.add(tile.data[i] + ',' + tile.data[i + 1] + ',' + tile.data[i + 2]);
+  }
+  H.eq(colors.size, 3, 'planks should use exactly three clustered tones');
+  H.assert(colors.has('132,100,168'), 'planks retain the original violet base color');
+  H.assert(colors.has('90,58,126'), 'planks retain a violet shadow tone');
+  H.assert(colors.has('164,132,200'), 'planks retain a violet highlight tone');
+});
+
+H.test('Web, Star, and Shuriken use distinct three-tone pixel materials and silhouettes', () => {
+  const originals = Game.drawBox;
+  const cases = [
+    ['web', g.T.fx_web, 4],
+    ['star', g.T.fx_star, 4],
+    ['shuriken', g.T.fx_shuriken, 3],
+  ];
+  const retainedPalettes = {
+    web: ['140,236,255', '72,194,208', '226,252,255'],
+    star: ['120,246,255', '255,208,74', '226,242,250'],
+    shuriken: ['178,190,210', '200,212,232', '198,44,52'],
+  };
+  try {
+    const materialTiles = new Set();
+    const silhouettes = new Set();
+    for (const [kind, tileId, expectedBoxes] of cases) {
+      const tile = g.ATLAS[tileId];
+      H.eq(tile.name, 'fx_' + kind, kind + ' dedicated material');
+      const colors = new Set();
+      for (let i = 0; i < tile.data.length; i += 4) {
+        colors.add(tile.data[i] + ',' + tile.data[i + 1] + ',' + tile.data[i + 2]);
+      }
+      H.eq(colors.size, 3, kind + ' should use three pixel-art tones');
+      for (const color of retainedPalettes[kind]) H.assert(colors.has(color), kind + ' retains color ' + color);
+      H.eq(PROJ_DEFS[kind].tile, tileId, kind + ' impact particles keep the matching material');
+
+      const draws = [];
+      Game.drawBox = (prog, pos, size, usedTile) => draws.push({ size, tile: usedTile });
+      Game.drawProjectile(null, { def: PROJ_DEFS[kind], pos: [0, 0, 0], big: false, spin: 0.55 });
+      H.eq(draws.length, expectedBoxes, kind + ' keeps its deliberate silhouette geometry');
+      H.assert(draws.every(draw => draw.tile === tileId), kind + ' silhouette uses its dedicated pixel material');
+      materialTiles.add(tileId);
+      const signature = draws.map(draw => draw.size.map(n => Number(n).toFixed(3)).join(',')).sort().join(';');
+      silhouettes.add(signature);
+    }
+    H.eq(materialTiles.size, 3, 'each projectile has its own material');
+    H.eq(silhouettes.size, 3, 'each projectile remains visibly distinct by silhouette');
+  } finally {
+    Game.drawBox = originals;
+  }
+});
+
 H.test('glass and water pixel highlights keep their translucent alpha', () => {
   for (const name of ['glass', 'water']) {
     const tile = g.ATLAS.find(entry => entry.name === name);

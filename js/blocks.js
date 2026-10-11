@@ -62,11 +62,8 @@ function patternedCloth(base, variance, draw) {
 /* ============================================================
    Texture palette
 
-   Deliberately not the muddy earth-and-moss look people expect from a voxel
-   game. Everything is graded toward a cool, luminous futurist palette: deep
-   slate and violet for earth, teal and emerald for growth, cyan as the
-   signature accent. Tones are [r,g,b] bases; the speckle pass adds tonal
-   variation on top of each.
+   Preserve the established color families. The representative plank and
+   projectile sample changes pixel motifs and contrast, not the palette.
    ============================================================ */
 const PAL = {
   grassTop:   [58, 196, 150],  // luminous emerald teal
@@ -197,8 +194,6 @@ const stoneDark = shadeColor(PAL.stone, -34);
 const stoneLight = shadeColor(PAL.stone, 24);
 const woodDark = shadeColor(PAL.logSide, -25);
 const woodLight = shadeColor(PAL.logSide, 24);
-const plankDark = shadeColor(PAL.planks, -28);
-const plankLight = shadeColor(PAL.planks, 24);
 
 T.grass_top = pushTile('grass_top', pixelArtTile(PAL.grassTop, [
   { x: 0, y: 0, rows: ['  l  ', ' lhl ', 'dhhdh', ' dhd '], colors: { l: grassLight, h: PAL.grassTop, d: grassDark } },
@@ -288,26 +283,26 @@ T.log_top = pushTile('log_top', function (d) {
 });
 T.planks = pushTile('planks', function (d) {
   fillTile(d, PAL.planks);
+  const plankShadow = shadeColor(PAL.planks, -42);
+  const plankHighlight = shadeColor(PAL.planks, 32);
+  // Two staggered courses with crisp seams make the 16x16 tile read as
+  // joined boards instead of a stack of repeated square bands.
   for (let y = 0; y < TILE; y++) {
-    if (y % 5 === 4) {
-      for (let x = 0; x < TILE; x++) {
-        const c = shadeColor(PAL.planks, -34);
-        setPx(d, x, y, c[0], c[1], c[2]);
-      }
+    const courseY = y & 7;
+    const jointX = y < 8 ? 8 : 4;
+    if (courseY === 0) {
+      for (let x = 0; x < TILE; x++) setPx(d, x, y, plankHighlight[0], plankHighlight[1], plankHighlight[2]);
+    } else if (courseY === 7) {
+      for (let x = 0; x < TILE; x++) setPx(d, x, y, plankShadow[0], plankShadow[1], plankShadow[2]);
     } else {
-      for (let x = 0; x < TILE; x += 8) {
-        if ((y % 5 === 2) && (x === 0 || x === 8)) {
-          setPx(d, x, y, plankDark[0], plankDark[1], plankDark[2]);
-        }
-      }
-      if (y % 5 === 1) {
-        for (let x = 1; x < 7; x++) setPx(d, x, y, plankLight[0], plankLight[1], plankLight[2]);
-        for (let x = 9; x < 15; x++) setPx(d, x, y, plankLight[0], plankLight[1], plankLight[2]);
-      }
+      setPx(d, jointX, y, plankShadow[0], plankShadow[1], plankShadow[2]);
+      setPx(d, (jointX + 1) & 15, y, plankHighlight[0], plankHighlight[1], plankHighlight[2]);
     }
   }
-  stampTile(d, 3, 6, ['ddd', 'dhh', 'ddd'], { d: plankDark, h: plankLight });
-  stampTile(d, 12, 11, ['ddd', 'dhh', 'ddd'], { d: plankDark, h: plankLight });
+  stampTile(d, 1, 2, [' lll ', 'llbll', '  bb '], { l: plankHighlight, b: plankShadow });
+  stampTile(d, 10, 4, ['  llll', 'llbb  ', '   bb '], { l: plankHighlight, b: plankShadow });
+  stampTile(d, 6, 10, ['lll  ', ' bbll', '  bb '], { l: plankHighlight, b: plankShadow });
+  stampTile(d, 13, 12, ['ll ', ' bb', '  l'], { l: plankHighlight, b: plankShadow });
 });
 // Leaf clusters use a fixed cutout silhouette and bright pixel clusters.
 T.leaves = pushTile('leaves', function (d) {
@@ -434,6 +429,35 @@ T.steel = pushTile('steel', pixelArtTile(PAL.steel, [
   { x: 0, y: 5, rows: ['dddddddddddddddd'], colors: { d: shadeColor(PAL.steel, -28) } },
   { x: 2, y: 8, rows: ['ss   ss   ss   s', ' s   s    s   s '], colors: { s: shadeColor(PAL.steel, -38) } },
   { x: 0, y: 13, rows: ['dddddddddddddddd'], colors: { d: shadeColor(PAL.steel, -22) } },
+]));
+
+// Dedicated three-tone projectile tiles add crisp motifs while preserving
+// the game's existing cyan web, bright star, and steel/red shuriken colors.
+const webBase = PAL.glass;
+const webThread = [72, 194, 208];
+const webHighlight = [226, 252, 255];
+T.fx_web = pushTile('fx_web', pixelArtTile(webBase, [
+  { x: 1, y: 1, rows: ['w      w', ' ww  ww ', '  www   ', '  hwwh  ', '  ww    '], colors: { w: webThread, h: webHighlight } },
+  { x: 9, y: 1, rows: ['w    w', ' ww ww', '  hwwh', '   ww '], colors: { w: webThread, h: webHighlight } },
+  { x: 2, y: 9, rows: ['  www  ', ' wwhww ', '   h   '], colors: { w: webThread, h: webHighlight } },
+]));
+
+const starBase = PAL.glow;
+const starGold = PAL.gold;
+const starCream = PAL.snow;
+T.fx_star = pushTile('fx_star', pixelArtTile(starBase, [
+  { x: 2, y: 1, rows: ['   c   ', '  ccc  ', 'ggcccgg', '  ccc  ', '   c   '], colors: { c: starCream, g: starGold } },
+  { x: 10, y: 9, rows: ['  c ', ' gcc', 'ggc ', '  c '], colors: { c: starCream, g: starGold } },
+  { x: 0, y: 12, rows: ['cc ', ' ggc', '  c'], colors: { c: starCream, g: starGold } },
+]));
+
+const shurikenBase = PAL.steel;
+const shurikenHighlight = shadeColor(PAL.steel, 22);
+const shurikenRed = [198, 44, 52];
+T.fx_shuriken = pushTile('fx_shuriken', pixelArtTile(shurikenBase, [
+  { x: 1, y: 1, rows: ['   h   ', '   h   ', 'hhhrhhh', '   h   ', '   h   '], colors: { h: shurikenHighlight, r: shurikenRed } },
+  { x: 8, y: 1, rows: ['  h  ', ' hhr ', 'rhhhr', '  hh ', '   r '], colors: { h: shurikenHighlight, r: shurikenRed } },
+  { x: 1, y: 10, rows: ['hhrhh', '  r  ', '  h  '], colors: { h: shurikenHighlight, r: shurikenRed } },
 ]));
 
 // Character / mob skins -------------------------------------------------
