@@ -12,13 +12,13 @@
     },
     {
       "path": "before.html",
-      "bytes": 8299,
-      "sha256": "3f52dedd3d090dc22d62987853fb3e32c135d79f56593b2317035b2763d683b5"
+      "bytes": 8539,
+      "sha256": "27475b2c8b8b827d0d9acd07016dc917003f8845374b5200a3c0e74795da660f"
     },
     {
       "path": "after.html",
-      "bytes": 8297,
-      "sha256": "4fd9e3c83dc9d6319368d8c71578bb70d138a18fb83ed66f5ab49b3dc932709b"
+      "bytes": 8537,
+      "sha256": "acc3daa838af8691aa878103175579ac4b18d875900392b5e05d70390c48d434"
     },
     {
       "path": "style.css",
