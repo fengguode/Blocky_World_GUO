@@ -165,6 +165,7 @@ function load(options) {
         contains: (name) => classes.has(name),
       },
       eventListeners: {},
+      attributes: {},
       appendChild: noopOp,
       addEventListener(type, listener) {
         (this.eventListeners[type] || (this.eventListeners[type] = [])).push(listener);
@@ -174,7 +175,7 @@ function load(options) {
       querySelector: () => null,
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
       focus: noopOp,
-      setAttribute: noopOp,
+      setAttribute(name, value) { this.attributes[name] = String(value); },
       textContent: '',
       innerHTML: '',
       dataset: {},
