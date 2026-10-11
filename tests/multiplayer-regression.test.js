@@ -12,6 +12,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const net = require('net');
 const H = require('./harness');
+const { createVisitPlayerMoveBudget, plausibleVisitPlayerMove, visitPlayAttackAllowed } = require('../server');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLAYER = { pos: [100, 20, 100], yaw: 0, pitch: 0, characterId: 'steve' };
@@ -92,10 +93,47 @@ async function main() {
     await waitForServer(base, child);
     const hostPage = crypto.randomBytes(16).toString('hex');
     const guestPage = crypto.randomBytes(16).toString('hex');
+    const sparePage = crypto.randomBytes(16).toString('hex');
     const host = await login(base, 'p1', '123456', hostPage);
     const guest = await login(base, 'p2', '654321', guestPage);
+    const spare = await login(base, 'p3', '112233', sparePage);
     const hostCall = (route, body, method) => call(base, host, hostPage, route, body, method);
     const guestCall = (route, body, method) => call(base, guest, guestPage, route, body, method);
+    const spareCall = (route, body, method) => call(base, spare, sparePage, route, body, method);
+
+    await check('elapsed-time movement budget rejects rapid small steps before they reach attack range', async () => {
+      let now = 1_000_000;
+      const owner = { pos: [100, 20, 100], yaw: 0, pitch: 0 };
+      let accepted = { pos: [100, 20, 110], yaw: 0, pitch: 0 };
+      const budget = createVisitPlayerMoveBudget(now);
+      for (let step = 0; step < 70; step++) {
+        now += 1;
+        const candidate = Object.assign({}, accepted, { pos: [100, 20, accepted.pos[2] - 0.1] });
+        if (plausibleVisitPlayerMove(accepted, candidate, budget, now)) accepted = candidate;
+      }
+      const rapidAttack = Object.assign({}, accepted, { pos: [100, 20, 103], playAttackSeq: 1 });
+      now += 1;
+      assert(!plausibleVisitPlayerMove(accepted, rapidAttack, budget, now), 'the rapid sequence cannot move the accepted player into range');
+      assert(!visitPlayAttackAllowed(accepted, owner, now), 'the last accepted position remains outside attack range');
+      assert(accepted.pos[2] > 103 + 3.6, 'the accepted trajectory stays beyond the 3.6-block attack radius');
+    });
+
+    await check('current world-size metadata survives a server save and reload', async () => {
+      const initial = await hostCall('/api/world?type=normal', null, 'GET');
+      const savedWorld = Object.assign({}, initial.world, {
+        worldSize: 200000,
+        player1: [199999, 46, 199999],
+        inventory: { apple: 2, meat: 3 },
+        edits: [[199995, 80, 199995, 2]],
+        editPatch: true,
+        replaceEdits: true,
+      });
+      await hostCall('/api/world?type=normal', { world: savedWorld }, 'PUT');
+      const reloaded = await hostCall('/api/world?type=normal', null, 'GET');
+      assert.strictEqual(reloaded.world.worldSize, 200000, 'the current coordinate-space marker remains durable');
+      assert.deepStrictEqual(reloaded.world.inventory, { apple: 2, meat: 3 });
+      assert.deepStrictEqual(reloaded.world.edits, [[199995, 80, 199995, 2]]);
+    });
 
     await check('host can open a Play & Build room and the approved guest can request access', async () => {
       const started = await hostCall('/api/visit/host', {});
@@ -158,13 +196,77 @@ async function main() {
       assert(ownerPoll.events.some(event => event.type === 'fight-action' && event.data.role === 'visitor' && event.data.action === 'attack'));
     });
 
+    await check('Play & Build visitor attacks relay one validated damage event to the owner', async () => {
+      await hostCall('/api/visit/mode', { mode: 'play' });
+      const before = await hostCall('/api/visit/sync', { cursor: 0, player: PLAYER, inventory: { apple: 4, meat: 2 } });
+      const saved = await hostCall('/api/world?type=normal', null, 'GET');
+      assert.deepStrictEqual(saved.world.inventory, { apple: 4, meat: 2 }, 'owner food inventory is durable during an active visit');
+      const far = Object.assign({}, PLAYER, { pos: [100, 20, 1000], playAttackSeq: 1, playAttackDamage: 20 });
+      const farPoll = await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: far });
+      assert(!farPoll.events.some(event => event.type === 'play-attack'), 'implausible teleport attacks are rejected');
+      let poll = await hostCall('/api/visit/sync', { cursor: before.cursor, player: PLAYER });
+      assert(!poll.events.some(event => event.type === 'play-attack'), 'a rejected position cannot reach the owner');
+
+      const forgedYaw = Object.assign({}, PLAYER, { pos: [102, 20, 100], yaw: Math.PI, playAttackSeq: 1, playAttackDamage: 20 });
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: forgedYaw });
+      poll = await hostCall('/api/visit/sync', { cursor: poll.cursor, player: PLAYER });
+      assert.strictEqual(poll.remotePlayer.yaw, 0, 'an implausible same-packet turn does not replace the last accepted facing');
+      assert(!poll.events.some(event => event.type === 'play-attack'), 'forged orientation is not sufficient to create a hit');
+
+      await new Promise(resolve => setTimeout(resolve, 400));
+      const behind = Object.assign({}, PLAYER, { pos: [100, 20, 103], yaw: Math.PI, playAttackSeq: 1, playAttackDamage: 20 });
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: behind });
+      poll = await hostCall('/api/visit/sync', { cursor: poll.cursor, player: PLAYER });
+      assert(!poll.events.some(event => event.type === 'play-attack'), 'attacks from behind are rejected');
+
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const front = Object.assign({}, PLAYER, { pos: [100, 20, 103], yaw: 0, playAttackSeq: 2, playAttackDamage: 20 });
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: front });
+      const hit = await hostCall('/api/visit/sync', { cursor: poll.cursor, player: PLAYER });
+      const attack = hit.events.find(event => event.type === 'play-attack');
+      assert(attack, 'owner receives a close, front-facing visitor attack');
+      assert.strictEqual(attack.data.role, 'visitor');
+      assert.strictEqual(attack.data.targetRole, 'owner');
+      assert.strictEqual(attack.data.damage, 20);
+      assert.strictEqual(attack.data.seq, 2);
+      const stale = await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, front, { playAttackSeq: 1 }) });
+      assert(!stale.events.some(event => event.type === 'play-attack'), 'stale attack sequences cannot be replayed');
+      const cadence = await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, front, { playAttackSeq: 3 }) });
+      assert(!cadence.events.some(event => event.type === 'play-attack'), 'attacks faster than the cooldown are rejected');
+      let sanitized = await hostCall('/api/visit/sync', { cursor: hit.cursor, player: PLAYER });
+      assert(!sanitized.events.some(event => event.type === 'play-attack'), 'the owner sees no over-cadence attack');
+      await new Promise(resolve => setTimeout(resolve, 350));
+      await guestCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, front, { playAttackSeq: 4, playAttackDamage: 999 }) });
+      sanitized = await hostCall('/api/visit/sync', { cursor: sanitized.cursor, player: PLAYER });
+      const safeAttack = sanitized.events.find(event => event.type === 'play-attack');
+      assert(safeAttack, 'the next attack sequence is relayed');
+      assert.strictEqual(safeAttack.data.damage, 8, 'damage is clamped to a permitted attack tier');
+    });
+
+    await check('a replacement visitor starts a fresh Play attack sequence', async () => {
+      await guestCall('/api/visit/leave', {});
+      const requested = await spareCall('/api/visit/request', { ownerId: 'p1' });
+      assert.strictEqual(requested.ownerName, 'Florenz');
+      const waiting = await hostCall('/api/visit/sync', { cursor: 0, player: PLAYER });
+      const approved = await hostCall('/api/visit/respond', { requestId: waiting.pending.id, approve: true });
+      assert.strictEqual(approved.approved, true);
+      const ready = await spareCall('/api/visit/sync', { cursor: 0, worldReady: true, player: PLAYER });
+      assert.strictEqual(ready.state, 'active');
+      await new Promise(resolve => setTimeout(resolve, 350));
+      await spareCall('/api/visit/sync', { cursor: 0, worldReady: true, player: Object.assign({}, PLAYER, { pos: [100, 20, 103], yaw: 0, playAttackSeq: 1, playAttackDamage: 12 }) });
+      const hit = await hostCall('/api/visit/sync', { cursor: ready.cursor, player: PLAYER });
+      const attack = hit.events.find(event => event.type === 'play-attack' && event.data.role === 'visitor');
+      assert(attack, 'the replacement visitor’s first attack is relayed');
+      assert.strictEqual(attack.data.seq, 1);
+    });
+
     await check('owner mode switch propagates and host closing during a loading phase closes the visitor session', async () => {
       const changed = await hostCall('/api/visit/mode', { mode: 'observe' });
       assert.strictEqual(changed.mode, 'observe');
-      const guestMode = await guestCall('/api/visit/sync', { cursor: 0, worldReady: true });
+      const guestMode = await spareCall('/api/visit/sync', { cursor: 0, worldReady: true });
       assert.strictEqual(guestMode.mode, 'observe');
       await hostCall('/api/visit/stop', {});
-      const afterClose = await guestCall('/api/visit/sync', {
+      const afterClose = await spareCall('/api/visit/sync', {
         cursor: 0, loadingOnly: true, worldReady: false, edits: [],
       });
       assert.strictEqual(afterClose.state, 'closed');

@@ -224,9 +224,10 @@ const UI = {
       rows = [
         ['Move around', 'Left thumbstick'],
         ['Look around', 'Drag anywhere on the right'],
-        ['Break a block', 'Big BREAK button, or tap the screen'],
+        ['Break / attack', 'BREAK mines blocks or attacks animals / your visitor'],
         ['Place a block', 'PLACE button'],
         ['Choose a block', 'Tap the bar at the bottom'],
+        ['Eat food', 'Select Apple or Meat, then PLACE'],
         ['Jump / fly up', 'JUMP'],
         ['Fly down', 'FLY (tap to switch flying on)'],
         ['Hit an enemy', 'HIT'],
@@ -241,10 +242,11 @@ const UI = {
         ['Move', 'W A S D'],
         ['Jump / Fly up', 'Space'],
         ['Sneak / Fly down', 'Shift'],
-        ['Break block', 'Left click'],
+        ['Break / attack', 'Left click (animals or visiting player)'],
         ['Place block', 'Right click'],
         ['Pick block', 'Q'],
-        ['Hotbar', '1–9 blocks, 0 shovel, or wheel'],
+        ['Hotbar', '1–9 blocks, 0 shovel, or wheel for food'],
+        ['Eat food', 'Select Apple or Meat, then right click'],
         ['Toggle flying', 'F'],
         ['Watch your fighter', 'V'],
         ['Observe: change view', 'F5'],
@@ -255,6 +257,7 @@ const UI = {
         ['Ultimate', 'L (needs a full bar)'],
         ['Player 2 (keyboard)', 'Arrows + Numpad 1/2/3'],
         ['Player 2 (controller)', 'Sticks + A/X/Y/B'],
+        ['Build attack (controller)', 'X'],
       ];
     }
     box.innerHTML =
@@ -346,7 +349,7 @@ const UI = {
       slot.dataset.slot = i;
       slot.tabIndex = 0;
       slot.setAttribute('role', 'button');
-      slot.setAttribute('aria-label', item.name + (item.kind === 'block' ? ', unlimited blocks' : ', removes the targeted block'));
+      slot.setAttribute('aria-label', item.name + (item.kind === 'block' ? ', unlimited blocks' : item.kind === 'food' ? ', food' : ', removes the targeted block'));
       slot.setAttribute('aria-pressed', i === Game.selectedSlot ? 'true' : 'false');
       slot.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -366,12 +369,34 @@ const UI = {
         ctx.strokeStyle = '#dae9f5'; ctx.lineWidth = 3; ctx.strokeRect(-6, -17, 12, 7);
         ctx.fillStyle = '#9fb8cb'; ctx.fillRect(-8, 8, 16, 10);
         ctx.beginPath(); ctx.moveTo(-8,18); ctx.lineTo(0,23); ctx.lineTo(8,18); ctx.fill();
+      } else if (item.kind === 'food') {
+        icon.width = icon.height = 38;
+        const ctx = icon.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        if (item.id === 'apple') {
+          ctx.fillStyle = '#d94b50'; ctx.fillRect(8, 10, 22, 21);
+          ctx.fillStyle = '#ff8580'; ctx.fillRect(11, 12, 6, 5);
+          ctx.fillStyle = '#568d42'; ctx.fillRect(19, 5, 9, 5);
+          ctx.fillStyle = '#76502f'; ctx.fillRect(19, 6, 3, 7);
+        } else {
+          ctx.fillStyle = '#a9493e'; ctx.fillRect(7, 10, 24, 18);
+          ctx.fillStyle = '#e7cda0'; ctx.fillRect(3, 16, 8, 5); ctx.fillRect(27, 16, 8, 5);
+          ctx.fillStyle = '#f2e5c8'; ctx.fillRect(3, 14, 4, 4); ctx.fillRect(3, 19, 4, 4);
+          ctx.fillRect(31, 14, 4, 4); ctx.fillRect(31, 19, 4, 4);
+        }
       }
       slot.title = item.name;
       const key = document.createElement('span');
       key.className = 'key';
       slot.appendChild(num);
       slot.appendChild(icon);
+      if (item.kind === 'food') {
+        const count = document.createElement('span');
+        count.className = 'food-count';
+        count.dataset.item = item.id;
+        count.textContent = '0';
+        slot.appendChild(count);
+      }
       slot.appendChild(key);
       bar.appendChild(slot);
     });
@@ -393,8 +418,12 @@ const UI = {
     }
     const character = player.char || characterById(Game.pick.p1);
     const item = HOTBAR_ITEMS[Game.selectedSlot] || HOTBAR_ITEMS[0];
+    const count = item.kind === 'food' ? Math.max(0, Math.floor(Number((player.inventory || {})[item.id]) || 0)) : 0;
+    const attackDamage = Game.playAttackDamage ? Game.playAttackDamage(player) : 8;
+    const attackStyle = attackDamage === 20 ? 'gold' : attackDamage === 16 ? 'stone' : attackDamage === 12 ? 'wood' : 'fist';
     const summary = character.name + ' · Outfit: ' + character.style +
-      ' · Selected: ' + item.name + (item.kind === 'block' ? ' ∞ · PLACE builds' : ' · PLACE removes');
+      ' · Selected: ' + item.name + (item.kind === 'block' ? ' ∞ · PLACE builds' : item.kind === 'food' ? ' ×' + count + ' · PLACE eats' : ' · PLACE removes') +
+      ' · BREAK attack: ' + attackDamage + ' (' + attackStyle + ')';
     if (el.textContent !== summary) el.textContent = summary;
     el.classList.remove('hidden');
   },
@@ -406,15 +435,37 @@ const UI = {
       const el = document.getElementById(id);
       if (el) el.style.width = Math.max(0, Math.min(100, pct)) + '%';
     };
-    if (mode === 'fight') {
+    const inPlay = mode === 'play';
+    const hpVisible = mode === 'fight' || inPlay;
+    const statusRow = document.querySelector('.status-row');
+    if (statusRow) statusRow.classList.toggle('play-health', inPlay);
+    const ultFill = document.getElementById('ult-fill');
+    const ultBar = ultFill && ultFill.parentElement;
+    const ultLabel = ultBar && ultBar.previousElementSibling;
+    const combo = document.getElementById('combo-label');
+    if (ultLabel) ultLabel.style.display = mode === 'fight' ? '' : 'none';
+    if (ultBar) ultBar.style.display = mode === 'fight' ? '' : 'none';
+    if (combo) combo.style.display = mode === 'fight' ? '' : 'none';
+    if (hpVisible) {
       setBar('hp-fill', (player.hp / player.maxHp) * 100);
+      const hpFill = document.getElementById('hp-fill');
+      const hpLabel = hpFill && hpFill.parentElement && hpFill.parentElement.previousElementSibling;
+      if (hpLabel) hpLabel.textContent = (inPlay ? '♥ ' : '') + 'HP ' + Math.ceil(player.hp) + '/' + player.maxHp;
+      document.querySelectorAll('#hotbar .food-count').forEach((el) => {
+        el.textContent = String(Math.max(0, Math.floor(Number((player.inventory || {})[el.dataset.item]) || 0)));
+      });
+      const statusRowEl = document.querySelector('.status-row');
+      if (statusRowEl) statusRowEl.style.display = 'flex';
+    }
+    if (mode === 'fight') {
       setBar('ult-fill', (player.ultMeter / player.maxUlt) * 100);
       const ult = document.getElementById('ult-fill');
       if (ult) ult.parentElement.classList.toggle('ult-ready', player.ultMeter >= player.maxUlt);
       const cl = document.getElementById('combo-label');
       if (cl) cl.textContent = player.combo > 1 ? (player.combo + ' HIT COMBO') : '';
       document.getElementById('hotbar').style.display = 'none';
-      document.querySelector('.status-row').style.display = 'flex';
+    } else if (mode === 'play') {
+      document.getElementById('hotbar').style.display = '';
     } else {
       document.getElementById('hotbar').style.display = '';
       document.querySelector('.status-row').style.display = 'none';
@@ -517,6 +568,7 @@ const Audio = {
       case 'jump':    tone(340, 0.11, 'square', 0.45, 620); break;
       case 'ult':     tone(160, 0.5, 'sawtooth', 0.9, 900); noise(0.4, 0.7, 2600); break;
       case 'ko':      tone(300, 0.5, 'square', 0.7, 70); break;
+      case 'eat':     tone(540, 0.06, 'sine', 0.35, 760); break;
       case 'win':     tone(520, 0.12, 'square', 0.7); tone(660, 0.12, 'square', 0.7); tone(880, 0.3, 'square', 0.8); break;
       case 'select':  tone(600, 0.05, 'square', 0.4); break;
       case 'view':    tone(480, 0.06, 'sine', 0.4); break;

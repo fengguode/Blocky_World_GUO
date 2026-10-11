@@ -604,6 +604,13 @@ const Game = {
     const p1 = new Player(this.world, c1, false);
     p1.pos = spawn.slice();
     p1.spawn = spawn.slice();
+    p1.selectedSlot = this.selectedSlot;
+    if (this.saved && this.saved.inventory && typeof this.saved.inventory === 'object') {
+      for (const item of ['apple', 'meat']) {
+        const count = this.saved.inventory[item];
+        if (Number.isSafeInteger(count) && count >= 0) p1.inventory[item] = count;
+      }
+    }
     p1.creative = true;
     p1.flying = true;
     this.players.push(p1);
@@ -724,7 +731,7 @@ const Game = {
     const fwd = player.forwardVec([0, 0, 0]);
     let target = null, best = Infinity;
     for (const animal of this.animals) {
-      if (!animal.def.predator || animal.dead) continue;
+      if (animal.dead) continue;
       const dx = animal.pos[0] - player.pos[0];
       const dz = animal.pos[2] - player.pos[2];
       const dist2 = dx * dx + dz * dz;
@@ -735,12 +742,69 @@ const Game = {
       target = animal;
     }
     if (!target) return false;
-    target.health--;
+    target.health = Math.max(0, target.health - this.playAttackDamage(player));
     target.hitFlash = 0.22;
-    this.provokeWolfPack(target);
-    if (target.health <= 0) target.dead = true;
-    UI.toast('The wolf pack is angry!');
-    Audio.play('break');
+    target.aggressiveTimer = 20;
+    target.fleeFrom = null;
+    if (target.def.predator) this.provokeWolfPack(target);
+    if (target.health <= 0) {
+      target.dead = true;
+      this.addFood(player, 'meat', 1);
+      UI.toast('Collected 1 meat. Select it and press PLACE to eat.');
+    } else {
+      UI.toast(target.def.name + ' is angry! ' + target.health + ' HP left.');
+    }
+    Audio.play('hit');
+    return true;
+  },
+
+  playAttackDamage(player) {
+    const item = HOTBAR_ITEMS[player && player.selectedSlot !== undefined ? player.selectedSlot : this.selectedSlot];
+    if (item && item.kind === 'block') {
+      if (item.id === 16) return 20;
+      if (item.id === 3 || item.id === 4) return 16;
+      if (item.id === 7 || item.id === 8) return 12;
+    }
+    return 8;
+  },
+
+  shouldDropApple(roll) {
+    return (roll === undefined ? Math.random() : roll) < 0.15;
+  },
+
+  tryHitVisitingPlayer(player) {
+    const remote = this.players[1];
+    if (!player || !remote || !remote.networkRemote || !remote.networkRemoteVisible || !window.Network || !Network.visitActive) return false;
+    const dx = remote.pos[0] - player.pos[0], dz = remote.pos[2] - player.pos[2];
+    const dist2 = dx * dx + dz * dz;
+    if (dist2 > 3.6 * 3.6 || Math.abs(remote.pos[1] - player.pos[1]) > 1.8) return false;
+    const fwd = player.forwardVec([0, 0, 0]);
+    const dist = Math.sqrt(dist2) || 1;
+    if ((dx * fwd[0] + dz * fwd[2]) / dist < 0.58) return false;
+    Network.queuePlayAttack(this.playAttackDamage(player));
+    Audio.play('hit');
+    return true;
+  },
+
+  addFood(player, item, count) {
+    if (!player || !['apple', 'meat'].includes(item)) return;
+    player.inventory[item] = Math.max(0, Math.floor(Number(player.inventory[item]) || 0)) + (count || 1);
+    UI.updateEquipmentStatus(player, this.mode);
+    this.save();
+  },
+
+  consumeFood(player) {
+    const item = HOTBAR_ITEMS[this.selectedSlot];
+    if (!player || player.ko || !item || item.kind !== 'food') return false;
+    const count = Math.max(0, Math.floor(Number(player.inventory[item.id]) || 0));
+    if (!count || player.hp >= player.maxHp) return false;
+    const healing = item.id === 'apple' ? 20 : 30;
+    const previousHp = player.hp;
+    player.inventory[item.id] = count - 1;
+    player.hp = Math.min(player.maxHp, player.hp + healing);
+    UI.toast('Ate ' + item.name.toLowerCase() + ' · +' + (player.hp - previousHp) + ' HP');
+    Audio.play('eat');
+    this.save();
     return true;
   },
 
@@ -1327,6 +1391,10 @@ const Game = {
   save(resetEdits) {
     try {
       const p = this.players[0];
+      const visitorSave = window.Network && Network.serverMode && Network.visitRole === 'visitor';
+      const inventorySource = visitorSave
+        ? ((Network.savedWorld && Network.savedWorld.inventory) || {})
+        : ((p && p.inventory) || {});
       const snapshot = {
         worldType: this.activeWorldType,
         seed: this.world ? this.world.seed : 1337,
@@ -1337,6 +1405,10 @@ const Game = {
         slot: this.selectedSlot,
         pick: this.pick,
         settings: this.settings,
+        inventory: {
+          apple: Number.isSafeInteger(inventorySource.apple) && inventorySource.apple >= 0 ? inventorySource.apple : 0,
+          meat: Number.isSafeInteger(inventorySource.meat) && inventorySource.meat >= 0 ? inventorySource.meat : 0,
+        },
         edits: this.world ? Array.from(this.world.edits, (entry) => {
           const xyz = entry[0].split(',').map(Number);
           return [xyz[0], xyz[1], xyz[2], entry[1]];
@@ -1409,6 +1481,7 @@ const Game = {
   handleBlockActions(p1, p2, dt) {
     if (this.state !== 'play') return;
     const p = p1;
+    if (p.ko) return;
     const world = this.world;
     p.buildUseTime = Math.max(0, (p.buildUseTime || 0) - dt);
 
@@ -1423,11 +1496,17 @@ const Game = {
     // The big button is BREAK while building, and HIT while fighting, so it
     // only means "break a block" in this mode.
     const breakHeld = Input.mouse.left || Touch.btn.hit;
-    const breakJustPressed = Input.mouse.leftPressed || (Touch.btn.hit && !this._breakHeld);
+    const breakJustPressed = Input.mouse.leftPressed || (Touch.btn.hit && !this._breakHeld) || (this._playPadHit && !this._playPadHitHeld);
+    this._playPadHitHeld = !!this._playPadHit;
     const placeJustPressed = Input.mouse.rightPressed || (Touch.btn.use && !this._useHeld);
-    const animalHit = breakJustPressed && this.tryHitAnimal(p);
+    const animalHit = breakJustPressed && (this.tryHitAnimal(p) || this.tryHitVisitingPlayer(p));
 
     const item = HOTBAR_ITEMS[this.selectedSlot] || HOTBAR_ITEMS[0];
+    if (placeJustPressed && item.kind === 'food' && this.consumeFood(p)) {
+      this._breakHeld = Touch.btn.hit;
+      this._useHeld = Touch.btn.use;
+      return;
+    }
     if (breakJustPressed || placeJustPressed) p.buildUseTime = 0.3;
     if (hit.hit && !animalHit) {
       const b = BLOCKS[hit.id];
@@ -1441,13 +1520,19 @@ const Game = {
           p.breakTime = (p.breakTime || 0) + dt;
           const need = 0.25 + (b.hardness || 0.4);
           if (p.breakTime >= need) {
-            if (world.setBlock(hit.x, hit.y, hit.z, 0)) this.save();
+            if (world.setBlock(hit.x, hit.y, hit.z, 0)) {
+              if (hit.id === 9 && this.shouldDropApple()) this.addFood(p, 'apple', 1);
+              this.save();
+            }
             Audio.play('break');
             Particles.burst([hit.x + 0.5, hit.y + 0.5, hit.z + 0.5], { tile: b.side, size: 0.1 }, 12, 0.8);
             p.breakTime = 0;
           }
         } else {
-          if (world.setBlock(hit.x, hit.y, hit.z, 0)) this.save();
+          if (world.setBlock(hit.x, hit.y, hit.z, 0)) {
+            if (hit.id === 9 && this.shouldDropApple()) this.addFood(p, 'apple', 1);
+            this.save();
+          }
           Audio.play('break');
           Particles.burst([hit.x + 0.5, hit.y + 0.5, hit.z + 0.5], { tile: b ? b.side : T.dirt, size: 0.1 }, 12, 0.8);
           p.breakTime = 0;
@@ -1617,11 +1702,12 @@ const Game = {
       }
       this._flyHeld = Touch.btn.fly;
 
-      p1.update(dt, inp.mx, inp.mz, inp.jump, inp.sneak);
+      p1.update(dt, p1.ko ? 0 : inp.mx, p1.ko ? 0 : inp.mz, p1.ko ? false : inp.jump, p1.ko ? false : inp.sneak);
       if (window.Network && Network.visitRole && (Network.visitRole === 'owner' || Network.visitRole === 'visitor')) Network.updateRemotePlayer(p2, dt);
       else p2.update(dt, 0, 0, false, false);
       this.clampToWorld(p1);
       this.clampToWorld(p2);
+      this._playPadHit = !!(inp.pad && inp.pad.attack);
       this.handleBlockActions(p1, p2, dt);
 
       // footsteps
@@ -1636,7 +1722,7 @@ const Game = {
 
       // Stop anyone walking off the edge of the world, and catch anyone who
       // falls through the floor.
-      if (p1.pos[1] < -5) p1.respawn();
+      if (p1.pos[1] < -5 && !p1.ko) p1.respawn();
       this.clampToWorld(p1);
 
       UI.updateHUD(p1, 'play',

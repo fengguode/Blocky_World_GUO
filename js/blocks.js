@@ -586,7 +586,9 @@ for (const b of BLOCKS) {
 const HOTBAR_BLOCKS = [1, 3, 4, 2, 8, 7, 9, 11, 16];
 // Append tools so saved block slot numbers keep their meaning.
 const HOTBAR_ITEMS = HOTBAR_BLOCKS.map(id => ({ kind: 'block', id, name: BLOCKS[id].name }))
-  .concat([{ kind: 'tool', id: 'shovel', name: 'Shovel' }]);
+  .concat([{ kind: 'tool', id: 'shovel', name: 'Shovel' },
+    { kind: 'food', id: 'apple', name: 'Apple' },
+    { kind: 'food', id: 'meat', name: 'Meat' }]);
 
 function isSolid(id)  { return BLOCKS[id] ? !!BLOCKS[id].solid : false; }
 function isOpaque(id) { return BLOCKS[id] ? !!BLOCKS[id].opaque : false; }

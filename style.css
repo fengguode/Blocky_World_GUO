@@ -137,6 +137,9 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  max-width: calc(100vw - 20px);
+  overflow-x: auto;
+  scrollbar-width: thin;
   gap: 6px;
   padding: 7px;
   background: rgba(8, 13, 28, 0.62);
@@ -170,7 +173,7 @@ html, body {
 .equipment-status {
   position: absolute;
   left: 50%;
-  bottom: 98px;
+  bottom: 130px;
   transform: translateX(-50%);
   max-width: min(94vw, 720px);
   padding: 7px 12px;
@@ -200,6 +203,19 @@ html, body {
   font-size: 9px;
   font-family: var(--mono);
   color: rgba(95, 227, 255, 0.4);
+}
+.slot .food-count {
+  position: absolute;
+  right: 4px;
+  top: 3px;
+  min-width: 15px;
+  padding: 1px 3px;
+  border-radius: 7px;
+  background: rgba(8, 13, 28, 0.9);
+  color: #fff;
+  font: 700 10px/1.2 var(--mono);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* ---------- status bars ---------- */
@@ -241,6 +257,32 @@ html, body {
 
 .bar.hp .fill { background: linear-gradient(90deg, #FF4D6D, #FF9E5E); box-shadow: 0 0 12px rgba(255,77,109,0.5); }
 .bar.ult .fill { background: linear-gradient(90deg, #2AA8CC, #5FE3FF); box-shadow: 0 0 12px rgba(95,227,255,0.55); }
+.status-row.play-health {
+  gap: 10px;
+  padding: 8px 13px;
+  border: 1px solid rgba(255, 218, 155, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 249, 231, 0.94);
+  box-shadow: 0 5px 18px rgba(74, 46, 27, 0.24), inset 0 1px rgba(255, 255, 255, 0.95);
+  color: #654533;
+}
+.status-row.play-health .bar-label {
+  color: #8d4c4a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: none;
+}
+.status-row.play-health .bar.hp {
+  height: 18px;
+  border-color: rgba(165, 91, 80, 0.32);
+  background: rgba(120, 68, 57, 0.14);
+  box-shadow: inset 0 1px 3px rgba(95, 52, 46, 0.18);
+}
+.status-row.play-health .bar.hp .fill {
+  background: linear-gradient(90deg, #ff8f72, #f4bf62);
+  box-shadow: 0 0 8px rgba(231, 129, 84, 0.25);
+}
 
 .bar-label {
   font-size: 10px;
@@ -934,8 +976,13 @@ body.touch:not(.playing) #touch-stick { opacity: 0; }
   .slot canvas { width: clamp(22px, 7vw, 30px); height: clamp(22px, 7vw, 30px); }
   .bar { width: 120px; height: 13px; }
   .hotbar { bottom: max(12px, env(safe-area-inset-bottom)); gap: 2px; padding: 4px; }
-  .equipment-status { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px); max-width: calc(100vw - 20px); font-size: 10px; padding: 6px 9px; }
-  .status-row { bottom: 62px; gap: 8px; }
+  .equipment-status { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 110px); max-width: calc(100vw - 20px); font-size: 10px; padding: 6px 9px; }
+  body.touch .equipment-status { top: max(84px, calc(env(safe-area-inset-top) + 70px)); bottom: auto; }
+  .status-row { bottom: 62px; gap: 8px; max-width: calc(100vw - 24px); }
+  .status-row.play-health { bottom: 64px; gap: 6px; padding: 6px 9px; }
+  .status-row.play-health .bar.hp { width: min(190px, 46vw); height: 16px; }
+  .status-row .bar.hp { width: min(230px, 54vw); }
+  .status-row .bar-label { min-width: auto; letter-spacing: 1px; }
   .menu-card h1 { font-size: 27px; }
   .menu-card h2 { font-size: 12px; margin-bottom: 16px; }
   .menu-card { padding: 20px 16px; }
