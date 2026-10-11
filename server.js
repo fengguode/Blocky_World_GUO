@@ -251,18 +251,31 @@ function safePlayerState(value) {
   };
 }
 
-function plausibleVisitPlayerMove(previous, next) {
+function createVisitPlayerMoveBudget(now = Date.now()) {
+  return { updatedAt: now, horizontal: 2.4, vertical: 3, yaw: 0.65, pitch: 0.5 };
+}
+
+function plausibleVisitPlayerMove(previous, next, budget, now = Date.now()) {
   if (!next) return false;
   if (!previous) return true;
-  const elapsed = Math.max(0.05, (next.updatedAt - previous.updatedAt) / 1000);
+  if (!budget) return false;
+  const elapsed = Math.min(0.4, Math.max(0, (now - budget.updatedAt) / 1000));
+  budget.updatedAt = now;
+  budget.horizontal = Math.min(3.2, budget.horizontal + 8 * elapsed);
+  budget.vertical = Math.min(14.5, budget.vertical + 58 * elapsed);
+  budget.yaw = Math.min(2.4, budget.yaw + 12 * elapsed);
+  budget.pitch = Math.min(1.5, budget.pitch + 10 * elapsed);
   const horizontal = Math.hypot(next.pos[0] - previous.pos[0], next.pos[2] - previous.pos[2]);
-  const maxHorizontal = 8 * elapsed + 2.4;
-  const maxVertical = 58 * elapsed + 3;
   const yawDelta = Math.atan2(Math.sin(next.yaw - previous.yaw), Math.cos(next.yaw - previous.yaw));
-  const maxYaw = 12 * elapsed + 0.65;
-  const maxPitch = 10 * elapsed + 0.5;
-  return horizontal <= maxHorizontal && Math.abs(next.pos[1] - previous.pos[1]) <= maxVertical &&
-    Math.abs(yawDelta) <= maxYaw && Math.abs(next.pitch - previous.pitch) <= maxPitch;
+  const vertical = Math.abs(next.pos[1] - previous.pos[1]);
+  const yaw = Math.abs(yawDelta);
+  const pitch = Math.abs(next.pitch - previous.pitch);
+  if (horizontal > budget.horizontal || vertical > budget.vertical || yaw > budget.yaw || pitch > budget.pitch) return false;
+  budget.horizontal -= horizontal;
+  budget.vertical -= vertical;
+  budget.yaw -= yaw;
+  budget.pitch -= pitch;
+  return true;
 }
 
 function visitPlayAttackAllowed(attacker, target, now) {
@@ -536,6 +549,7 @@ async function handleApi(req, res, url) {
         visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
         playAttackSeq: { owner: 0, visitor: 0 },
         playAttackAt: { owner: 0, visitor: 0 },
+        playerMoveBudget: { owner: createVisitPlayerMoveBudget(), visitor: createVisitPlayerMoveBudget() },
         playInventory: savedWorld.inventory || { apple: 0, meat: 0 },
         mode, modeRevision: 1,
         arenaCenter: Array.isArray(body.arenaCenter) && body.arenaCenter.length === 2 && body.arenaCenter.every(Number.isFinite)
@@ -680,6 +694,7 @@ async function handleApi(req, res, url) {
       playAttackDamage: 8,
       updatedAt: Date.now(),
     }) : null;
+    room.playerMoveBudget.visitor = createVisitPlayerMoveBudget();
     room.playAttackSeq.visitor = 0;
     room.playAttackAt.visitor = 0;
     appendVisitEvent(room, user.id, 'joined', { displayName: pending.visitorName });
@@ -699,7 +714,7 @@ async function handleApi(req, res, url) {
     if (role === 'owner') {
       room.ownerSeen = Date.now();
       const player = safePlayerState(body.player);
-      if (player && plausibleVisitPlayerMove(room.players.owner, player)) room.players.owner = player;
+      if (player && plausibleVisitPlayerMove(room.players.owner, player, room.playerMoveBudget.owner)) room.players.owner = player;
       const inventory = safeFoodInventory(body.inventory);
       if (inventory && room.status === 'active') {
         const revision = await persistVisitInventory(room, user.token, inventory);
@@ -718,7 +733,7 @@ async function handleApi(req, res, url) {
       if (room.status !== 'active' || room.visitorToken !== user.token) return reply(res, 200, { state: 'closed', reason: 'The host is no longer available.' });
       room.visitorSeen = Date.now();
       const player = safePlayerState(body.player);
-      if (player && plausibleVisitPlayerMove(room.players.visitor, player)) room.players.visitor = player;
+      if (player && plausibleVisitPlayerMove(room.players.visitor, player, room.playerMoveBudget.visitor)) room.players.visitor = player;
       if (body.worldReady === true && room.visitorWorldSent) room.visitorNeedsWorld = false;
     }
 
