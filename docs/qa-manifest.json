@@ -87,8 +87,8 @@
     },
     {
       "path": "js/qa-harness.js",
-      "bytes": 3287,
-      "sha256": "9ad0cacc7cd5a3fc9f31e6bba94ba67b361616e6b2f33bcc6c89c1f4988b8317"
+      "bytes": 3300,
+      "sha256": "8d90cc6daf1309ba7e787b9bfde5f8b34e3a196ae740279f142762674440d657"
     },
     {
       "path": "js/touch.js",

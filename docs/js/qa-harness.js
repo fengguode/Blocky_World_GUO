@@ -7,7 +7,7 @@ marker.innerHTML='<strong>Issue #21 visual QA · '+(window.BW_QA_VARIANT||'unkno
 window.BW_QA={variant:window.BW_QA_VARIANT||'unknown',seed:1337,camera:'fixed storybook orbit',ready:false,metrics:null};
 document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(marker));
 function setup(){
- if(!window.Game || !Game.world || Game.state!=='menu') return false;
+ if(typeof Game==='undefined' || !Game.world || Game.state!=='menu') return false;
  Object.defineProperty(Game,'dayPhase',{configurable:true,get:()=>0.25,set:()=>{}});
  Game.startObserve();
  Game.animals.forEach(a=>{a.update=()=>{};});
