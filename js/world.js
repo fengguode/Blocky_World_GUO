@@ -5,20 +5,18 @@
 
 const CHUNK = 16;          // chunk footprint in blocks
 
-// World dimensions, as asked for: 200 long x 200 wide x 100 high.
-// 200 is not a multiple of 16, so the loaded chunk grid is rounded up to
-// 13x13 (208 blocks) and the playable area is clamped to the true 200.
-const WORLD_SIZE = 200;
+// The playable world is 200000 x 200000 x 100. Chunks are generated around the
+// player on demand so the full map remains practical on phones and tablets.
+const WORLD_SIZE = 200000;
 const WORLD_H = 100;
 const SEA_LEVEL = 20;
 
-const CHUNKS_PER_SIDE = Math.ceil(WORLD_SIZE / CHUNK);          // 13
-const CENTRE_CHUNK = Math.floor(CHUNKS_PER_SIDE / 2);           // 6
+const CHUNKS_PER_SIDE = Math.ceil(WORLD_SIZE / CHUNK);          // 12500
+const CENTRE_CHUNK = Math.floor(CHUNKS_PER_SIDE / 2);           // 6250
 // Centre of the playable square, in blocks.
-const WORLD_CENTRE = CENTRE_CHUNK * CHUNK + CHUNK / 2;          // 104
-// Keep block edits and spawning inside the chunk grid.
-const MIN_EDGE = CENTRE_CHUNK * CHUNK;                         // 96
-const MAX_EDGE = MIN_EDGE + CHUNKS_PER_SIDE * CHUNK;           // 304
+const WORLD_CENTRE = CENTRE_CHUNK * CHUNK + CHUNK / 2;          // 100008
+const MIN_EDGE = 0;
+const MAX_EDGE = CHUNKS_PER_SIDE * CHUNK;                      // 200000
 
 const inWorldXZ = (x, z) =>
   x >= MIN_EDGE && x < MAX_EDGE && z >= MIN_EDGE && z < MAX_EDGE;
@@ -60,25 +58,48 @@ class Chunk {
   constructor(cx, cz) {
     this.cx = cx;
     this.cz = cz;
-    this.blocks = new Uint8Array(CHUNK * WORLD_H * CHUNK);
-    this.light = new Uint8Array(CHUNK * WORLD_H * CHUNK);   // sunlight 0-15
-    this.blockLight = new Uint8Array(CHUNK * WORLD_H * CHUNK);
+    // Queued chunks can be discarded before generation; defer their ~75 KB
+    // voxel storage until generateChunk actually starts filling them.
+    this.blocks = null;
+    this.light = null;
+    this.blockLight = null;
+    this.maxY = 0;
     this.generated = false;
     this.dirty = true;
     this.mesh = null;       // opaque mesh
     this.meshWater = null;  // transparent mesh
   }
 
+  allocate() {
+    if (this.blocks) return;
+    this.blocks = new Uint8Array(CHUNK * WORLD_H * CHUNK);
+    this.light = new Uint8Array(CHUNK * WORLD_H * CHUNK);
+    this.blockLight = new Uint8Array(CHUNK * WORLD_H * CHUNK);
+    this.maxY = WORLD_H - 1;
+  }
+
+  release() {
+    this.blocks = null;
+    this.light = null;
+    this.blockLight = null;
+    this.maxY = 0;
+    this.generated = false;
+    this.dirty = true;
+  }
+
   static idx(x, y, z) { return (y * CHUNK + z) * CHUNK + x; }
 
   get(x, y, z) {
     if (y < 0 || y >= WORLD_H) return 0;
+    if (!this.blocks) return 0;
     return this.blocks[Chunk.idx(x, y, z)];
   }
 
   set(x, y, z, id) {
     if (y < 0 || y >= WORLD_H) return;
+    if (!this.blocks) return;
     this.blocks[Chunk.idx(x, y, z)] = id;
+    if (id !== 0 && y > this.maxY) this.maxY = y;
   }
 }
 
@@ -90,6 +111,7 @@ class World {
     this.seed = (seed === undefined || seed === null) ? 1337 : (seed | 0);
     this.worldType = worldType === 'flat' ? 'flat' : 'normal';
     this.chunks = new Map();
+    this.activeChunks = new Set();
     this.edits = new Map();
     this.editsByChunk = new Map();
     if (Array.isArray(savedEdits)) {
@@ -117,12 +139,9 @@ class World {
     this.originZ = cz * CHUNK + CHUNK / 2;
   }
 
-  // True when a block coordinate lies inside the playable square. The
-  // playable area is 200x200 centred on WORLD_CENTRE; the surrounding chunk
-  // ring exists only so lighting and meshing have valid neighbours.
+  // True when a block coordinate lies inside the playable square.
   isInsideWorld(x, z) {
-    const half = WORLD_SIZE / 2;
-    return Math.abs(x - WORLD_CENTRE) <= half && Math.abs(z - WORLD_CENTRE) <= half;
+    return x >= MIN_EDGE && x < MAX_EDGE && z >= MIN_EDGE && z < MAX_EDGE;
   }
 
   key(cx, cz) { return cx + ',' + cz; }
@@ -176,14 +195,117 @@ class World {
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
     const c = this.getChunk(cx, cz, false);
     if (!c || !c.generated) return false;
+    const previous = c.blocks[Chunk.idx(x - cx * CHUNK, y, z - cz * CHUNK)];
     c.blocks[Chunk.idx(x - cx * CHUNK, y, z - cz * CHUNK)] = id;
+    if (id !== 0 && y > c.maxY) c.maxY = y;
     this.recordEdit(x, y, z, id);
     if (window.Network && Network.serverMode) Network.queueSharedEdit(x, y, z, id);
     c.dirty = true;
     this.markNeighbourChunksDirty(x, y, z);
-    // relight the column and neighbours
-    this.relightColumn(x, z);
+    // Flow edits relight their unique columns once after the batch completes.
+    if (this._flowingWater) this._waterRelightColumns.add(x + ',' + z);
+    else this.relightColumn(x, z);
+    // A normal edit next to water opens or displaces a cell. Adjacent source
+    // or flow cells can refill nearby air; internal flow writes are guarded.
+    if (!this._flowingWater && (id === 0 || isLiquid(previous) || isLiquid(id))) {
+      const displaced = isLiquid(previous) && id !== 0 && !isLiquid(id) ? previous : 0;
+      this.flowWaterNear(x, y, z, displaced);
+    }
     return true;
+  }
+
+  flowWaterNear(x, y, z, displacedWaterId) {
+    if (this._flowingWater) return;
+    const directions = [[0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1], [0,1,0]];
+    const strengthOf = id => id === 12 ? 5 : (id >= 18 && id <= 21 ? 22 - id : 0);
+    const flowId = strength => 22 - Math.min(strength, 4);
+    const flowCells = new Map();
+    const sources = new Map();
+    const scan = [];
+    const scanned = new Set();
+    const addScan = (wx, wy, wz) => {
+      const id = this.getBlock(wx, wy, wz);
+      const key = wx + ',' + wy + ',' + wz;
+      if (id === 12) {
+        sources.set(key, [wx, wy, wz]);
+        return;
+      }
+      if (id < 18 || id > 21 || scanned.has(key)) return;
+      scanned.add(key);
+      scan.push([wx, wy, wz]);
+    };
+    addScan(x, y, z);
+    for (const [dx, dy, dz] of directions) addScan(x + dx, y + dy, z + dz);
+    let overflow = false;
+    for (let cursor = 0; cursor < scan.length; cursor++) {
+      if (cursor >= 12000) { overflow = true; break; }
+      const [wx, wy, wz] = scan[cursor];
+      flowCells.set(wx + ',' + wy + ',' + wz, [wx, wy, wz]);
+      for (const [dx, dy, dz] of directions) addScan(wx + dx, wy + dy, wz + dz);
+    }
+    // Never partially drain a large connected flow network. It remains safe
+    // to leave the existing water untouched if the bounded scan is exceeded.
+    if (overflow) return;
+    if (!flowCells.size && !sources.size && displacedWaterId !== 12) return;
+
+    const queue = [];
+    const queued = new Map();
+    const add = (wx, wy, wz, strength) => {
+      const key = wx + ',' + wy + ',' + wz;
+      if (strength <= (queued.get(key) || 0)) return;
+      queued.set(key, strength);
+      queue.push([wx, wy, wz, strength]);
+    };
+
+    this._flowingWater = true;
+    this._waterRelightColumns = new Set();
+    try {
+      // Rebuild the connected flow from surviving source blocks. This retracts
+      // water whose source was removed while keeping branches with another source.
+      for (const [wx, wy, wz] of flowCells.values()) this.setBlock(wx, wy, wz, 0);
+      for (const [wx, wy, wz] of sources.values()) add(wx, wy, wz, 5);
+      if (this.getBlock(x, y, z) === 12) add(x, y, z, 5);
+      if (!sources.size && displacedWaterId === 12) {
+        // Covering a source moves it to the nearest open cell, so removing
+        // the placed block can reconnect to the same water source.
+        for (const [dx, dy, dz] of [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1], [0,-1,0], [0,1,0]]) {
+          const nx = x + dx, ny = y + dy, nz = z + dz;
+          if (this.getBlock(nx, ny, nz) !== 0) continue;
+          if (this.setBlock(nx, ny, nz, 12)) add(nx, ny, nz, 5);
+          break;
+        }
+      }
+
+      // Flow-only branches without a surviving source were removed above.
+      for (let cursor = 0; cursor < queue.length && cursor < 12000; cursor++) {
+        const [wx, wy, wz, strength] = queue[cursor];
+        if (!isLiquid(this.getBlock(wx, wy, wz))) continue;
+        const below = this.getBlock(wx, wy - 1, wz);
+        if (wy > 1 && below === 0) {
+          if (this.setBlock(wx, wy - 1, wz, flowId(strength))) add(wx, wy - 1, wz, strength);
+          continue;
+        }
+        // Water prefers falling. Once supported, it spreads over a surface,
+        // losing one reach unit per horizontal block (four max per source).
+        if (strength <= 1) continue;
+        for (const [dx, dz] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+          const nx = wx + dx, nz = wz + dz;
+          const target = this.getBlock(nx, wy, nz);
+          if (target === 0) {
+            if (this.setBlock(nx, wy, nz, flowId(strength - 1))) add(nx, wy, nz, strength - 1);
+          } else if (isLiquid(target) && strengthOf(target) < strength - 1) {
+            if (this.setBlock(nx, wy, nz, flowId(strength - 1))) add(nx, wy, nz, strength - 1);
+          }
+        }
+      }
+    } finally {
+      this._flowingWater = false;
+      for (const column of this._waterRelightColumns) {
+        const [wx, wz] = column.split(',').map(Number);
+        this.relightColumn(wx, wz);
+      }
+      this._waterRelightColumns = null;
+    }
   }
 
   applyRemoteEdit(x, y, z, id) {
@@ -194,6 +316,7 @@ class World {
     this.recordEdit(x, y, z, id);
     if (c && c.generated) {
       c.blocks[Chunk.idx(x - cx * CHUNK, y, z - cz * CHUNK)] = id;
+      if (id !== 0 && y > c.maxY) c.maxY = y;
       c.dirty = true;
       this.markNeighbourChunksDirty(x, y, z);
       this.relightColumn(x, z);
@@ -233,6 +356,10 @@ class World {
   heightAt(x, z) {
     if (this.worldType === 'flat') return SEA_LEVEL;
     const s = this.seed;
+    // Keep the old 200x200 terrain centred in the expanded map, and extend
+    // the same deterministic noise field outward in every direction.
+    x += 104 - WORLD_CENTRE;
+    z += 104 - WORLD_CENTRE;
     // Rolling hills, plus a separate low-frequency shape that decides where
     // high ground and low ground sit. Using two different scales keeps the
     // peaks spread out instead of bunched into one corner.
@@ -252,6 +379,8 @@ class World {
   }
 
   generateChunk(c) {
+    c.allocate();
+    c.maxY = 0;
     const ox = c.cx * CHUNK, oz = c.cz * CHUNK;
     for (let z = 0; z < CHUNK; z++) {
       for (let x = 0; x < CHUNK; x++) {
@@ -279,10 +408,14 @@ class World {
     }
     this.decorate(c);
     const overrides = this.editsByChunk.get(this.key(c.cx, c.cz));
-    if (overrides) for (const [index, id] of overrides) c.blocks[index] = id;
+    if (overrides) for (const [index, id] of overrides) {
+      c.blocks[index] = id;
+      if (id !== 0) c.maxY = Math.max(c.maxY, Math.floor(index / (CHUNK * CHUNK)));
+    }
     this.computeLight(c);
     c.generated = true;
     c.dirty = true;
+    this.activeChunks.add(c);
   }
 
   // Trees, pumpkins and glowstone clusters. Deterministic per world position.
@@ -291,7 +424,7 @@ class World {
     for (let z = 0; z < CHUNK; z++) {
       for (let x = 0; x < CHUNK; x++) {
         const wx = ox + x, wz = oz + z;
-        const r = hash2(wx, wz, this.seed + 4242);
+        const r = hash2(wx + 104 - WORLD_CENTRE, wz + 104 - WORLD_CENTRE, this.seed + 4242);
         const surfaceY = this.surfaceY(c, x, z);
         if (surfaceY < 0) continue;
         const ground = c.get(x, surfaceY, z);
@@ -306,7 +439,7 @@ class World {
         }
         // glowstone underground pockets
         else if (r > 0.973 && r < 0.9765 && surfaceY > 6) {
-          const gy = 2 + ((hash2(wx, wz, this.seed + 7) * (surfaceY - 4)) | 0);
+          const gy = 2 + ((hash2(wx + 104 - WORLD_CENTRE, wz + 104 - WORLD_CENTRE, this.seed + 7) * (surfaceY - 4)) | 0);
           if (c.get(x, gy, z) === 3) c.set(x, gy, z, 11);
         }
       }
@@ -377,7 +510,7 @@ class World {
           const i = Chunk.idx(x, y, z);
           const id = c.blocks[i];
           if (id !== 0 && isOpaque(id)) level = 0;
-          else if (id === 12 || id === 9) level = Math.max(0, level - 1);
+          else if (isLiquid(id) || id === 9) level = Math.max(0, level - 1);
           c.light[i] = level;
         }
       }
@@ -409,7 +542,7 @@ class World {
       if (nx < 0 || nx >= CHUNK || nz < 0 || nz >= CHUNK || ny < 0 || ny >= WORLD_H) continue;
       const i = Chunk.idx(nx, ny, nz);
       const id = c.blocks[i];
-      const target = (id === 0 || id === 12 || id === 9) ? level : Math.min(level, lightOf(id) - 1);
+      const target = (id === 0 || isLiquid(id) || id === 9) ? level : Math.min(level, lightOf(id) - 1);
       if (c.blockLight[i] < target) {
         c.blockLight[i] = Math.max(0, target);
         this.pushBlockLight(c, nx, ny, nz, c.blockLight[i]);
@@ -436,7 +569,7 @@ class World {
               if (nx < 0 || nx >= CHUNK || nz < 0 || nz >= CHUNK || ny < 0 || ny >= WORLD_H) continue;
               const j = Chunk.idx(nx, ny, nz);
               const nid = c.blocks[j];
-              if (nid !== 0 && nid !== 12 && nid !== 9) continue;
+              if (nid !== 0 && !isLiquid(nid) && nid !== 9) continue;
               const next = c.light[i] - 1;
               if (next > c.light[j]) { c.light[j] = next; changed = true; }
             }
@@ -459,7 +592,7 @@ class World {
       const i = Chunk.idx(lx, y, lz);
       const id = c.blocks[i];
       if (id !== 0 && isOpaque(id)) level = 0;
-      else if (id === 12 || id === 9) level = Math.max(0, level - 1);
+      else if (isLiquid(id) || id === 9) level = Math.max(0, level - 1);
       c.light[i] = level;
     }
     this.bspreadSun(c);
@@ -495,6 +628,7 @@ class World {
       const lx = x - cx * CHUNK, lz = z - cz * CHUNK;
       if (y < 0 || y >= WORLD_H) return;
       c.blocks[Chunk.idx(lx, y, lz)] = id;
+      if (id !== 0 && y > c.maxY) c.maxY = y;
       c.dirty = true;
       touched.add(this.key(cx, cz));
       // an edit on a chunk seam means the neighbour needs a re-mesh too
@@ -580,34 +714,51 @@ class World {
   }
 
   /* ---------- generation driver ----------
-     Generates the full 13x13 chunk grid covering the world. The render
-     distance then controls how much of it is drawn, rather than how much
-     of it exists. A 100 block tall column also holds far more water and
-     rock than before, so the height budget was raised. */
+     Generate only a local region at startup. The renderer generates chunks
+     as the player travels, then releases their arrays when far behind. */
   generateRadius(c0x, c0z, radius, onProgress) {
-    void radius;   // the whole world is always generated
-    this.setCentre(CENTRE_CHUNK, CENTRE_CHUNK);
+    this.setCentre(c0x, c0z);
+    const loX = Math.max(0, Math.floor(c0x - radius));
+    const hiX = Math.min(CHUNKS_PER_SIDE - 1, Math.floor(c0x + radius));
+    const loZ = Math.max(0, Math.floor(c0z - radius));
+    const hiZ = Math.min(CHUNKS_PER_SIDE - 1, Math.floor(c0z + radius));
+    const total = (hiX - loX + 1) * (hiZ - loZ + 1);
     let done = 0;
-    const total = CHUNKS_PER_SIDE * CHUNKS_PER_SIDE;
-    for (let cz = 0; cz < CHUNKS_PER_SIDE; cz++) {
-      for (let cx = 0; cx < CHUNKS_PER_SIDE; cx++) {
+    for (let cz = loZ; cz <= hiZ; cz++) {
+      for (let cx = loX; cx <= hiX; cx++) {
         const c = this.getChunk(cx, cz, true);
         if (!c.generated) this.generateChunk(c);
         done++;
         if (onProgress) onProgress(done / total);
       }
     }
-    // Now that every neighbour exists, recompute lighting for the interior so
-    // it is correct from the very first frame rather than filling in later.
-    const lo = MIN_EDGE / CHUNK;
-    const hi = MAX_EDGE / CHUNK;
-    for (let cz = lo + 1; cz < hi - 1; cz++) {
-      for (let cx = lo + 1; cx < hi - 1; cx++) {
-        const c = this.getChunk(cx, cz, false);
-        if (c && c.generated) { this.computeLight(c); c.dirty = true; }
+  }
+
+  async generateRadiusAsync(c0x, c0z, radius, onProgress, circular) {
+    this.setCentre(c0x, c0z);
+    const loX = Math.max(0, Math.floor(c0x - radius));
+    const hiX = Math.min(CHUNKS_PER_SIDE - 1, Math.floor(c0x + radius));
+    const loZ = Math.max(0, Math.floor(c0z - radius));
+    const hiZ = Math.min(CHUNKS_PER_SIDE - 1, Math.floor(c0z + radius));
+    let total = 0;
+    for (let cz = loZ; cz <= hiZ; cz++) {
+      for (let cx = loX; cx <= hiX; cx++) {
+        const dx = cx - c0x, dz = cz - c0z;
+        if (!circular || dx * dx + dz * dz <= radius * radius) total++;
       }
     }
-    void c0x; void c0z;
+    let done = 0;
+    for (let cz = loZ; cz <= hiZ; cz++) {
+      for (let cx = loX; cx <= hiX; cx++) {
+        const dx = cx - c0x, dz = cz - c0z;
+        if (circular && dx * dx + dz * dz > radius * radius) continue;
+        const c = this.getChunk(cx, cz, true);
+        if (!c.generated) this.generateChunk(c);
+        done++;
+        if (onProgress) onProgress(done / total);
+        if ((done & 1) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
   }
 
   /* ---------- raycast for block picking ---------- */

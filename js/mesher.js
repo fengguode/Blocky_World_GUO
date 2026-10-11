@@ -28,12 +28,36 @@ const FACES = [
   { dir: [0, 0, -1], n: [0, 0, -1], shade: 0.66, corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], uvs: [[0,1],[1,1],[1,0],[0,0]], tile: 'side' },
 ];
 
+const OPAQUE_BLOCK = BLOCKS.map(block => !!(block && block.opaque));
+const AO_OCCLUDES = new Uint8Array(256).fill(1);
+AO_OCCLUDES[0] = AO_OCCLUDES[9] = AO_OCCLUDES[10] = AO_OCCLUDES[12] = 0;
+AO_OCCLUDES[18] = AO_OCCLUDES[19] = AO_OCCLUDES[20] = AO_OCCLUDES[21] = 0;
+
 const VERT_FLOATS = 9;
 
 // padded snapshot dimensions (1 block of margin on every side)
 const PW = CHUNK + 2;      // 18
 const PH = WORLD_H + 2;    // 66
 const PAD_LEN = PW * PH * PW;
+const PW2 = PW * PW;
+
+// Precompute padded-array offsets used for every visible face and AO corner.
+for (const face of FACES) {
+  face.neighborOffset = face.dir[0] + face.dir[2] * PW + face.dir[1] * PW2;
+  const tangentAxes = [0, 1, 2].filter(axis => face.n[axis] === 0);
+  const offset = d => d[0] + d[2] * PW + d[1] * PW2;
+  face.aoOffsets = face.corners.map(corner => {
+    const sideA = face.n.slice();
+    const sideB = face.n.slice();
+    const diagonal = face.n.slice();
+    for (const [vector, axis] of [[sideA, tangentAxes[0]], [sideB, tangentAxes[1]]]) {
+      vector[axis] += corner[axis] === 0 ? -1 : 1;
+    }
+    diagonal[tangentAxes[0]] += corner[tangentAxes[0]] === 0 ? -1 : 1;
+    diagonal[tangentAxes[1]] += corner[tangentAxes[1]] === 0 ? -1 : 1;
+    return [offset(sideA), offset(sideB), offset(diagonal)];
+  });
+}
 
 // index into the padded arrays: x + z*PW + (y+1)*PW*PW
 function pidx(x, y, z) {
@@ -44,13 +68,34 @@ function pidx(x, y, z) {
 const _padBlocks = new Uint8Array(PAD_LEN);
 const _padSun = new Uint8Array(PAD_LEN);
 const _padBlk = new Uint8Array(PAD_LEN);
-const _padKnown = new Uint8Array(PAD_LEN);
+
+// Mesh uploads are synchronous, so staging arrays can be reused between
+// chunks instead of allocating and collecting new buffers for every mesh.
+const INITIAL_VERTEX_CAP = 4096;
+const _meshScratch = {
+  opaque: { vertexCap: INITIAL_VERTEX_CAP, vertices: new Float32Array(INITIAL_VERTEX_CAP * VERT_FLOATS), indices: new Uint32Array(INITIAL_VERTEX_CAP * 2) },
+  cutout: { vertexCap: INITIAL_VERTEX_CAP, vertices: new Float32Array(INITIAL_VERTEX_CAP * VERT_FLOATS), indices: new Uint32Array(INITIAL_VERTEX_CAP * 2) },
+  trans: { vertexCap: INITIAL_VERTEX_CAP, vertices: new Float32Array(INITIAL_VERTEX_CAP * VERT_FLOATS), indices: new Uint32Array(INITIAL_VERTEX_CAP * 2) },
+};
+
+function ensureMeshScratch(scratch, vertices, indices) {
+  while (scratch.vertexCap < vertices) {
+    scratch.vertexCap *= 2;
+    const next = new Float32Array(scratch.vertexCap * VERT_FLOATS);
+    next.set(scratch.vertices);
+    scratch.vertices = next;
+  }
+  while (scratch.indices.length < indices) {
+    const next = new Uint32Array(scratch.indices.length * 2);
+    next.set(scratch.indices);
+    scratch.indices = next;
+  }
+}
 
 function fillPad(world, chunk) {
   _padBlocks.fill(0);
   _padSun.fill(15);
   _padBlk.fill(0);
-  _padKnown.fill(0);
 
   const ox = chunk.cx * CHUNK, oz = chunk.cz * CHUNK;
 
@@ -58,21 +103,21 @@ function fillPad(world, chunk) {
     const wz = oz + pz;
     const ccz = Math.floor(wz / CHUNK);
     const lz = wz - ccz * CHUNK;
-    const ncz = (pz === -1 || pz === CHUNK) ? world.getChunk(ccz, chunk.cz, false) : chunk;
-    const ncz2 = world.getChunk(ccz, chunk.cz, false);
+    const zNeighbour = (pz === -1 || pz === CHUNK)
+      ? world.getChunk(chunk.cx, ccz, false) : chunk;
 
     for (let px = -1; px <= CHUNK; px++) {
       const wx = ox + px;
       const ccx = Math.floor(wx / CHUNK);
       const lx = wx - ccx * CHUNK;
-      // the corner pixels need the diagonal neighbour chunk
-      const src = (px === -1 || px === CHUNK) ? ncz2 : ncz;
+      // Corner columns come from the diagonal neighbour chunk.
+      const src = (px === -1 || px === CHUNK)
+        ? world.getChunk(ccx, ccz, false) : zNeighbour;
       if (!src || !src.generated) {
         // ungenerated neighbour: treat as air but mark unknown so faces
         // at the very edge of loaded terrain still get drawn
         continue;
       }
-      const known = pidx(px + 1, 0, pz + 1);
       // copy this column
       for (let y = 0; y < WORLD_H; y++) {
         const srcI = Chunk.idx(lx, y, lz);
@@ -81,20 +126,17 @@ function fillPad(world, chunk) {
         _padBlocks[dstI] = id;
         _padSun[dstI] = src.light[srcI];
         _padBlk[dstI] = src.blockLight[srcI];
-        _padKnown[dstI] = 1;
       }
-      void known;
     }
   }
 }
 
 // ambient occlusion for one vertex of a face, using the padded snapshot
-function aoAt(fx, fy, fz, corner, face) {
-  const ox = face.corners[corner][0], oy = face.corners[corner][1], oz = face.corners[corner][2];
-  const px = fx + face.n[0], py = fy + face.n[1], pz = fz + face.n[2];
-  const s1 = occludes(_padBlocks[pidx(px + ox, py + oy - 1, pz + oz)]);
-  const s2 = occludes(_padBlocks[pidx(px + ox, py + oy, pz + oz - 1)]);
-  const sc = occludes(_padBlocks[pidx(px + ox, py + oy - 1, pz + oz - 1)]);
+function aoAt(here, corner, face) {
+  const offsets = face.aoOffsets[corner];
+  const s1 = occludes(_padBlocks[here + offsets[0]]);
+  const s2 = occludes(_padBlocks[here + offsets[1]]);
+  const sc = occludes(_padBlocks[here + offsets[2]]);
   if (s1 && s2) return 0;
   return 3 - (s1 + s2 + sc);
 }
@@ -108,17 +150,22 @@ function buildChunkMesh(gl, world, chunk) {
   fillPad(world, chunk);
   const ox = chunk.cx * CHUNK, oz = chunk.cz * CHUNK;
 
-  // growable scratch for the two vertex streams
-  let cap = 4096;
-  let opaque = new Float32Array(cap * VERT_FLOATS);
+  // The two streams grow independently; one cannot alter the other's capacity.
+  const opaqueScratch = _meshScratch.opaque;
+  let opaque = opaqueScratch.vertices;
   let oLen = 0;                       // in vertices
-  let oIdx = [];
-  let trans = new Float32Array(cap * VERT_FLOATS);
+  let oIdx = opaqueScratch.indices;
+  let oIdxLen = 0;
+  const cutoutScratch = _meshScratch.cutout;
+  let cutoutVerts = cutoutScratch.vertices;
+  let cLen = 0;
+  let cIdx = cutoutScratch.indices;
+  let cIdxLen = 0;
+  const transScratch = _meshScratch.trans;
+  let trans = transScratch.vertices;
   let tLen = 0;
-  let tIdx = [];
-
-  const growO = () => { cap *= 2; const n = new Float32Array(cap * VERT_FLOATS); n.set(opaque); opaque = n; };
-  const growT = () => { cap *= 2; const n = new Float32Array(cap * VERT_FLOATS); n.set(trans); trans = n; };
+  let tIdx = transScratch.indices;
+  let tIdxLen = 0;
 
   for (let y = 0; y < WORLD_H; y++) {
     for (let z = 0; z < CHUNK; z++) {
@@ -134,7 +181,7 @@ function buildChunkMesh(gl, world, chunk) {
 
         for (let f = 0; f < 6; f++) {
           const face = FACES[f];
-          const ni = pidx(x + face.dir[0], y + face.dir[1], z + face.dir[2]);
+          const ni = here + face.neighborOffset;
           const nid = _padBlocks[ni];
 
           // --- visibility ---
@@ -142,10 +189,11 @@ function buildChunkMesh(gl, world, chunk) {
           if (liquid) {
             // a water face is only visible against air / glass / leaves
             visible = (nid === 0) || (nid === 9) || (nid === 10);
+            if (isLiquid(nid)) visible = false;
           } else if (nid === id && (cutout || liquid)) {
             // glass next to glass / leaves next to leaves: hide the shared face
             visible = false;
-          } else if (isOpaque(nid)) {
+          } else if (OPAQUE_BLOCK[nid]) {
             // anything solid and opaque in front hides this face
             visible = false;
           } else {
@@ -161,21 +209,38 @@ function buildChunkMesh(gl, world, chunk) {
           let light = Math.max(sl * 0.94, bl * 0.88);
           if (liquid) light = Math.max(light, 0.58);
 
-          const intoTrans = liquid || cutout;
-          const arr = intoTrans ? trans : opaque;
-          let len = intoTrans ? tLen : oLen;
-          const idxArr = intoTrans ? tIdx : oIdx;
-
-          if (len + 4 > cap) { if (intoTrans) growT(); else growO(); }
+          const intoCutout = id === 9;
+          const intoTrans = liquid || (cutout && !intoCutout);
+          const len = intoTrans ? tLen : (intoCutout ? cLen : oLen);
+          const indexLen = intoTrans ? tIdxLen : (intoCutout ? cIdxLen : oIdxLen);
+          const scratch = intoTrans ? transScratch : (intoCutout ? cutoutScratch : opaqueScratch);
+          ensureMeshScratch(scratch, len + 4, indexLen + 6);
+          if (intoTrans) {
+            trans = transScratch.vertices;
+            tIdx = transScratch.indices;
+          } else if (intoCutout) {
+            cutoutVerts = cutoutScratch.vertices;
+            cIdx = cutoutScratch.indices;
+          } else {
+            opaque = opaqueScratch.vertices;
+            oIdx = opaqueScratch.indices;
+          }
 
           const base = len;
-          let o = (intoTrans ? tLen : oLen) * VERT_FLOATS;
-          const dst = intoTrans ? trans : opaque;
+          let o = len * VERT_FLOATS;
+          const dst = intoTrans ? trans : (intoCutout ? cutoutVerts : opaque);
 
           for (let c = 0; c < 4; c++) {
             const co = face.corners[c];
             const uvo = face.uvs[c];
-            const ao = intoTrans ? 3 : aoAt(x, y, z, c, face);
+            let ao = 3;
+            if (!intoTrans) {
+              const offsets = face.aoOffsets[c];
+              const s1 = AO_OCCLUDES[_padBlocks[here + offsets[0]]];
+              const s2 = AO_OCCLUDES[_padBlocks[here + offsets[1]]];
+              const sc = AO_OCCLUDES[_padBlocks[here + offsets[2]]];
+              ao = s1 && s2 ? 0 : 3 - (s1 + s2 + sc);
+            }
             const aoF = 0.56 + (ao / 3) * 0.44;
             dst[o]     = wx + co[0];
             dst[o + 1] = wy + co[1];
@@ -189,21 +254,30 @@ function buildChunkMesh(gl, world, chunk) {
             o += VERT_FLOATS;
           }
 
-          idxArr.push(base, base + 1, base + 2, base, base + 2, base + 3);
-          if (intoTrans) tLen += 4; else oLen += 4;
+          const idxArr = intoTrans ? tIdx : (intoCutout ? cIdx : oIdx);
+          idxArr[indexLen] = base;
+          idxArr[indexLen + 1] = base + 1;
+          idxArr[indexLen + 2] = base + 2;
+          idxArr[indexLen + 3] = base;
+          idxArr[indexLen + 4] = base + 2;
+          idxArr[indexLen + 5] = base + 3;
+          if (intoTrans) { tLen += 4; tIdxLen += 6; }
+          else if (intoCutout) { cLen += 4; cIdxLen += 6; }
+          else { oLen += 4; oIdxLen += 6; }
         }
       }
     }
   }
 
   return {
-    opaque: makeBuffer(gl, opaque, oLen, oIdx),
-    trans: makeBuffer(gl, trans, tLen, tIdx),
+    opaque: makeBuffer(gl, opaque, oLen, oIdx, oIdxLen),
+    cutout: makeBuffer(gl, cutoutVerts, cLen, cIdx, cIdxLen),
+    trans: makeBuffer(gl, trans, tLen, tIdx, tIdxLen),
   };
 }
 
-function makeBuffer(gl, verts, vertCount, indices) {
-  if (vertCount === 0 || indices.length === 0) return null;
+function makeBuffer(gl, verts, vertCount, indices, indexCount) {
+  if (vertCount === 0 || indexCount === 0) return null;
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
 
@@ -227,14 +301,15 @@ function makeBuffer(gl, verts, vertCount, indices) {
 
   const ibo = gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(indices), gl.STATIC_DRAW);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices.subarray(0, indexCount), gl.STATIC_DRAW);
 
   gl.bindVertexArray(null);
-  return { vao, count: indices.length };
+  return { vao, count: indexCount };
 }
 
 function disposeMesh(gl, mesh) {
   if (!mesh) return;
   if (mesh.opaque) gl.deleteVertexArray(mesh.opaque.vao);
+  if (mesh.cutout) gl.deleteVertexArray(mesh.cutout.vao);
   if (mesh.trans) gl.deleteVertexArray(mesh.trans.vao);
 }

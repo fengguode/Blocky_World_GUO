@@ -5,7 +5,8 @@
    ============================================================ */
 
 const Fight = {
-  players: [null, null],
+  players: [null, null, null],
+  teams: [0, 1, 1],
   projectiles: [],
   roundTime: 0,
   roundActive: false,
@@ -14,9 +15,11 @@ const Fight = {
 
   ultHits: [],
 
-  reset(p1, p2) {
+  reset(p1, p2, p3, coop) {
     this.players[0] = p1;
     this.players[1] = p2;
+    this.players[2] = p3 || null;
+    this.teams = coop ? [0, 0, 1] : [0, 1, 1];
     this.projectiles.length = 0;
     this.ultHits.length = 0;
     this.roundTime = 0;
@@ -55,6 +58,18 @@ const Fight = {
 
     p1.spawn = p1.pos.slice();
     p2.spawn = p2.pos.slice();
+    if (p3) {
+      p3.pos = [arena.x, arena.y, arena.z + r * 0.5];
+      p3.vel = [0, 0, 0];
+      p3.yaw = Math.PI;
+      p3.pitch = 0;
+      p3.creative = false;
+      p3.flying = false;
+      p3.hp = p3.maxHp;
+      p3.ultMeter = 0;
+      p3.ko = false;
+      p3.spawn = p3.pos.slice();
+    }
     this.banner('FIGHT!', 1.0);
   },
 
@@ -65,6 +80,21 @@ const Fight = {
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
+  },
+
+  areOpponents(a, b) {
+    const ia = this.players.indexOf(a), ib = this.players.indexOf(b);
+    return ia >= 0 && ib >= 0 && this.teams[ia] !== this.teams[ib];
+  },
+
+  nearestOpponent(p) {
+    let best = null, bestDistance = Infinity;
+    for (const candidate of this.players) {
+      if (!candidate || candidate === p || candidate.ko || !this.areOpponents(p, candidate)) continue;
+      const d = Math.hypot(candidate.pos[0] - p.pos[0], candidate.pos[2] - p.pos[2]);
+      if (d < bestDistance) { best = candidate; bestDistance = d; }
+    }
+    return best;
   },
 
   /* ---------- central hit resolution ---------- */
@@ -91,10 +121,13 @@ const Fight = {
       UI.comboPopup(attacker.combo);
     }
     if (victim.ko) {
-      this.banner(attacker.char.name.toUpperCase() + ' WINS!', 1.8);
-      this.winner = attacker;
-      this.roundActive = false;
-      Audio.play('win');
+      const remaining = this.players.filter(p => p && !p.ko && this.areOpponents(attacker, p));
+      if (!remaining.length) {
+        this.banner(attacker.char.name.toUpperCase() + ' WINS!', 1.8);
+        this.winner = attacker;
+        this.roundActive = false;
+        Audio.play('win');
+      }
     }
     return true;
   },
@@ -172,8 +205,8 @@ const Fight = {
 
     switch (id) {
       case 'spider': {
-        // Web Cocoon: heavy shot that sticks the enemy in place
-        const pr = new Projectile(p, dir, PROJ_DEFS.web, 34, 16);
+        // Beacon Burst: a bright signal flare briefly roots its target.
+        const pr = new Projectile(p, dir, PROJ_DEFS.star, 34, 16);
         pr.big = true;
         pr.cocoon = true;
         this.projectiles.push(pr);
@@ -307,7 +340,7 @@ const Fight = {
       if (s.t >= at && s.t <= endActive && !s.hit) {
         s.hit = true;
         if (!s.ranged) {
-          const opp = (p === p1) ? p2 : p1;
+          const opp = this.nearestOpponent(p) || ((p === p1) ? p2 : p1);
           const dx = opp.pos[0] - p.pos[0];
           const dy = (opp.pos[1] + 0.9) - (p.eyeY);
           const dz = opp.pos[2] - p.pos[2];
@@ -359,7 +392,7 @@ const Fight = {
       const pr = this.projectiles[i];
       pr.update(dt, world, this.players);
       if (pr.dead) {
-        // Web Cocoon holds the enemy where they stand for a moment.
+        // Beacon Burst holds the enemy where they stand for a moment.
         if (pr.cocoon && pr.hit) {
           pr.hit.blocked = true;
           pr.hit.blockTimer = Math.max(pr.hit.blockTimer, 2.6);
@@ -380,6 +413,9 @@ const Fight = {
   clear() {
     this.projectiles.length = 0;
     this.ultHits.length = 0;
+    this.players[0] = null;
+    this.players[1] = null;
+    this.players[2] = null;
     Particles.clear();
     this.roundActive = false;
     this.winner = null;

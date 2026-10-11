@@ -31,6 +31,34 @@ function setPx(d, x, y, r, g, b, a) {
   d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a === undefined ? 255 : a;
 }
 
+function tileFillRect(d, x, y, w, h, color) {
+  for (let py = Math.max(0, y); py < Math.min(TILE, y + h); py++) {
+    for (let px = Math.max(0, x); px < Math.min(TILE, x + w); px++) {
+      setPx(d, px, py, color[0], color[1], color[2]);
+    }
+  }
+}
+
+function tileLine(d, x0, y0, x1, y1, color) {
+  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  while (true) {
+    if (x0 >= 0 && x0 < TILE && y0 >= 0 && y0 < TILE) setPx(d, x0, y0, color[0], color[1], color[2]);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+function patternedCloth(base, variance, draw) {
+  return function (d, r) {
+    speckle(base, variance)(d, r);
+    draw(d, r);
+  };
+}
+
 /* ============================================================
    Texture palette
 
@@ -286,6 +314,49 @@ T.pants_dark = pushTile('pants_dark', speckle([48, 52, 74], 14));
 T.shoe       = pushTile('shoe', speckle([44, 44, 50], 14));
 T.hero_red   = pushTile('hero_red', speckle([198, 44, 52], 16));
 T.hero_blue  = pushTile('hero_blue', speckle([44, 82, 196], 16));
+T.hair_ink   = pushTile('hair_ink', speckle([42, 51, 68], 14));
+T.builder_shirt = pushTile('builder_shirt', patternedCloth([68, 126, 190], 18, function (d) {
+  const seam = [34, 78, 132], check = [98, 160, 216], patch = [246, 194, 82];
+  for (let x = 1; x < TILE; x += 5) tileLine(d, x, 0, x, TILE - 1, seam);
+  for (let y = 3; y < TILE; y += 5) tileLine(d, 0, y, TILE - 1, y, seam);
+  tileFillRect(d, 10, 5, 4, 4, check);
+  tileFillRect(d, 11, 6, 2, 2, patch);
+}));
+T.ranger_shirt = pushTile('ranger_shirt', patternedCloth([40, 142, 126], 16, function (d) {
+  tileLine(d, 2, 0, 10, 15, [24, 84, 85]);
+  tileLine(d, 4, 0, 12, 15, [242, 184, 78]);
+  tileFillRect(d, 10, 4, 5, 2, [28, 98, 94]);
+  tileFillRect(d, 11, 5, 3, 1, [122, 212, 177]);
+}));
+T.climber_shirt = pushTile('climber_shirt', patternedCloth([30, 60, 80], 14, function (d) {
+  const grip = [64, 218, 210], signal = [246, 204, 91];
+  // Offset climbing lanes and grip pads: a parkour motif, with no web hub.
+  tileLine(d, 1, 0, 6, 15, [38, 102, 120]);
+  tileLine(d, 7, 0, 12, 15, [38, 102, 120]);
+  tileLine(d, 2, 0, 7, 15, grip);
+  tileLine(d, 8, 0, 13, 15, grip);
+  tileFillRect(d, 0, 3, 3, 2, signal);
+  tileFillRect(d, 9, 9, 3, 2, signal);
+  tileFillRect(d, 13, 2, 2, 2, grip);
+}));
+T.dolly_dress = pushTile('dolly_dress', patternedCloth([178, 90, 172], 18, function (d) {
+  const hem = [86, 206, 190], star = [255, 221, 112], highlight = [239, 157, 201];
+  tileLine(d, 0, 12, 15, 12, hem);
+  tileLine(d, 0, 14, 15, 14, [112, 72, 154]);
+  tileFillRect(d, 3, 3, 2, 2, star); tileFillRect(d, 2, 4, 4, 1, star); tileFillRect(d, 3, 5, 2, 2, star);
+  tileFillRect(d, 10, 6, 2, 2, highlight); tileFillRect(d, 9, 7, 4, 1, highlight); tileFillRect(d, 10, 8, 2, 2, highlight);
+}));
+T.dolly_leggings = pushTile('dolly_leggings', patternedCloth([106, 78, 154], 14, function (d) {
+  tileFillRect(d, 2, 5, 3, 2, [91, 213, 197]);
+  tileFillRect(d, 10, 5, 3, 2, [91, 213, 197]);
+  tileLine(d, 0, 13, 15, 13, [222, 156, 222]);
+}));
+T.fire_ninja = pushTile('fire_ninja', patternedCloth([46, 42, 62], 16, function (d) {
+  const flame = [246, 112, 54], ember = [255, 208, 98];
+  tileLine(d, 1, 11, 4, 8, flame); tileLine(d, 4, 8, 6, 10, flame); tileLine(d, 6, 10, 9, 5, flame);
+  tileLine(d, 9, 5, 12, 8, flame); tileLine(d, 12, 8, 15, 4, flame);
+  tileFillRect(d, 3, 12, 2, 2, ember); tileFillRect(d, 10, 11, 2, 2, ember);
+}));
 T.eye        = pushTile('eye', function (d) {
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
     const dark = (x >= 5 && x <= 10 && y >= 5 && y <= 10);
@@ -294,6 +365,10 @@ T.eye        = pushTile('eye', function (d) {
   }
 });
 T.wool       = pushTile('wool', blotch([238, 238, 234], 10, 3, 18));
+T.wolf       = pushTile('wolf', blotch([112, 122, 140], 12, 3, 22));
+T.wolf_face  = pushTile('wolf_face', speckle([166, 174, 186], 18));
+T.wolf_dark  = pushTile('wolf_dark', speckle([62, 73, 91], 14));
+T.wolf_eye   = pushTile('wolf_eye', speckle([246, 199, 80], 8));
 T.pig_skin   = pushTile('pig_skin', speckle([238, 150, 156], 16));
 T.pig_snout  = pushTile('pig_snout', speckle([226, 118, 128], 14));
 T.sheep_face = pushTile('sheep_face', speckle([158, 137, 119], 12));
@@ -326,6 +401,12 @@ const BLOCKS = [
   { id: 15, name: 'Ice',      solid: true,  opaque: true,  tiles: { all: T.ice } },
   { id: 16, name: 'Gold',     solid: true,  opaque: true,  tiles: { all: T.gold } },
   { id: 17, name: 'Bedrock',  solid: true,  opaque: true,  tiles: { all: T.bedrock }, unbreakable: true },
+  // Flowing water stores its remaining horizontal reach in the block id.
+  // These are internal states and are not offered in the hotbar.
+  { id: 18, name: 'Flowing Water 4', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
+  { id: 19, name: 'Flowing Water 3', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
+  { id: 20, name: 'Flowing Water 2', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
+  { id: 21, name: 'Flowing Water 1', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
 ];
 
 for (const b of BLOCKS) {
@@ -338,6 +419,9 @@ for (const b of BLOCKS) {
 
 // Blocks offered in the hotbar, in order.
 const HOTBAR_BLOCKS = [1, 3, 4, 2, 8, 7, 9, 11, 16];
+// Append tools so saved block slot numbers keep their meaning.
+const HOTBAR_ITEMS = HOTBAR_BLOCKS.map(id => ({ kind: 'block', id, name: BLOCKS[id].name }))
+  .concat([{ kind: 'tool', id: 'shovel', name: 'Shovel' }]);
 
 function isSolid(id)  { return BLOCKS[id] ? !!BLOCKS[id].solid : false; }
 function isOpaque(id) { return BLOCKS[id] ? !!BLOCKS[id].opaque : false; }

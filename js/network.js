@@ -1,6 +1,24 @@
 'use strict';
 
 /* Server-backed profile access. File:// play remains fully offline. */
+const AUTH_PAGE_ID_KEY = 'bw-auth-page-id';
+function makePageAuthId() {
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+function pageAuthIdForLoad() {
+  try {
+    const saved = sessionStorage.getItem(AUTH_PAGE_ID_KEY);
+    if (saved && /^[a-f0-9]{32}$/.test(saved)) return saved;
+    const fresh = makePageAuthId();
+    sessionStorage.setItem(AUTH_PAGE_ID_KEY, fresh);
+    return fresh;
+  } catch (_) { /* Offline play does not depend on browser session storage. */ }
+  return makePageAuthId();
+}
+const PAGE_AUTH_ID = pageAuthIdForLoad();
 const Network = {
   serverMode: false,
   ready: false,
@@ -19,10 +37,25 @@ const Network = {
   visitFailures: 0,
   pendingVisitRequest: null,
   remotePlayerState: null,
+  hostModeChoice: 'play',
+  sharedMode: 'play',
+  sharedArenaCenter: null,
+  sharedModeRevision: 0,
+  fightChoice: null,
+  fightVotes: { owner: null, visitor: null },
+  fightPhase: 'setup',
+  fightLocalInput: null,
+  fightRemoteInput: null,
+  fightRemoteActions: [],
+  fightState: null,
+  fightActionSeq: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+  fightActionHeld: { attack: false, special: false, ult: false, altAttack: false },
   sharedSentEdits: new Map(),
   pendingSharedEdits: new Map(),
   visitActive: false,
   sharedWorldReady: false,
+  sharedWorldLoading: false,
+  visitLoadError: null,
   pendingSave: null,
   serverEdits: new Map(),
   lastSavedSeed: null,
@@ -35,7 +68,9 @@ const Network = {
   signingOut: false,
   saveTimer: null,
   sessionTimer: null,
+  sessionCheckFailures: 0,
   readyPromise: null,
+  pageAuthId: PAGE_AUTH_ID,
 
   async init() {
     this.serverMode = location.protocol !== 'file:';
@@ -71,7 +106,9 @@ const Network = {
   },
 
   async request(path, options) {
-    const response = await fetch(path, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options || {}));
+    const requestOptions = Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options || {});
+    requestOptions.headers = Object.assign({}, requestOptions.headers || {}, { 'X-BW-Page': PAGE_AUTH_ID });
+    const response = await fetch(path, requestOptions);
     let data = {};
     try { data = await response.json(); } catch (_) { /* show a useful HTTP error below */ }
     if (!response.ok) throw new Error(data.error || 'The server could not complete that request.');
@@ -98,7 +135,6 @@ const Network = {
     const data = await this.request('/api/world?type=' + worldType);
     return this.adoptWorldType(worldType, data.world);
   },
-
   async startGameIfAllowed() {
     if (this.readyPromise) await this.readyPromise;
     if (this.booted || !this.ready || (this.serverMode && !this.profile)) return;
@@ -133,6 +169,11 @@ const Network = {
           body: JSON.stringify({ userId: document.getElementById('auth-profile').value, pin: pinInput.value }),
         });
         pinInput.value = '';
+        try { sessionStorage.setItem(AUTH_PAGE_ID_KEY, PAGE_AUTH_ID); }
+        catch (_) {
+          this.setMessage('Allow session storage in this browser, then try signing in again.');
+          return;
+        }
         location.reload();
       } catch (error) {
         pinInput.value = '';
@@ -190,6 +231,12 @@ const Network = {
       if (event.target.id === 'btn-visit-end') this.endVisit();
       if (event.target.id === 'btn-visit-approve') this.respondToVisit(true);
       if (event.target.id === 'btn-visit-reject') this.respondToVisit(false);
+      if (event.target.id === 'btn-visit-mode') this.openVisitModePicker();
+      if (event.target.id === 'btn-visit-mode-cancel') this.closeVisitModePicker();
+      const modeButton = event.target.closest && event.target.closest('[data-visit-mode]');
+      if (modeButton) this.setVisitMode(modeButton.dataset.visitMode);
+      const fightButton = event.target.closest && event.target.closest('[data-shared-fight]');
+      if (fightButton) this.chooseSharedFight(fightButton.dataset.sharedFight);
     });
     window.addEventListener('pagehide', () => { this.saveOnPageHide(); });
   },
@@ -249,8 +296,7 @@ const Network = {
   saveWorld(world, options) {
     if (this.visitRole === 'visitor' || this.visitRole === 'pending') return;
     if (!this.serverMode || !this.profile || !this.ready) return;
-    const worldType = world.worldType === 'flat' ? 'flat' :
-      (world.worldType === 'normal' ? 'normal' : this.activeWorldType);
+    const worldType = world.worldType === 'flat' ? 'flat' : (world.worldType === 'normal' ? 'normal' : this.activeWorldType);
     world.worldType = worldType;
     this.activeWorldType = worldType;
     if (typeof Game !== 'undefined') Game.activeWorldType = worldType;
@@ -303,23 +349,30 @@ const Network = {
 
   saveOnPageHide() {
     if (!this.serverMode || !this.profile || !this.ready || this.signingOut) return;
-    if ((this.visitRole === 'owner' || this.visitRole === 'visitor') && this.visitActive && navigator.sendBeacon) {
+    let visitSyncQueued = false;
+    if ((this.visitRole === 'owner' || this.visitRole === 'visitor') && this.visitActive) {
       const visitBody = JSON.stringify({
         cursor: this.visitCursor,
         player: this.visitPlayerState(),
         edits: this.visitEditDelta(),
         worldReady: this.sharedWorldReady,
       });
-      if (visitBody.length <= 60 * 1024) navigator.sendBeacon('/api/visit/sync', new Blob([visitBody], { type: 'application/json' }));
+      if (visitBody.length <= 60 * 1024) {
+        visitSyncQueued = true;
+        this.request('/api/visit/sync', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: visitBody, keepalive: true,
+        }).catch(() => {});
+      }
     }
     if (!this.pendingSave || !this.savedWorld) return;
-    const body = JSON.stringify({ world: this.pendingSave });
-    if (navigator.sendBeacon && body.length <= 60 * 1024) {
-      const worldType = this.savedWorld.worldType === 'flat' ? 'flat' : 'normal';
-      const queued = navigator.sendBeacon('/api/world/flush?type=' + worldType, new Blob([body], { type: 'text/plain;charset=UTF-8' }));
-      if (queued) return;
+    if (visitSyncQueued) {
+      // Keep the remaining world snapshot recoverable locally. A second
+      // keepalive could exceed the browser's shared in-flight byte budget.
+      this.persistRecovery();
+      return;
     }
-    this.flushSave(true);
+    this.flushSave(true, true);
   },
 
   editKey(edit) { return edit[0] + ',' + edit[1] + ',' + edit[2]; },
@@ -327,9 +380,14 @@ const Network = {
   async refreshVisitLobby() {
     const lobby = document.getElementById('visit-lobby');
     if (!lobby || !this.serverMode || !this.profile || !this.ready || this.lobbyBusy) return;
+    // Preserve native mobile select interactions across background polling.
+    if (document.activeElement && document.activeElement.id === 'visit-host-mode') return;
     this.lobbyBusy = true;
     try {
       const data = await this.request('/api/visits');
+      if (document.activeElement && document.activeElement.id === 'visit-host-mode') return;
+      const previousMode = document.getElementById('visit-host-mode');
+      if (previousMode) this.hostModeChoice = previousMode.value;
       lobby.replaceChildren();
       lobby.classList.remove('hidden');
       const title = document.createElement('h3');
@@ -337,7 +395,7 @@ const Network = {
       lobby.appendChild(title);
       if (this.visitRole === 'owner') {
         const note = document.createElement('p');
-        note.textContent = 'Your Play & Build world is open for an approved visit.';
+        note.textContent = 'Your ' + this.modeName(this.sharedMode) + ' session is open for an approved visit.';
         lobby.appendChild(note);
       } else if (this.visitRole === 'visitor' || this.visitRole === 'pending') {
         const note = document.createElement('p');
@@ -353,9 +411,22 @@ const Network = {
         const host = document.createElement('button');
         host.type = 'button';
         host.className = 'primary';
-        host.textContent = 'Host my Play & Build world';
-        host.onclick = () => this.startHosting();
-        lobby.appendChild(host);
+        const modeLabel = document.createElement('label');
+        modeLabel.textContent = 'Choose a shared mode';
+        modeLabel.htmlFor = 'visit-host-mode';
+        const mode = document.createElement('select');
+        mode.id = 'visit-host-mode';
+        for (const [value, label] of [['play', 'Play & Build'], ['fight', 'Fight Arena'], ['observe', 'Observe World']]) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          mode.appendChild(option);
+        }
+        mode.value = this.hostModeChoice;
+        mode.onchange = () => { this.hostModeChoice = mode.value; };
+        host.textContent = 'Host my world';
+        host.onclick = () => this.startHosting(mode.value);
+        lobby.append(modeLabel, mode, host);
       }
       const owners = Array.isArray(data.owners) ? data.owners.filter(owner => owner.available) : [];
       if (!owners.length) {
@@ -367,7 +438,7 @@ const Network = {
         const row = document.createElement('div');
         row.className = 'visit-owner';
         const name = document.createElement('span');
-        name.textContent = owner.displayName + ' is hosting Play & Build';
+        name.textContent = owner.displayName + ' is hosting ' + this.modeName(owner.mode) + '.';
         const button = document.createElement('button');
         button.className = 'primary';
         button.type = 'button';
@@ -392,11 +463,54 @@ const Network = {
     }, 2500);
   },
 
-  async startHosting() {
+  modeName(mode) {
+    return ({ play: 'Play & Build', fight: 'Fight Arena', observe: 'Observe World' })[mode] || 'Play & Build';
+  },
+
+  openVisitModePicker() {
+    if (this.visitRole !== 'owner') return;
+    const dialog = document.getElementById('visit-mode-dialog');
+    if (dialog) dialog.classList.remove('hidden');
+  },
+
+  closeVisitModePicker() {
+    const dialog = document.getElementById('visit-mode-dialog');
+    if (dialog) dialog.classList.add('hidden');
+  },
+
+  async setVisitMode(mode) {
+    if (this.visitRole !== 'owner' || !['play', 'fight', 'observe'].includes(mode)) return;
+    const dialog = document.getElementById('visit-mode-dialog');
+    const buttons = dialog ? Array.from(dialog.querySelectorAll('button')) : [];
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+      const result = await this.request('/api/visit/mode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      this.sharedMode = result.mode;
+      this.sharedModeRevision = result.modeRevision;
+      if (this.visitTimer) {
+        clearInterval(this.visitTimer);
+        this.visitTimer = setInterval(() => this.syncVisit(), this.sharedMode === 'fight' ? 75 : 250);
+      }
+      this.closeVisitModePicker();
+      Game.enterSharedMode(this.sharedMode, false);
+      this.showVisitHud('The shared session is now ' + this.modeName(this.sharedMode) + '.');
+      this.refreshVisitLobby();
+    } catch (error) {
+      this.showVisitHud(error.message);
+    } finally { buttons.forEach(button => { button.disabled = false; }); }
+  },
+
+  async startHosting(mode) {
     if (this.visitRole) return;
     if (!await this.flushSave()) return;
     try {
-      await this.request('/api/visit/host', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ worldType: Game.activeWorldType }) });
+      const hosted = await this.request('/api/visit/host', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: ['play', 'fight', 'observe'].includes(mode) ? mode : 'play', worldType: Game.activeWorldType, arenaCenter: [Game.world.originX, Game.world.originZ] }),
+      });
       this.visitRole = 'owner';
       this.sharedWorldReady = false;
       this.visitActive = false;
@@ -405,10 +519,13 @@ const Network = {
       this.visitOwnerId = this.profile.id;
       this.visitOwnerName = this.profile.displayName;
       this.visitCursor = 0;
+      this.sharedMode = hosted.mode || mode || 'play';
+      this.sharedArenaCenter = hosted.arenaCenter || null;
+      this.sharedModeRevision = hosted.modeRevision || 1;
       this.sharedSentEdits = this.indexEdits(Game.world ? Array.from(Game.world.edits, ([key, id]) => key.split(',').map(Number).concat(id)) : []);
       this.startVisitPolling();
-      this.showVisitHud('Your Play & Build world is open. Approve each visitor here.');
-      Game.startPlay();
+      this.showVisitHud('Your ' + this.modeName(this.sharedMode) + ' world is open. Approve each visitor here.');
+      Game.enterSharedMode(this.sharedMode, false);
       this.refreshVisitLobby();
     } catch (error) { this.showVisitHud(error.message); }
   },
@@ -437,8 +554,58 @@ const Network = {
 
   startVisitPolling() {
     clearInterval(this.visitTimer);
-    this.visitTimer = setInterval(() => this.syncVisit(), 250);
+    this.visitTimer = setInterval(() => this.syncVisit(), this.sharedMode === 'fight' ? 75 : 250);
     this.syncVisit();
+  },
+
+  updateFightLobby() {
+    const dialog = document.getElementById('shared-fight-dialog');
+    const status = document.getElementById('shared-fight-status');
+    if (dialog) {
+      dialog.classList.remove('hidden');
+      dialog.querySelectorAll('[data-shared-fight]').forEach(button => {
+        button.disabled = !this.visitActive;
+        button.setAttribute('aria-pressed', this.fightVotes[this.visitRole] === button.dataset.sharedFight ? 'true' : 'false');
+      });
+    }
+    if (!status) return;
+    if (!this.visitActive) { status.textContent = 'Fight Arena is ready. Invite a friend and approve their visit to choose a match.'; return; }
+    const mine = this.fightVotes[this.visitRole];
+    const other = this.fightVotes[this.visitRole === 'owner' ? 'visitor' : 'owner'];
+    const name = choice => choice === 'duel' ? 'Duel' : 'Co-op';
+    status.textContent = mine && other && mine !== other ? 'Different choices: you chose ' + name(mine) + ', your friend chose ' + name(other) + '. Choose the same style to start.' :
+      mine ? 'You chose ' + name(mine) + '. Waiting for your friend to choose the same style.' :
+      other ? 'Your friend chose ' + name(other) + '. Choose your match style.' : 'Both players must choose Duel or Co-op to start.';
+  },
+
+  async chooseSharedFight(choice) {
+    if (!['duel', 'coop'].includes(choice) || !this.visitActive || this.sharedMode !== 'fight') return;
+    try {
+      const result = await this.request('/api/visit/fight-choice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ choice }),
+      });
+      this.fightVotes = result.votes || this.fightVotes;
+      this.updateFightLobby();
+      this.syncVisit();
+      this.showVisitHud(result.phase === 'active' ? 'Fight starting!' : 'Waiting for the other player to choose.');
+    } catch (error) { this.showVisitHud(error.message); }
+  },
+
+  setSharedFightInput(input) {
+    if (!this.visitActive || this.sharedMode !== 'fight') return;
+    const actions = {};
+    for (const key of ['attack', 'special', 'ult', 'altAttack']) {
+      const down = !!input[key];
+      if (down && !this.fightActionHeld[key]) this.fightActionSeq[key]++;
+      this.fightActionHeld[key] = down;
+      actions[key] = this.fightActionSeq[key];
+    }
+    this.fightLocalInput = {
+      mx: input.mx || 0, mz: input.mz || 0, turn: input.turn || 0,
+      yaw: input.yaw || 0,
+      jump: !!input.jump, sneak: !!input.sneak, actions,
+    };
   },
 
   visitPlayerState() {
@@ -461,6 +628,43 @@ const Network = {
     this.pendingSharedEdits.set(x + ',' + y + ',' + z, id);
   },
 
+  async loadVisitWorld(world) {
+    this.sharedWorldLoading = true;
+    this.visitLoadError = null;
+    let heartbeatBusy = false, ended = null;
+    const ownerId = this.visitOwnerId;
+    const heartbeat = async () => {
+      if (heartbeatBusy || this.visitRole !== 'visitor' || this.visitOwnerId !== ownerId) return;
+      heartbeatBusy = true;
+      try {
+        const data = await this.request('/api/visit/sync', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cursor: this.visitCursor, loadingOnly: true, worldReady: false, edits: [] }),
+        });
+        if (data.state === 'closed' || data.state === 'none') ended = data.reason || 'The host ended the visit during loading.';
+        if (data.mode) this.sharedMode = data.mode;
+      if (Array.isArray(data.arenaCenter)) this.sharedArenaCenter = data.arenaCenter;
+      } catch (_) { /* Main sync handles persistent network failure after loading. */ }
+      finally { heartbeatBusy = false; }
+    };
+    const timer = setInterval(heartbeat, 1000);
+    try {
+      await Game.enterSharedWorld(world, this.sharedMode);
+      if (ended || this.visitRole !== 'visitor' || this.visitOwnerId !== ownerId) {
+        if (this.visitRole === 'visitor') await this.handleVisitEnded(ended || 'The visit ended.');
+        return false;
+      }
+      this.sharedWorldReady = true;
+      return true;
+    } catch (error) {
+      this.visitLoadError = error && error.message || 'Could not load the shared world.';
+      throw error;
+    } finally {
+      clearInterval(timer);
+      this.sharedWorldLoading = false;
+    }
+  },
+
   async syncVisit() {
     if (!this.visitRole || this.visitBusy) return;
     this.visitBusy = true;
@@ -468,9 +672,10 @@ const Network = {
     try {
       const data = await this.request('/api/visit/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cursor: this.visitCursor, player: this.visitPlayerState(), edits: sentEdits, worldReady: this.sharedWorldReady }),
+        body: JSON.stringify({ cursor: this.visitCursor, player: this.visitPlayerState(), edits: sentEdits, worldReady: this.sharedWorldReady,
+          fightInput: this.fightLocalInput,
+          fightState: this.visitRole === 'owner' && Game.mode === 'fight' && Game.sharedFightStarted ? Game.serializeSharedFightState() : null }),
       });
-      this.visitFailures = 0;
       if (Number.isSafeInteger(data.cursor)) this.visitCursor = data.cursor;
       if (data.state === 'closed' || data.state === 'none') {
         await this.handleVisitEnded(data.reason || 'The live visit ended. Ask the host to invite you again.');
@@ -502,10 +707,35 @@ const Network = {
       }
       if (data.pending) {
         this.pendingVisitRequest = data.pending;
+        // A pointer-locked canvas captures all mouse clicks, including clicks
+        // on the approval HUD. Release it while the owner has a request to
+        // answer so this control works from a normal desktop browser.
+        if (this.visitRole === 'owner' && document.pointerLockElement === Game.canvas) Input.releaseLock();
         this.showVisitHud('A friend would like to visit your world.', data.pending.displayName);
       } else if (this.visitRole === 'owner') {
         this.pendingVisitRequest = null;
-        this.showVisitHud(data.state === 'active' ? 'Your friend is visiting your Play & Build world.' : 'Your Play & Build world is open.');
+        this.showVisitHud(data.state === 'active'
+          ? 'Your friend is visiting your ' + this.modeName(data.mode) + ' world.'
+          : 'Your ' + this.modeName(data.mode) + ' world is open.');
+      }
+      const modeChanged = data.mode && (data.mode !== this.sharedMode || data.modeRevision > this.sharedModeRevision);
+      if (data.mode) this.sharedMode = data.mode;
+      if (Array.isArray(data.arenaCenter)) this.sharedArenaCenter = data.arenaCenter;
+      if (Number.isSafeInteger(data.modeRevision)) this.sharedModeRevision = data.modeRevision;
+      if (modeChanged && this.visitTimer) {
+        clearInterval(this.visitTimer);
+        this.visitTimer = setInterval(() => this.syncVisit(), this.sharedMode === 'fight' ? 75 : 250);
+      }
+      this.fightChoice = data.fightChoice || null;
+      this.fightVotes = data.fightVotes || this.fightVotes;
+      this.fightPhase = data.fightPhase || 'setup';
+      this.fightRemoteInput = data.fightInput || null;
+      this.fightState = data.fightState || null;
+      if (this.sharedMode === 'fight') {
+        for (const event of Array.isArray(data.events) ? data.events : []) {
+          if (event.type === 'fight-action' && event.data && event.data.role === 'visitor') this.fightRemoteActions.push(event.data.action);
+        }
+        if (this.fightRemoteActions.length > 32) this.fightRemoteActions.splice(0, this.fightRemoteActions.length - 32);
       }
       this.remotePlayerState = data.remotePlayer || null;
       for (const event of Array.isArray(data.events) ? data.events : []) {
@@ -523,14 +753,13 @@ const Network = {
           this.showVisitHud((event.data.displayName || 'Your visitor') + ' left your world.');
         }
       }
-      if (data.world && this.visitRole === 'visitor') {
+      if (data.world && this.visitRole === 'visitor' && !this.sharedWorldReady) {
         this.visitOwnerName = data.ownerName || this.visitOwnerName;
         this.visitRole = 'visitor';
         this.visitCursor = data.cursor || this.visitCursor;
         this.sharedSentEdits = this.indexEdits(data.world.edits);
         this.pendingSharedEdits.clear();
-        await Game.enterSharedWorld(data.world);
-        this.sharedWorldReady = true;
+        if (!await this.loadVisitWorld(data.world)) return;
         this.showVisitHud('You are visiting ' + this.visitOwnerName + '. Blocks you build save in their world.');
         this.refreshVisitLobby();
       } else if (data.resync && data.world && Game.world) {
@@ -542,7 +771,44 @@ const Network = {
           }
         }
       }
-    } catch (_) {
+      // Reconcile gameplay only after a visitor has finished loading the host world.
+      const worldReady = this.visitRole === 'owner' || this.sharedWorldReady;
+      if (worldReady && Game.world) {
+        if (this.sharedMode === 'fight') {
+          if (this.visitRole === 'owner' && !this.visitActive) {
+            if (!Game.hostedFightPreview || Game.mode !== 'fight') Game.startHostedFightPreview();
+            const dialog = document.getElementById('shared-fight-dialog');
+            if (dialog) dialog.classList.add('hidden');
+          } else if (this.visitActive && this.fightPhase === 'active' && this.fightChoice) {
+            if (!Game.sharedFightStarted || Game.mode !== 'fight') Game.startSharedFight(this.fightChoice);
+            if (this.visitRole === 'visitor' && this.fightState) Game.applySharedFightState(this.fightState);
+            const dialog = document.getElementById('shared-fight-dialog');
+            const roundEnded = this.visitRole === 'owner' ? Fight.roundActive === false : !!(this.fightState && this.fightState.roundActive === false);
+            if (roundEnded) {
+              this.updateFightLobby();
+              const status = document.getElementById('shared-fight-status');
+              if (status) status.textContent = 'Match finished. Both players choose Duel or Co-op for a rematch.';
+            } else if (dialog) dialog.classList.add('hidden');
+          } else {
+            if (!Game.sharedFightWaiting || Game.mode !== 'fight') Game.openSharedFightChoice();
+            this.updateFightLobby();
+          }
+        } else if (Game.mode !== this.sharedMode || Game.sharedFightWaiting) {
+          Game.sharedFightWaiting = false;
+          const dialog = document.getElementById('shared-fight-dialog');
+          if (dialog) dialog.classList.add('hidden');
+          Game.enterSharedMode(this.sharedMode, false);
+        }
+      }
+      this.visitFailures = 0;
+    } catch (error) {
+      if (this.visitLoadError) {
+        const message = this.visitLoadError;
+        this.visitLoadError = null;
+        console.warn('Shared world load failed:', message);
+        await this.handleVisitEnded('Could not load the shared world: ' + message);
+        return;
+      }
       this.visitFailures++;
       if (this.visitFailures >= 10) await this.handleVisitEnded('The network connection to this live world was lost. Ask the host to approve a new visit.');
     } finally { this.visitBusy = false; }
@@ -553,6 +819,7 @@ const Network = {
     const status = document.getElementById('visit-status');
     const request = document.getElementById('visit-request');
     const end = document.getElementById('btn-visit-end');
+    const changeMode = document.getElementById('btn-visit-mode');
     if (!hud) return;
     if (!this.visitRole) {
       if (message) UI.toast(message);
@@ -564,6 +831,10 @@ const Network = {
     const name = document.getElementById('visit-request-name');
     if (name) name.textContent = requesterName ? requesterName + ' wants to visit.' : '';
     if (end) end.textContent = this.visitRole === 'owner' ? 'Stop hosting' : (this.visitRole === 'pending' ? 'Cancel request' : 'Leave visit');
+    if (changeMode) {
+      changeMode.classList.toggle('hidden', this.visitRole !== 'owner');
+      changeMode.textContent = Game.isTouch ? 'Change shared mode' : 'Change shared mode (M)';
+    }
   },
 
   hideVisitHud() {
@@ -571,6 +842,9 @@ const Network = {
     const request = document.getElementById('visit-request');
     if (hud) hud.classList.add('hidden');
     if (request) request.classList.add('hidden');
+    this.closeVisitModePicker();
+    const fightDialog = document.getElementById('shared-fight-dialog');
+    if (fightDialog) fightDialog.classList.add('hidden');
   },
 
   updateRemotePlayer(player, dt) {
@@ -632,6 +906,7 @@ const Network = {
     clearInterval(this.visitTimer);
     this.visitTimer = null;
     this.visitRole = null;
+    this.sharedArenaCenter = null;
     this.sharedWorldReady = false;
     this.visitActive = false;
     this.pendingSharedEdits.clear();
@@ -653,6 +928,7 @@ const Network = {
     clearInterval(this.visitTimer);
     this.visitTimer = null;
     this.visitRole = null;
+    this.sharedArenaCenter = null;
     this.sharedWorldReady = false;
     this.visitActive = false;
     this.pendingSharedEdits.clear();
@@ -764,12 +1040,19 @@ const Network = {
 
   startSessionCheck() {
     clearInterval(this.sessionTimer);
+    this.sessionCheckFailures = 0;
     this.sessionTimer = setInterval(async () => {
       try {
         const status = await this.request('/api/status');
+        this.sessionCheckFailures = 0;
         if (!status.authenticated) this.lockGame('Please sign in again to continue.');
       } catch (_) {
-        this.lockGame('The PC server connection was lost. Start it again and sign in.');
+        // Mobile Safari can briefly suspend networking while the tab is backgrounded.
+        // Retry transient failures; only return to sign-in after sustained loss.
+        this.sessionCheckFailures++;
+        if (this.sessionCheckFailures >= 3) {
+          this.lockGame('The PC server connection was lost. Start it again and sign in.');
+        }
       }
     }, 15000);
   },

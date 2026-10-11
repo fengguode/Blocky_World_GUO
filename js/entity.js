@@ -266,21 +266,74 @@ class Animal {
     this.vel = [0, 0, 0];
     this.yaw = Math.random() * Math.PI * 2;
     this.walkAnim = Math.random() * 6;
-    this.think = 1 + Math.random() * 3;
+    this.think = 0.3 + Math.random() * 0.7;
     this.onGround = false;
     this.jumpCool = 0;
     this.scale = 0.85 + Math.random() * 0.3;
+    this.health = def.predator ? 4 : (def.id === 'chick' ? 1 : 3);
+    this.dead = false;
+    this.packId = null;
+    this.packLeader = null;
+    this.preyTarget = null;
+    this.fleeFrom = null;
+    this.aggressiveTimer = 0;
+    this.biteCooldown = 0.3 + Math.random() * 0.5;
+    this.hitFlash = 0;
   }
 
-  update(dt, world) {
+  update(dt, world, player) {
+    if (this.dead) return;
     this.think -= dt;
+    this.biteCooldown = Math.max(0, this.biteCooldown - dt);
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.aggressiveTimer = Math.max(0, this.aggressiveTimer - dt);
     if (this.jumpCool > 0) this.jumpCool -= dt;
-    if (this.think <= 0) {
+
+    let speed = this.def.speed * (0.4 + Math.random() * 0.3);
+    let target = null;
+    if (this.def.predator) {
+      if (this.aggressiveTimer > 0 && player && !player.ko) {
+        const dx = player.pos[0] - this.pos[0], dz = player.pos[2] - this.pos[2];
+        if (dx * dx + dz * dz < 32 * 32) target = player;
+      }
+      if (!target && this.preyTarget && !this.preyTarget.dead) {
+        const dx = this.preyTarget.pos[0] - this.pos[0], dz = this.preyTarget.pos[2] - this.pos[2];
+        if (dx * dx + dz * dz < 22 * 22) target = this.preyTarget;
+      }
+      if (!target && this.packLeader && this.packLeader !== this) {
+        const dx = this.packLeader.pos[0] - this.pos[0], dz = this.packLeader.pos[2] - this.pos[2];
+        if (dx * dx + dz * dz > 4.5 * 4.5) target = this.packLeader;
+      }
+    } else if (this.fleeFrom && !this.fleeFrom.dead) {
+      const dx = this.pos[0] - this.fleeFrom.pos[0], dz = this.pos[2] - this.fleeFrom.pos[2];
+      if (dx * dx + dz * dz < 10 * 10) {
+        this.yaw = Math.atan2(dx, dz);
+        speed = this.def.speed * 1.55;
+        this.think = 0.5;
+      } else this.fleeFrom = null;
+    }
+
+    if (target) {
+      const dx = target.pos[0] - this.pos[0], dz = target.pos[2] - this.pos[2];
+      const dist = Math.hypot(dx, dz);
+      this.yaw = Math.atan2(dx, dz);
+      speed = this.def.speed * (target === player ? 1.2 : 1.35);
+      if (target === player && dist < 1.35 && this.biteCooldown <= 0) {
+        const dir = dist > 0.001 ? [dx / dist, 0, dz / dist] : [0, 0, 0];
+        if (player.takeDamage) player.takeDamage(6, dir, 3.5);
+        this.biteCooldown = 1.2;
+      } else if (target !== player && target.health !== undefined && dist < 1.15 && this.biteCooldown <= 0) {
+        target.health--;
+        target.hitFlash = 0.18;
+        if (target.health <= 0) target.dead = true;
+        this.biteCooldown = 0.9;
+      }
+      this.think = 0.3;
+    } else if (this.think <= 0) {
       this.think = 1.2 + Math.random() * 3.4;
       this.yaw = Math.random() * Math.PI * 2;
     }
 
-    const speed = this.def.speed * (0.4 + Math.random() * 0.3);
     this.vel[0] = Math.sin(this.yaw) * speed;
     this.vel[2] = Math.cos(this.yaw) * speed;
     this.vel[1] -= GRAVITY * dt;
@@ -374,7 +427,7 @@ class Projectile {
         return;
       }
       for (const p of players) {
-        if (p === this.owner || p.ko) continue;
+        if (!p || p === this.owner || p.ko || !Fight.areOpponents(this.owner, p)) continue;
         const dx = p.pos[0] - this.pos[0];
         const dy = (p.pos[1] + 0.9) - this.pos[1];
         const dz = p.pos[2] - this.pos[2];
@@ -447,7 +500,7 @@ const Particles = {
 
 /* Projectile visual definitions, indexed into the texture array */
 const PROJ_DEFS = {
-  web:      { kind: 'web',      tile: T.glass,     size: 0.28, glow: 0, gravity: false },
-  star:     { kind: 'star',     tile: T.glowstone, size: 0.3,  glow: 1, gravity: false },
-  shuriken: { kind: 'shuriken', tile: T.steel,     size: 0.26, glow: 0, gravity: true },
+  web:      { kind: 'web',      tile: T.glass,    size: 0.28, glow: 0, gravity: false },
+  star:     { kind: 'star',     tile: T.glowstone,size: 0.3,  glow: 1, gravity: false },
+  shuriken: { kind: 'shuriken', tile: T.steel,    size: 0.26, glow: 0, gravity: true },
 };

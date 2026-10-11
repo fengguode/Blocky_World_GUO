@@ -10,6 +10,7 @@ const { promisify } = require('util');
 const scrypt = promisify(crypto.scrypt);
 
 const ROOT = __dirname;
+const WORLD_SIZE = 200000;
 const DATA_DIR = path.join(ROOT, '.blocky-world-data');
 const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
 const DEFAULT_PORT = 8080;
@@ -22,7 +23,7 @@ const PROFILES = [
   { id: 'p3', displayName: 'Feng' },
 ];
 const ALLOWED_USERS = PROFILES.map(profile => profile.id);
-const PUBLIC_FILES = new Set(['/index.html', '/style.css', '/js/network.js']);
+const PUBLIC_FILES = new Set(['/index.html', '/style.css']);
 let accounts = null;
 let bootstrapCode = null;
 let profileSetupCode = null;
@@ -35,10 +36,11 @@ const visits = new Map();
 const hostStartsInProgress = new Set();
 const closedVisitSessions = new Map();
 const MAX_CONCURRENT_PIN_CHECKS = 4;
-const VISIT_HEARTBEAT_TIMEOUT = 3500;
+const VISIT_HEARTBEAT_TIMEOUT = 15_000;
 const VISIT_REQUEST_TTL = 45_000;
 const VISIT_CLOSED_TTL = 30_000;
 const VISIT_EVENT_LIMIT = 5000;
+const VISIT_MODES = new Set(['play', 'fight', 'observe']);
 const CHARACTER_IDS = new Set(['steve', 'alex', 'spider', 'doll', 'golem', 'ninja']);
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -51,7 +53,10 @@ function cookies(req) {
   const values = Object.create(null);
   for (const entry of (req.headers.cookie || '').split(';')) {
     const at = entry.indexOf('=');
-    if (at >= 0) values[entry.slice(0, at).trim()] = decodeURIComponent(entry.slice(at + 1).trim());
+    if (at >= 0) {
+      try { values[entry.slice(0, at).trim()] = decodeURIComponent(entry.slice(at + 1).trim()); }
+      catch (_) { /* Ignore malformed cookie values instead of failing the request. */ }
+    }
   }
   return values;
 }
@@ -83,14 +88,30 @@ function sameOrigin(req) {
 function isLoopbackAddress(address) {
   return address === '127.0.0.1' || address === '::1' || /^::ffff:127(?:\.\d{1,3}){3}$/.test(address || '');
 }
-function userFor(req) {
+function pageAuthId(req) {
+  const value = req.headers['x-bw-page'];
+  return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : null;
+}
+function sessionForCookie(req) {
   const token = cookies(req)[COOKIE];
   const session = token && sessions.get(token);
   if (!session) return null;
   if (Date.now() - session.lastSeen > SESSION_TTL) { sessions.delete(token); return null; }
-  session.lastSeen = Date.now();
   const account = accounts && accounts.users[session.userId];
-  return account ? { id: session.userId, displayName: account.displayName, token } : null;
+  return account ? { id: session.userId, displayName: account.displayName, token, session } : null;
+}
+function userFor(req) {
+  const user = sessionForCookie(req);
+  const pageId = pageAuthId(req);
+  if (!user || !pageId || user.session.pageId !== pageId) return null;
+  user.session.lastSeen = Date.now();
+  return { id: user.id, displayName: user.displayName, token: user.token };
+}
+function userForFile(req) {
+  const user = sessionForCookie(req);
+  if (!user) return null;
+  user.session.lastSeen = Date.now();
+  return { id: user.id, displayName: user.displayName, token: user.token };
 }
 function requireUser(req, res) {
   const user = userFor(req);
@@ -107,7 +128,7 @@ function safeWorldType(value) { return value === 'flat' ? 'flat' : 'normal'; }
 function savePath(userId, worldType) { return path.join(DATA_DIR, 'world-' + userId + (safeWorldType(worldType) === 'flat' ? '-flat' : '') + '.json'); }
 async function readWorld(userId, worldType) {
   worldType = safeWorldType(worldType);
-  const fallback = { version: 2, revision: 0, worldType, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
+  const fallback = { version: 2, worldType, revision: 0, seed: 1337, player1: null, slot: 0, pick: null, settings: null, edits: [] };
   let raw;
   try {
     raw = await fs.promises.readFile(savePath(userId, worldType), 'utf8');
@@ -216,9 +237,56 @@ function closeVisit(room, reason) {
 function safePlayerState(value) {
   if (!value || typeof value !== 'object') return null;
   const pos = value.pos;
-  if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite) || pos[0] < 5 || pos[0] > 203 || pos[2] < 5 || pos[2] > 203 || pos[1] < -8 || pos[1] > 200) return null;
+  if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite) || pos[0] < -8 || pos[0] > WORLD_SIZE + 8 || pos[2] < -8 || pos[2] > WORLD_SIZE + 8 || pos[1] < -8 || pos[1] > 200) return null;
   if (!Number.isFinite(value.yaw) || Math.abs(value.yaw) > 1000 || !Number.isFinite(value.pitch) || Math.abs(value.pitch) > 2 || !CHARACTER_IDS.has(value.characterId)) return null;
   return { pos: pos.map(n => Math.round(n * 1000) / 1000), yaw: value.yaw, pitch: value.pitch, characterId: value.characterId, updatedAt: Date.now() };
+}
+
+function safeFightInput(value) {
+  if (!value || typeof value !== 'object') return null;
+  const number = (v, min, max, fallback = 0) => Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback;
+  const seq = value.actions && typeof value.actions === 'object' ? value.actions : {};
+  const actions = {};
+  for (const name of ['attack', 'special', 'ult', 'altAttack']) {
+    actions[name] = Number.isSafeInteger(seq[name]) && seq[name] >= 0 ? seq[name] : 0;
+  }
+  return {
+    mx: number(value.mx, -1, 1), mz: number(value.mz, -1, 1), turn: number(value.turn, -1, 1),
+    yaw: number(value.yaw, -1000, 1000),
+    jump: value.jump === true, sneak: value.sneak === true, actions,
+  };
+}
+
+function safeFightState(value) {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.players) || value.players.length < 2 || value.players.length > 3) return null;
+  const players = [];
+  for (const fighter of value.players) {
+    const pos = fighter && fighter.pos, vel = fighter && fighter.vel;
+    if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite) || !Array.isArray(vel) || vel.length !== 3 || !vel.every(Number.isFinite)) return null;
+    if (!CHARACTER_IDS.has(fighter.characterId) || !Number.isFinite(fighter.yaw) || !Number.isFinite(fighter.hp) || !Number.isFinite(fighter.maxHp)) return null;
+    const swing = fighter.swing && typeof fighter.swing === 'object' ? {
+      attack: Math.max(0, Math.min(2, Number.isInteger(fighter.swing.attack) ? fighter.swing.attack : 0)),
+      t: Math.max(0, Math.min(5, Number(fighter.swing.t) || 0)),
+      windup: Math.max(0, Math.min(2, Number(fighter.swing.windup) || 0)),
+      active: Math.max(0, Math.min(2, Number(fighter.swing.active) || 0)),
+      recover: Math.max(0, Math.min(3, Number(fighter.swing.recover) || 0)),
+      hit: fighter.swing.hit === true, ranged: fighter.swing.ranged === true,
+    } : null;
+    players.push({
+      pos: pos.map(n => Math.max(-8, Math.min(WORLD_SIZE + 8, n))),
+      vel: vel.map(n => Math.max(-100, Math.min(100, n))),
+      yaw: Math.max(-1000, Math.min(1000, fighter.yaw)), characterId: fighter.characterId,
+      hp: Math.max(0, Math.min(1000, fighter.hp)), maxHp: Math.max(1, Math.min(1000, fighter.maxHp)),
+      ultMeter: Math.max(0, Math.min(100, Number(fighter.ultMeter) || 0)),
+      ko: fighter.ko === true, koTimer: Math.max(0, Math.min(5, Number(fighter.koTimer) || 0)),
+      invuln: Math.max(0, Math.min(5, Number(fighter.invuln) || 0)),
+      onGround: fighter.onGround === true, walkAnim: Number(fighter.walkAnim) || 0,
+      swing, swingTotal: Math.max(0, Math.min(5, Number(fighter.swingTotal) || 0)),
+      attacking: fighter.attacking === true, combo: Math.max(0, Math.min(999, Number(fighter.combo) || 0)),
+    });
+  }
+  const winnerIndex = Number.isInteger(value.winnerIndex) && value.winnerIndex >= 0 && value.winnerIndex < players.length ? value.winnerIndex : null;
+  return { players, roundActive: value.roundActive === true, roundTime: Math.max(0, Math.min(3600, Number(value.roundTime) || 0)), winnerIndex };
 }
 
 async function persistVisitEdits(room, actorId, actorToken, edits) {
@@ -244,7 +312,7 @@ async function persistVisitEdits(room, actorId, actorToken, edits) {
 
 function visitEdits(value) {
   if (!Array.isArray(value) || value.length > 100) return null;
-  if (value.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 208 || e[2] < 96 || e[2] >= 208 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255)) return null;
+  if (value.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 0 || e[0] >= WORLD_SIZE || e[2] < 0 || e[2] >= WORLD_SIZE || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255)) return null;
   return value;
 }
 
@@ -264,6 +332,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && route === '/api/setup') {
+    if (!isLoopbackAddress(req.socket.remoteAddress)) return reply(res, 403, { error: 'Complete initial setup from the family PC.' });
     if (accounts || setupInProgress) return reply(res, 409, { error: 'Setup is already complete or running on this PC.' });
     setupInProgress = true;
     try {
@@ -322,6 +391,8 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && route === '/api/login') {
     if (!accounts) return reply(res, 409, { error: 'Complete setup on this PC first.' });
     const body = await readBody(req, 4096);
+    const pageId = pageAuthId(req);
+    if (!pageId) return reply(res, 400, { error: 'Refresh the sign-in page and try again.' });
     const userId = String(body.userId || ''), pin = String(body.pin || '');
     if (!ALLOWED_USERS.includes(userId) || !/^\d{4,12}$/.test(pin)) return reply(res, 400, { error: 'Choose a profile and enter its PIN.' });
     const account = accounts.users[userId];
@@ -344,7 +415,7 @@ async function handleApi(req, res, url) {
       }
       attempts.delete(key);
       const token = crypto.randomBytes(32).toString('base64url');
-      sessions.set(token, { userId, lastSeen: Date.now() });
+      sessions.set(token, { userId, lastSeen: Date.now(), pageId });
       setCookie(res, token);
       return reply(res, 200, { ok: true, user: { id: userId, displayName: account.displayName } });
     } finally {
@@ -371,13 +442,15 @@ async function handleApi(req, res, url) {
     const owners = [];
     for (const room of visits.values()) {
       if (room.status === 'hosting' && Date.now() - room.ownerSeen < VISIT_HEARTBEAT_TIMEOUT && room.ownerId !== user.id) {
-        owners.push({ id: room.ownerId, displayName: room.ownerName, available: !room.pending && !room.visitorId });
+        owners.push({ id: room.ownerId, displayName: room.ownerName, mode: room.mode, available: !room.pending && !room.visitorId });
       }
     }
     return reply(res, 200, { owners });
   }
 
   if (method === 'POST' && route === '/api/visit/host') {
+    const body = await readBody(req, 4096);
+    const mode = VISIT_MODES.has(body.mode) ? body.mode : 'play';
     const participating = visitByUser(user);
     if (participating && !participating.closed) return reply(res, 409, { error: 'Leave your current live visit before hosting.' });
     if (hostStartsInProgress.has(user.id))
@@ -390,7 +463,6 @@ async function handleApi(req, res, url) {
     }
     hostStartsInProgress.add(user.id);
     try {
-      const body = await readBody(req, 4096);
       const worldType = safeWorldType(body.worldType);
       const savedWorld = await readWorld(user.id, worldType);
       const room = {
@@ -398,9 +470,18 @@ async function handleApi(req, res, url) {
         ownerName: user.displayName, worldType, ownerSeen: Date.now(), status: 'hosting', pending: null, worldRevision: savedWorld.revision,
         visitorId: null, visitorToken: null, visitorName: null, visitorSeen: 0,
         visitorNeedsWorld: false, visitorWorldSent: false, seq: 0, events: [], players: { owner: null, visitor: null },
+        mode, modeRevision: 1,
+        arenaCenter: Array.isArray(body.arenaCenter) && body.arenaCenter.length === 2 && body.arenaCenter.every(Number.isFinite)
+          ? body.arenaCenter.map(n => Math.max(18, Math.min(WORLD_SIZE - 19, Math.floor(n))))
+          : [WORLD_SIZE / 2 + 8, WORLD_SIZE / 2 + 8],
+        fightChoice: null, fightVotes: { owner: null, visitor: null }, fightPhase: 'setup',
+        fightInputs: { owner: null, visitor: null }, fightActionSeq: {
+          owner: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+          visitor: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+        }, fightState: null,
       };
       visits.set(user.id, room);
-      return reply(res, 201, { ok: true, ownerId: room.ownerId });
+      return reply(res, 201, { ok: true, ownerId: room.ownerId, mode: room.mode, modeRevision: room.modeRevision, arenaCenter: room.arenaCenter });
     } finally {
       hostStartsInProgress.delete(user.id);
     }
@@ -410,6 +491,59 @@ async function handleApi(req, res, url) {
     const room = visits.get(user.id);
     if (room && room.ownerToken === user.token) closeVisit(room, 'The host ended the live visit.');
     return reply(res, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/visit/mode') {
+    const body = await readBody(req, 4096);
+    const room = visits.get(user.id);
+    if (!room || room.ownerToken !== user.token || room.status === 'closed')
+      return reply(res, 403, { error: 'Only the live world owner can change the shared mode.' });
+    if (!VISIT_MODES.has(body.mode)) return reply(res, 400, { error: 'Choose Play & Build, Fight Arena, or Observe World.' });
+    if (room.mode !== body.mode) {
+      room.mode = body.mode;
+      room.modeRevision++;
+      room.fightChoice = null;
+      room.fightVotes = { owner: null, visitor: null };
+      room.fightPhase = 'setup';
+      room.fightInputs = { owner: null, visitor: null };
+      room.fightActionSeq = {
+        owner: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+        visitor: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+      };
+      room.fightState = null;
+      appendVisitEvent(room, user.id, 'mode', { mode: room.mode, revision: room.modeRevision });
+    }
+    return reply(res, 200, { ok: true, mode: room.mode, modeRevision: room.modeRevision });
+  }
+
+  if (method === 'POST' && route === '/api/visit/fight-choice') {
+    const body = await readBody(req, 4096);
+    const found = visitByUser(user);
+    if (!found || found.closed || found.room.status !== 'active' || found.room.mode !== 'fight')
+      return reply(res, 409, { error: 'Fight Arena is not active for this visit.' });
+    const { room, role } = found;
+    if (role !== 'owner' && role !== 'visitor') return reply(res, 403, { error: 'Approve the visit before choosing a fight.' });
+    if (room.fightPhase !== 'setup') {
+      if (room.fightPhase !== 'active' || !room.fightState || room.fightState.roundActive !== false)
+        return reply(res, 409, { error: 'The fight has already started.' });
+      room.fightPhase = 'setup';
+      room.fightChoice = null;
+      room.fightVotes = { owner: null, visitor: null };
+    }
+    if (!['duel', 'coop'].includes(body.choice)) return reply(res, 400, { error: 'Choose Duel or Co-op.' });
+    room.fightVotes[role] = body.choice;
+    room.fightChoice = room.fightVotes.owner === room.fightVotes.visitor ? body.choice : null;
+    if (room.fightChoice) {
+      room.fightPhase = 'active';
+      room.fightState = null;
+      room.fightInputs = { owner: null, visitor: null };
+      room.fightActionSeq = {
+        owner: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+        visitor: { attack: 0, special: 0, ult: 0, altAttack: 0 },
+      };
+      appendVisitEvent(room, user.id, 'fight-start', { choice: room.fightChoice });
+    }
+    return reply(res, 200, { ok: true, choice: room.fightChoice, votes: room.fightVotes, phase: room.fightPhase });
   }
 
   if (method === 'POST' && route === '/api/visit/leave') {
@@ -508,6 +642,23 @@ async function handleApi(req, res, url) {
       if (body.worldReady === true && room.visitorWorldSent) room.visitorNeedsWorld = false;
     }
 
+    if (room.mode === 'fight' && room.fightPhase === 'active' && (role === 'owner' || role === 'visitor')) {
+      const fightInput = safeFightInput(body.fightInput);
+      if (fightInput) {
+        room.fightInputs[role] = fightInput;
+        for (const action of ['attack', 'special', 'ult', 'altAttack']) {
+          if (fightInput.actions[action] > room.fightActionSeq[role][action]) {
+            room.fightActionSeq[role][action] = fightInput.actions[action];
+            if (role === 'visitor') appendVisitEvent(room, user.id, 'fight-action', { role, action, seq: fightInput.actions[action] });
+          }
+        }
+      }
+      if (role === 'owner') {
+        const state = safeFightState(body.fightState);
+        if (state) room.fightState = state;
+      }
+    }
+
     const edits = visitEdits(body.edits === undefined ? [] : body.edits);
     if (!edits) return reply(res, 400, { error: 'Shared block edits are invalid.' });
     if (edits.length && room.status === 'active') {
@@ -527,12 +678,20 @@ async function handleApi(req, res, url) {
     const nextCursor = batch.length ? batch[batch.length - 1].seq : room.seq;
     const response = {
       state: room.status, role, cursor: nextCursor,
+      mode: room.mode,
+      modeRevision: room.modeRevision,
+      arenaCenter: room.arenaCenter,
+      fightChoice: room.fightChoice,
+      fightVotes: room.fightVotes,
+      fightPhase: room.fightPhase,
       worldRevision: room.worldRevision,
       pending: role === 'owner' && room.pending ? { id: room.pending.id, displayName: room.pending.visitorName } : null,
       remotePlayer: room.players[role === 'owner' ? 'visitor' : 'owner'],
+      fightInput: room.mode === 'fight' ? room.fightInputs[role === 'owner' ? 'visitor' : 'owner'] : null,
+      fightState: role === 'visitor' && room.mode === 'fight' ? room.fightState : null,
       events: batch.filter(event => event.actorId !== user.id).map(({ seq, type, data }) => ({ seq, type, data })),
     };
-    if (role === 'visitor' && room.status === 'active' && room.visitorToken === user.token && room.visitorNeedsWorld) {
+    if (role === 'visitor' && room.status === 'active' && room.visitorToken === user.token && room.visitorNeedsWorld && body.loadingOnly !== true) {
       response.world = await readWorld(room.ownerId, room.worldType);
       response.ownerName = room.ownerName;
       room.visitorWorldSent = true;
@@ -547,8 +706,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'GET' && route === '/api/world') {
-    const worldType = safeWorldType(url.searchParams.get('type'));
-    return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id, worldType) });
+    return reply(res, 200, { ownerId: user.id, world: await readWorld(user.id, safeWorldType(url.searchParams.get('type'))) });
   }
 
   if ((method === 'PUT' && route === '/api/world') || (method === 'POST' && route === '/api/world/flush')) {
@@ -558,13 +716,13 @@ async function handleApi(req, res, url) {
     if (!world || typeof world !== 'object' || Array.isArray(world) || !Number.isInteger(world.seed) || world.seed < -2147483648 || world.seed > 2147483647)
       return reply(res, 400, { error: 'World save has an invalid format.' });
     const edits = Array.isArray(world.edits) ? world.edits : [];
-    if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 96 || e[0] >= 304 || e[2] < 96 || e[2] >= 304 || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
+    if (edits.length > 200000 || edits.some(e => !Array.isArray(e) || e.length !== 4 || e.some(n => !Number.isInteger(n)) || e[0] < 0 || e[0] >= WORLD_SIZE || e[2] < 0 || e[2] >= WORLD_SIZE || e[1] < 1 || e[1] > 99 || e[3] < 0 || e[3] > 255))
       return reply(res, 400, { error: 'World edits are invalid or too large.' });
     const safe = {
       version: 2, worldType, seed: world.seed,
       revision: Number.isSafeInteger(world.revision) && world.revision >= 0 ? world.revision : null,
       player1: Array.isArray(world.player1) && world.player1.length === 3 && world.player1.every(Number.isFinite) ? world.player1 : null,
-      slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(8, world.slot)) : 0,
+      slot: Number.isInteger(world.slot) ? Math.max(0, Math.min(9, world.slot)) : 0,
       pick: world.pick && typeof world.pick === 'object' ? world.pick : null,
       settings: world.settings && typeof world.settings === 'object' ? world.settings : null,
       edits,
@@ -588,7 +746,12 @@ function serveFile(req, res, url) {
   const relative = path.relative(ROOT, file);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || relative.startsWith('.blocky-world-data')) return reply(res, 404, { error: 'Not found.' });
 
-  if (!userFor(req) && !PUBLIC_FILES.has(pathname)) return reply(res, 401, { error: 'Sign in to access the game.' });
+  // The PIN screen needs the client code to run before a session exists.
+  // Publicly serving these static modules does not grant world access: all
+  // profile saves, rooms, and session actions remain behind requireUser().
+  const isPublicBootstrap = PUBLIC_FILES.has(pathname) ||
+    (path.dirname(pathname) === '/js' && path.extname(pathname).toLowerCase() === '.js');
+  if (!userForFile(req) && !isPublicBootstrap) return reply(res, 401, { error: 'Sign in to access the game.' });
   fs.readFile(file, (err, data) => {
     if (err) return reply(res, err.code === 'ENOENT' ? 404 : 403, { error: 'Not found.' });
     res.writeHead(200, {

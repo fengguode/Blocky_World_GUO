@@ -14,7 +14,7 @@ const Touch = {
   enabled: false,
   move: { x: 0, y: 0 },
   look: { x: 0, y: 0 },
-  btn: { jump: false, hit: false, use: false, fly: false },
+  btn: { jump: false, hit: false, use: false, fly: false, view: false },
   stickId: null,
   lookId: null,
   ox: 0, oy: 0,
@@ -31,30 +31,57 @@ const Touch = {
   stickActive: false,
 
   init() {
-    const coarse = window.matchMedia('(pointer: coarse)').matches;
-    const touchCapable = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const touchCapable = isTouch();
     this.enabled = touchCapable;
     // Show the touch pad on any touch device, but also allow forcing it on
     // from the options menu for testing on a desktop.
     if (touchCapable) document.body.classList.add('touch');
 
+    window.addEventListener('blur', () => this.reset());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.reset(); });
     // Stop Safari's own gestures.
     const stop = (e) => e.preventDefault();
     document.addEventListener('gesturestart', stop, { passive: false });
     document.addEventListener('gesturechange', stop, { passive: false });
     document.addEventListener('contextmenu', stop);
     document.addEventListener('touchmove', (e) => {
-      // allow scrolling inside the menu card only
-      if (e.target.closest && e.target.closest('.menu-card')) return;
+      // Let native scrolling and synthesized click events work for UI panels.
+      if (e.target.closest && e.target.closest('#menu, .menu-card, .auth-screen, #hotbar')) return;
       e.preventDefault();
     }, { passive: false });
-    let lastTouch = 0;
-    document.addEventListener('touchend', (e) => {
-      const now = Date.now();
-      if (now - lastTouch < 320) e.preventDefault();   // kill double-tap zoom
-      lastTouch = now;
-    }, { passive: false });
-
+    // iOS Safari can fail to scroll fixed overlays inside the fixed game page.
+    // Move the intro menu explicitly with the finger so every menu option stays reachable.
+    const menu = document.getElementById('menu');
+    let menuTouch = null;
+    if (menu) {
+      menu.addEventListener('touchstart', (e) => {
+        if (menu.classList.contains('hidden')) return;
+        const t = e.changedTouches[0];
+        if (t) menuTouch = { id: t.identifier, x: t.clientX, y: t.clientY, scrollTop: menu.scrollTop };
+      }, { passive: true });
+      menu.addEventListener('touchmove', (e) => {
+        if (!menuTouch || menu.scrollHeight <= menu.clientHeight + 1) return;
+        let t = null;
+        for (const changed of e.changedTouches) {
+          if (changed.identifier === menuTouch.id) { t = changed; break; }
+        }
+        if (!t) return;
+        const delta = menuTouch.y - t.clientY;
+        const horizontalDelta = t.clientX - menuTouch.x;
+        // Ignore finger drift and horizontal swipes so a button tap still clicks.
+        if (Math.abs(delta) < 10 || Math.abs(delta) <= Math.abs(horizontalDelta)) return;
+        if (e.cancelable) e.preventDefault();
+        menu.scrollTop = Math.max(0, Math.min(menu.scrollHeight - menu.clientHeight, menuTouch.scrollTop + delta));
+      }, { passive: false });
+      const endMenuScroll = (e) => {
+        if (!menuTouch) return;
+        for (const changed of e.changedTouches) {
+          if (changed.identifier === menuTouch.id) { menuTouch = null; break; }
+        }
+      };
+      menu.addEventListener('touchend', endMenuScroll, { passive: true });
+      menu.addEventListener('touchcancel', endMenuScroll, { passive: true });
+    }
     if (!touchCapable) return;
 
     const stickZone = document.getElementById('touch-move');
@@ -133,10 +160,13 @@ const Touch = {
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
+      let handledTouch = false;
       for (const t of e.changedTouches) {
         if (t.identifier === this.stickId) {
+          handledTouch = true;
           setStick(t.clientX - this.ox, t.clientY - this.oy);
         } else if (t.identifier === this.lookId) {
+          handledTouch = true;
           const dx = t.clientX - this.lx;
           const dy = t.clientY - this.ly;
           this.look.x += dx;
@@ -146,7 +176,9 @@ const Touch = {
           this.ly = t.clientY;
         }
       }
-      e.preventDefault();
+      // Only cancel browser gestures for touches owned by the game controls.
+      // Menu, auth, and setup panels must keep native vertical scrolling on iOS.
+      if (handledTouch && e.cancelable) e.preventDefault();
     }, { passive: false });
 
     const end = (e) => {
@@ -167,7 +199,7 @@ const Touch = {
     window.addEventListener('touchcancel', end);
 
     // --- buttons ---
-    const bind = (id, key, tapOnly) => {
+    const bind = (id, key) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('touchstart', (e) => {
@@ -176,8 +208,7 @@ const Touch = {
         e.preventDefault();
       }, { passive: false });
       const up = (e) => {
-        // tapOnly buttons fire once, held buttons track state
-        if (tapOnly) this.btn[key] = false;
+        this.btn[key] = false;
         el.classList.remove('pressed');
         if (e.cancelable) e.preventDefault();
       };
@@ -186,19 +217,24 @@ const Touch = {
       el.addEventListener('touchleave', up);
     };
 
-    bind('touch-jump', 'jump', false);
-    bind('touch-hit', 'hit', false);
-    bind('touch-use', 'use', true);
-    bind('touch-fly', 'fly', true);
+    bind('touch-jump', 'jump');
+    bind('touch-hit', 'hit');
+    bind('touch-use', 'use');
+    bind('touch-fly', 'fly');
+    bind('touch-view', 'view');
 
-    // tap the hotbar directly
-    document.querySelectorAll('#hotbar .slot').forEach((slot, i) => {
-      slot.style.pointerEvents = 'auto';
-      slot.addEventListener('touchstart', (e) => {
-        Game.selectSlot(i);
-        e.preventDefault();
-      }, { passive: false });
-    });
+  },
+
+  reset() {
+    this.stickId = this.lookId = null;
+    this.stickActive = false;
+    this.move.x = this.move.y = this.look.x = this.look.y = 0;
+    for (const key of Object.keys(this.btn)) this.btn[key] = false;
+    document.querySelectorAll('.tbtn.pressed').forEach(el => el.classList.remove('pressed'));
+    const knob = document.getElementById('touch-knob');
+    if (knob) knob.style.transform = 'translate(0px,0px)';
+    const base = document.getElementById('touch-stick');
+    if (base) { base.style.left = ''; base.style.top = ''; }
   },
 
   // Called once per frame by the game loop.
@@ -211,7 +247,12 @@ const Touch = {
 
   setVisible(on) {
     const el = document.getElementById('touch-ui');
-    if (el) el.style.display = on ? '' : 'none';
+    if (el) {
+      el.classList.toggle('hidden', !on);
+      el.style.display = '';
+    }
+    const view = document.getElementById('touch-view');
+    if (view) view.classList.toggle('hidden', !on || !Game || Game.state !== 'play');
   },
 
   relabel(mode) {

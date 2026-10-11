@@ -121,6 +121,15 @@ function stubCanvas2D() {
     putImageData: noop,
     drawImage: noop,
     fillRect: noop,
+    strokeRect: noop,
+    translate: noop,
+    rotate: noop,
+    beginPath: noop,
+    moveTo: noop,
+    lineTo: noop,
+    strokeStyle: '#000',
+    lineWidth: 1,
+    fill: noop,
     createLinearGradient: () => ({ addColorStop: noop }),
   };
 }
@@ -133,36 +142,62 @@ function load(options) {
   const storage = options.storage || makeStorage();
 
   const listeners = {};
+  const documentListeners = {};
   // Every canvas handed out reports a stub GL context, so setupGL() works.
     const canvasStub = { width: 1280, height: 720, getContext: () => stubGL(record) };
 
-  const makeEl = (tag) => ({
-    tagName: (tag || 'div').toUpperCase(),
-    style: {},
-    className: '',
-    width: 0,
-    height: 0,
-    classList: { add: noopOp, remove: noopOp, toggle: noopOp, contains: () => false },
-    appendChild: noopOp,
-    addEventListener: noopOp,
-    getContext: () => stubCanvas2D(),
-    querySelectorAll: () => [],
-    querySelector: () => null,
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
-    focus: noopOp,
-    setAttribute: noopOp,
-    textContent: '',
-    innerHTML: '',
-    dataset: {},
-  });
+  const makeEl = (tag) => {
+    const classes = new Set();
+    return {
+      tagName: (tag || 'div').toUpperCase(),
+      style: {},
+      className: '',
+      width: 0,
+      height: 0,
+      classList: {
+        add: (...names) => names.forEach(name => classes.add(name)),
+        remove: (...names) => names.forEach(name => classes.delete(name)),
+        toggle: (name, force) => {
+          const on = force === undefined ? !classes.has(name) : !!force;
+          if (on) classes.add(name); else classes.delete(name);
+          return on;
+        },
+        contains: (name) => classes.has(name),
+      },
+      eventListeners: {},
+      appendChild: noopOp,
+      addEventListener(type, listener) {
+        (this.eventListeners[type] || (this.eventListeners[type] = [])).push(listener);
+      },
+      getContext: () => stubCanvas2D(),
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
+      focus: noopOp,
+      setAttribute: noopOp,
+      textContent: '',
+      innerHTML: '',
+      dataset: {},
+    };
+  };
   function noopOp() {}
+
+  const elements = new Map();
+  const touchLayer = makeEl('div');
+  touchLayer.classList.add('hidden');
+  elements.set('touch-ui', touchLayer);
 
   const documentStub = {
     createElement: makeEl,
-    getElementById: () => makeEl('div'),
+    getElementById: (id) => {
+      if (!elements.has(id)) elements.set(id, makeEl('div'));
+      return elements.get(id);
+    },
     querySelectorAll: () => [],
     querySelector: () => null,
-    addEventListener: noopOp,
+    addEventListener(type, listener) {
+      (documentListeners[type] || (documentListeners[type] = [])).push(listener);
+    },
     body: makeEl('body'),
     documentElement: makeEl('html'),
     hidden: false,
@@ -216,7 +251,9 @@ function load(options) {
     window: windowStub,
     document: documentStub,
     navigator: navigatorStub,
+    fetch: options.fetch || (() => Promise.reject(new Error('Unexpected network request in test'))),
     localStorage: windowStub.localStorage,
+    sessionStorage: options.sessionStorage || makeStorage(),
     performance: { now: () => Date.now() },
     Math, JSON, Date, Object, Array, String, Number, Boolean, Error,
     Uint8Array, Uint8ClampedArray, Uint16Array, Uint32Array, Int32Array, Float32Array, Float64Array,
@@ -239,7 +276,7 @@ function load(options) {
   const FILES = [
     'js/blocks.js', 'js/gl.js', 'js/world.js', 'js/mesher.js',
     'js/chars.js', 'js/input.js', 'js/camera.js', 'js/entity.js',
-    'js/bot.js', 'js/fight.js', 'js/touch.js', 'js/ui.js', 'js/main.js',
+    'js/bot.js', 'js/fight.js', 'js/touch.js', 'js/ui.js', 'js/main.js', 'js/network.js',
   ];
 
   const sources = FILES.map((f) => {
@@ -257,11 +294,11 @@ function load(options) {
     createGL, createProgram, M4, buildCube, buildQuad, buildSprite,
     CHUNK, WORLD_H, SEA_LEVEL, Chunk, World, noise2, fbm,
     WORLD_SIZE, CHUNKS_PER_SIDE, CENTRE_CHUNK, WORLD_CENTRE, MIN_EDGE, MAX_EDGE,
-    FACES, VERT_FLOATS, buildChunkMesh, disposeMesh, pidx,
-    CHARACTERS, characterById, ANIMALS, animalById,
-    Input, Cam, OBSERVE_VIEWS, Observer,
+    FACES, VERT_FLOATS, buildChunkMesh, disposeMesh, pidx, aoAt, _padBlocks,
+    CHARACTERS, characterById, ANIMALS, animalById, PAGE_AUTH_ID, pageAuthIdForLoad,
+    Input, Cam, OBSERVE_VIEWS, Observer, Network,
     GRAVITY, Player, Animal, Projectile, Particles, PROJ_DEFS,
-    Bot, Fight, Touch, UI, Audio, Game,
+    Bot, Fight, Touch, UI, Audio, Game, migrateWorldSave,
     isTouch: isTouch, frame: frame,
   };
 })();
@@ -272,10 +309,13 @@ function load(options) {
 
   sandbox.__X.record = record;
   sandbox.__X.listeners = listeners;
+  sandbox.__X.documentListeners = documentListeners;
   sandbox.__X.windowStub = windowStub;
+  sandbox.__X.document = documentStub;
   // The real storage object, so a test can read back what the game saved.
   sandbox.__X.storage = options.storage || storage;
   sandbox.__X.ownStorage = storage;
+  sandbox.__X.sessionStorage = sandbox.sessionStorage;
   sandbox.__X.options = options;
 
   // Match the order boot() uses: read the save first, then let the device
@@ -300,9 +340,9 @@ function load(options) {
     X.Game.setupGL();
     X.Game.dprCap = X.Game.dprCap || 1;
     const w = new X.World(options.seed === undefined ? 1337 : options.seed);
-    w.generateRadius(8, 8, X.Game.settings.renderDist, null);
+    w.generateRadius(X.CENTRE_CHUNK, X.CENTRE_CHUNK, X.Game.settings.renderDist, null);
     const list = [];
-    w.chunks.forEach((c) => { if (c.generated) list.push(c); });
+    w.activeChunks.forEach((c) => list.push(c));
     for (const c of list) {
       c.mesh = X.buildChunkMesh(stubGL(record), w, c);
       c.dirty = false;

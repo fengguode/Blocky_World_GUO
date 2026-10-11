@@ -142,5 +142,7 @@ const Input = {
 };
 
 function isTouch() {
-  return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  // Detect the input capability the game needs, not an assumed phone/tablet
+  // model. This covers iOS Safari, Android browsers, and touch-capable hybrids.
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
 }

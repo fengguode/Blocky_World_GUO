@@ -11,17 +11,37 @@ const UI = {
 
     $('btn-play').onclick = () => Game.startPlay();
     $('btn-worlds').onclick = () => UI.showWorldSelect();
+    $('btn-characters').onclick = () => { UI.showPlayerCharacterSelect('menu'); };
     $('btn-fight').onclick = () => { UI.showCharSelect(); };
     $('btn-observe').onclick = () => Game.startObserve();
     $('btn-controls').onclick = () => { UI.showControls($('menu-extra')); };
     $('btn-options').onclick = () => { UI.showOptions($('menu-extra')); };
     $('btn-reset').onclick = () => {
-      if (confirm('Start a brand new world? This clears the selected world only.')) {
+      if (confirm('Start a brand new world? This clears your old one.')) {
         Game.newWorld();
       }
     };
     $('btn-resume').onclick = () => Game.togglePause(false);
-    $('btn-pause-controls').onclick = () => UI.showControls($('menu-extra'));
+    $('btn-runtime-reload').onclick = () => {
+      Game.save();
+      window.location.reload();
+    };
+    $('btn-pause-character').onclick = () => { UI.showPlayerCharacterSelect('pause'); };
+    $('btn-game-settings').onclick = () => Game.togglePause(true);
+    $('btn-fight-lobby-settings').onclick = () => Game.togglePause(true);
+    $('btn-fight-lobby-exit').onclick = () => Game.toMenu();
+    const openPausePanel = (show) => {
+      UI.show('pause-menu-content', false);
+      UI.show('pause-extra', true);
+      show($('pause-extra'));
+    };
+    $('btn-pause-controls').onclick = () => openPausePanel(box => UI.showControls(box));
+    $('btn-pause-options').onclick = () => openPausePanel(box => UI.showOptions(box));
+    $('btn-pause-rescue').onclick = () => {
+      Game.recoverPlayerPosition(Game.players[0], true);
+      Game.save();
+      Game.togglePause(false);
+    };
     $('btn-pause-menu').onclick = () => Game.toMenu();
 
     this.buildHotbar();
@@ -30,6 +50,10 @@ const UI = {
   show(id, on) {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('hidden', !on);
+    if (id === 'hud') {
+      const settings = document.getElementById('btn-game-settings');
+      if (settings) settings.classList.toggle('hidden', !on);
+    }
   },
 
   showMainMenu() {
@@ -64,7 +88,6 @@ const UI = {
     box.querySelector('#choose-flat').onclick = () => Game.selectWorld('flat');
     box.querySelector('#world-select-back').onclick = () => UI.showMainMenu();
   },
-
   /* ---------- character select ---------- */
   showCharSelect() {
     const box = document.getElementById('menu-extra');
@@ -155,6 +178,45 @@ const UI = {
     render();
   },
 
+  showPlayerCharacterSelect(context) {
+    const inPause = context === 'pause';
+    const box = document.getElementById(inPause ? 'pause-character-panel' : 'menu-extra');
+    if (inPause) {
+      this.show('pause-menu-content', false);
+      this.show('pause-character-panel', true);
+    }
+
+    const render = () => {
+      const selected = characterById(Game.pick.p1);
+      box.innerHTML =
+        '<h3>Choose your character</h3>' +
+        '<p class="character-current">Playing as <b>' + selected.name + '</b> · Outfit: ' + selected.style + '</p>' +
+        '<div class="character-choices">' + CHARACTERS.map(c =>
+          '<button type="button" class="character-choice ' + (c.id === selected.id ? 'selected' : '') + '"' +
+            ' data-character="' + c.id + '" aria-pressed="' + (c.id === selected.id) + '">' +
+            '<span class="choice-name" style="color:' + c.color + '">' + c.name + '</span>' +
+            '<span class="choice-style">' + c.style + '</span>' +
+          '</button>'
+        ).join('') + '</div>' +
+        '<p class="character-current">Select a block to build or the shovel to remove · Blocks are unlimited</p>' +
+        '<div class="btn-grid"><button class="primary" id="done-character-select">Done</button></div>';
+
+      box.querySelectorAll('.character-choice').forEach(button => {
+        button.onclick = () => {
+          Game.changeCharacter(button.dataset.character);
+          render();
+        };
+      });
+      box.querySelector('#done-character-select').onclick = () => {
+        if (inPause) {
+          this.show('pause-character-panel', false);
+          this.show('pause-menu-content', true);
+        } else this.showMainMenu();
+      };
+    };
+    render();
+  },
+
   showControls(box) {
     let rows;
     if (Game.isTouch) {
@@ -181,7 +243,7 @@ const UI = {
         ['Break block', 'Left click'],
         ['Place block', 'Right click'],
         ['Pick block', 'Q'],
-        ['Hotbar', '1 – 9 or wheel'],
+        ['Hotbar', '1–9 blocks, 0 shovel, or wheel'],
         ['Toggle flying', 'F'],
         ['Watch your fighter', 'V'],
         ['Observe: change view', 'F5'],
@@ -208,7 +270,7 @@ const UI = {
     const touchNote = Game.isTouch
       ? '<div style="font-size:12px;opacity:.6;margin-top:10px;text-align:left">' +
         'On this device: thumbstick moves, drag anywhere on the right to look, and the round buttons act. ' +
-        'Tap BREAK to mine and PLACE to build. Tap the picture frame twice for a photo.</div>'
+        'Select a block to PLACE it, or the shovel to remove your target. BREAK also mines. Tap the picture frame twice for a photo.</div>'
       : '';
 
     box.innerHTML =
@@ -218,7 +280,8 @@ const UI = {
       '<input type="range" id="sens" min="0.0008" max="0.008" step="0.0002" value="' + s.sensitivity + '" style="width:100%">' +
       '<div class="toggle-row"><span>How far you can see</span><span class="val" id="rdv">' + s.renderDist + '</span></div>' +
       '<input type="range" id="rd" min="3" max="9" step="1" value="' + s.renderDist + '" style="width:100%">' +
-      '<div class="toggle-row"><span>Day and night</span><span class="val" id="dnv">' + (s.dayNight ? 'On' : 'Off') + '</span></div>' +
+      '<div class="toggle-row"><span>Day/night cycle (5 minutes)</span><span class="val" id="dnv">' + (s.dayNight ? 'On' : 'Off') + '</span></div>' +
+      '<div class="btn-grid"><button id="set-day" type="button">Day now</button><button id="set-night" type="button">Night now</button></div>' +
       '<div class="toggle-row"><span>Sound</span><span class="val" id="sfxv">' + (s.sfx ? 'On' : 'Off') + '</span></div>' +
       (Game.isTouch ? '' :
         '<div class="toggle-row"><span>Show touch buttons</span><span class="val" id="tuv">' +
@@ -237,19 +300,19 @@ const UI = {
       // profile must stop overriding it.
       s.renderDistAuto = false;
       box.querySelector('#rdv').textContent = s.renderDist;
-      UI.toast('Growing the world…');
+      UI.toast('Updating view distance…');
       // The renderer draws from this, so update it now rather than waiting for
       // the next load: without this the slider changes the fog but not the
       // distance you can actually see.
       Game.renderDist = s.renderDist;
-      Game.world.generateRadius(Game.world.centreChunkX, Game.world.centreChunkZ, s.renderDist, null);
-      Game.world.chunks.forEach(c => { c.dirty = true; });
       Game.save();
     };
     box.querySelector('#dnv').parentElement.onclick = () => {
       s.dayNight = !s.dayNight;
       box.querySelector('#dnv').textContent = s.dayNight ? 'On' : 'Off';
     };
+    box.querySelector('#set-day').onclick = () => { Game.dayPhase = 0.5; s.dayNight = true; box.querySelector('#dnv').textContent = 'On'; };
+    box.querySelector('#set-night').onclick = () => { Game.dayPhase = 0; s.dayNight = true; box.querySelector('#dnv').textContent = 'On'; };
     box.querySelector('#sfxv').parentElement.onclick = () => {
       s.sfx = !s.sfx;
       Audio.enabled = s.sfx;
@@ -264,7 +327,7 @@ const UI = {
     };
     box.querySelector('#ok-options').onclick = () => {
       Game.save();
-      UI.showMainMenu();
+      if (Game.state === 'paused') Game.togglePause(false); else UI.showMainMenu();
     };
   },
 
@@ -272,14 +335,38 @@ const UI = {
   buildHotbar() {
     const bar = document.getElementById('hotbar');
     bar.innerHTML = '';
-    HOTBAR_BLOCKS.forEach((id, i) => {
+    bar.addEventListener('click', (e) => {
+      const slot = e.target.closest && e.target.closest('.slot');
+      if (slot) Game.selectSlot(Number(slot.dataset.slot));
+    });
+    HOTBAR_ITEMS.forEach((item, i) => {
       const slot = document.createElement('div');
       slot.className = 'slot';
       slot.dataset.slot = i;
+      slot.tabIndex = 0;
+      slot.setAttribute('role', 'button');
+      slot.setAttribute('aria-label', item.name + (item.kind === 'block' ? ', unlimited blocks' : ', removes the targeted block'));
+      slot.setAttribute('aria-pressed', i === Game.selectedSlot ? 'true' : 'false');
+      slot.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          Game.selectSlot(i);
+        }
+      });
       const num = document.createElement('span');
       num.className = 'num';
-      num.textContent = i + 1;
-      const icon = blockIconCanvas(id, 38);
+      num.textContent = (i + 1) % 10;
+      const icon = item.kind === 'block' ? blockIconCanvas(item.id, 38) : document.createElement('canvas');
+      if (item.kind === 'tool') {
+        icon.width = icon.height = 38;
+        const ctx = icon.getContext('2d');
+        ctx.translate(19, 19); ctx.rotate(-Math.PI / 4);
+        ctx.fillStyle = '#bb8049'; ctx.fillRect(-3, -12, 6, 25);
+        ctx.strokeStyle = '#dae9f5'; ctx.lineWidth = 3; ctx.strokeRect(-6, -17, 12, 7);
+        ctx.fillStyle = '#9fb8cb'; ctx.fillRect(-8, 8, 16, 10);
+        ctx.beginPath(); ctx.moveTo(-8,18); ctx.lineTo(0,23); ctx.lineTo(8,18); ctx.fill();
+      }
+      slot.title = item.name;
       const key = document.createElement('span');
       key.className = 'key';
       slot.appendChild(num);
@@ -292,11 +379,28 @@ const UI = {
   setActiveSlot(i) {
     document.querySelectorAll('#hotbar .slot').forEach((s, idx) => {
       s.classList.toggle('active', idx === i);
+      s.setAttribute('aria-pressed', idx === i ? 'true' : 'false');
     });
+  },
+
+  updateEquipmentStatus(player, mode) {
+    const el = document.getElementById('equipment-status');
+    if (!el) return;
+    if (mode !== 'play' || !player) {
+      el.classList.add('hidden');
+      return;
+    }
+    const character = player.char || characterById(Game.pick.p1);
+    const item = HOTBAR_ITEMS[Game.selectedSlot] || HOTBAR_ITEMS[0];
+    const summary = character.name + ' · Outfit: ' + character.style +
+      ' · Selected: ' + item.name + (item.kind === 'block' ? ' ∞ · PLACE builds' : ' · PLACE removes');
+    if (el.textContent !== summary) el.textContent = summary;
+    el.classList.remove('hidden');
   },
 
   /* ---------- HUD ---------- */
   updateHUD(player, mode, extra) {
+    this.updateEquipmentStatus(player, mode);
     const setBar = (id, pct) => {
       const el = document.getElementById(id);
       if (el) el.style.width = Math.max(0, Math.min(100, pct)) + '%';

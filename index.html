@@ -6,21 +6,22 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Blocky World">
+<meta name="apple-mobile-web-app-title" content="Marlene &amp; Florenz's Game">
 <meta name="theme-color" content="#0d1017">
 <meta name="format-detection" content="telephone=no">
-<title>Blocky World</title>
+<title>Marlene &amp; Florenz's Game</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- The server reveals this sign-in screen to everyone. Game scripts and world
-     data are served only after the server authenticates the selected profile. -->
+<!-- The sign-in screen and client bootstrap are public; the server keeps world
+     data and all profile actions behind the selected profile's session. -->
 <section id="auth-screen" class="auth-screen hidden" aria-labelledby="auth-title">
   <div class="auth-card">
     <div class="auth-sparkle" aria-hidden="true">✦</div>
     <p class="auth-kicker">FAMILY WORLD</p>
-    <h1 id="auth-title">Blocky World</h1>
+    <h1 id="auth-title">Marlene &amp; Florenz's Game</h1>
     <p id="auth-lead">Sign in to enter your world.</p>
 
     <form id="login-form" class="auth-form hidden" autocomplete="off">
@@ -89,6 +90,7 @@
   <div class="combo-pop" id="combo-pop"></div>
   <div class="banner" id="banner"></div>
 
+  <div id="equipment-status" class="equipment-status hidden" aria-live="polite"></div>
   <div class="hotbar" id="hotbar"></div>
 </div>
 
@@ -108,7 +110,7 @@
 <!-- ============ MAIN MENU ============ -->
 <div id="menu">
   <div class="menu-card panel">
-    <h1>Blocky World</h1>
+    <h1>Marlene &amp; Florenz's Game</h1>
     <h2>A world for your imagination</h2>
     <p id="world-label" class="world-label"></p>
     <div class="session-row"><span id="player-greeting"></span><button id="btn-logout" class="small hidden" type="button">Sign out</button></div>
@@ -116,6 +118,7 @@
     <div class="btn-grid">
       <button class="primary" id="btn-play">Play &amp; Build</button>
       <button class="blue" id="btn-worlds">Choose World</button>
+      <button id="btn-characters">Choose Character</button>
       <button class="danger"  id="btn-fight">Fight Arena</button>
       <button class="blue"    id="btn-observe">Observe World</button>
       <button             id="btn-controls">Controls</button>
@@ -136,18 +139,56 @@
     <button id="btn-visit-approve" class="primary" type="button">Let them in</button>
     <button id="btn-visit-reject" type="button">Not now</button>
   </div>
+  <button id="btn-visit-mode" class="hidden" type="button">Change shared mode</button>
   <button id="btn-visit-end" type="button">End visit</button>
 </aside>
 
+<div id="visit-mode-dialog" class="visit-mode-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="visit-mode-title">
+  <div class="menu-card panel">
+    <h2 id="visit-mode-title">Choose the shared mode</h2>
+    <p>The host chooses what everyone plays.</p>
+    <div class="btn-grid">
+      <button class="primary" data-visit-mode="play" type="button">Play &amp; Build</button>
+      <button class="danger" data-visit-mode="fight" type="button">Fight Arena</button>
+      <button class="blue" data-visit-mode="observe" type="button">Observe World</button>
+      <button id="btn-visit-mode-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="shared-fight-dialog" class="visit-mode-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="shared-fight-title">
+  <div class="menu-card panel">
+    <h2 id="shared-fight-title">Fight Arena — choose the match</h2>
+    <p>Both players choose the same style to begin.</p>
+    <div class="btn-grid">
+      <button class="danger" data-shared-fight="duel" type="button">Duel</button>
+      <button class="primary" data-shared-fight="coop" type="button">Co-op vs computer</button>
+    </div>
+    <p id="shared-fight-status" aria-live="polite"></p>
+    <button id="btn-fight-lobby-settings" type="button">Settings</button>
+    <button id="btn-fight-lobby-exit" type="button">Exit to Main Menu</button>
+  </div>
+</div>
+
 <!-- ============ PAUSE ============ -->
+<button id="btn-game-settings" class="hidden" type="button" aria-label="Open game settings">Settings</button>
 <div id="pause">
   <div class="menu-card panel">
-    <h2 style="margin-bottom:14px">Paused</h2>
-    <div class="btn-grid">
-      <button class="primary" id="btn-resume">Resume</button>
-      <button id="btn-pause-controls">Controls</button>
-      <button class="danger" id="btn-pause-menu">Main Menu</button>
+    <div id="pause-menu-content">
+      <h2 style="margin-bottom:14px">Paused</h2>
+      <p id="runtime-error-message" class="hidden" role="alert">The game paused after an error. Your latest progress was saved for recovery. Reload the page to continue.</p>
+      <button id="btn-runtime-reload" class="primary hidden" type="button">Reload game</button>
+      <div class="btn-grid">
+        <button class="primary" id="btn-resume">Resume</button>
+        <button id="btn-pause-character">Change Character</button>
+        <button id="btn-pause-controls">Controls</button>
+        <button id="btn-pause-options">Settings</button>
+        <button id="btn-pause-rescue">Get Unstuck</button>
+        <button class="danger" id="btn-pause-menu">Exit to Main Menu</button>
+      </div>
     </div>
+    <div id="pause-character-panel" class="hidden"></div>
+    <div id="pause-extra" class="hidden"></div>
   </div>
 </div>
 
@@ -173,6 +214,8 @@
     <button id="touch-jump" class="tbtn tbtn-jump">JUMP</button>
     <button id="touch-hit" class="tbtn tbtn-hit">BREAK</button>
   </div>
+  <button id="touch-view" class="tbtn tbtn-view hidden" type="button"
+    aria-label="Switch to first-person view" title="Switch camera view">3RD</button>
 </div>
 
 <!-- ============ DESKTOP: click to capture the mouse ============ -->
@@ -186,7 +229,7 @@
 
 <!-- ============ LOADING ============ -->
 <div id="loading">
-  <div class="title">Blocky World</div>
+  <div class="title">Marlene &amp; Florenz's Game</div>
   <div class="bar-outer"><div class="bar-inner" id="load-fill"></div></div>
   <div class="msg" id="load-msg">Carving the world…</div>
 </div>
