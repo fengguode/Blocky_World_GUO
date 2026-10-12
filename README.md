@@ -2,6 +2,15 @@
 
 A joyful voxel game with three modes: build, fight, and observe. It runs in a modern browser without a build step or external runtime assets, and keeps the offline single-player path.
 
+## Visual direction
+
+Use the user-provided screenshot in [Issue #3](https://github.com/fengguode/Blocky_World_GUO/issues/3) as the project's north star: a warm, polished storybook voxel world with lush trees and flowers, a treehouse and welcoming village, reflective water and waterfalls, sunset lighting, rounded wooden construction pieces, expressive animals, original characters, and touch-first controls. Keep the voxel construction and original-character direction. Treat the screenshot as a visual reference, not an asset; do not reproduce third-party characters or use external runtime assets. Offline play remains supported.
+
+## Public QA staging
+
+Public staging is approved only for a separate, sanitized, memory-only QA build. It must exclude family-server access, sign-in and profile data, PINs, saved family worlds, and game network paths. The QA build uses in-memory saves, so a reload starts a fresh world, and remains isolated from the family server and its data. This approval does not authorize exposing the family server. See [PR #32](https://github.com/fengguode/Blocky_World_GUO/pull/32) for the sanitization implementation and verification record; that PR is still Draft and has not been merged.
+
+
 ## Offline single-player
 
 Open `index.html` in a browser. This starts the game locally without contacting a server. Existing browser saves are migrated locally when the game recognizes the previous save format.
