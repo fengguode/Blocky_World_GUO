@@ -1304,7 +1304,7 @@ const Game = {
     } else {
       const raw = BWStorage.getItem(this.saveKey(worldType));
       this.saved = raw ? JSON.parse(raw) : null;
-      Network.activeWorldType = worldType;
+      if (window.Network) Network.activeWorldType = worldType;
       try { BWStorage.setItem(ACTIVE_WORLD_KEY, worldType); } catch (_) {}
     }
     this.activeWorldType = worldType;
