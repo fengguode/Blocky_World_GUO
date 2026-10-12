@@ -75,7 +75,7 @@ const Network = {
   pageAuthId: PAGE_AUTH_ID,
 
   async init() {
-    this.serverMode = location.protocol !== 'file:';
+    this.serverMode = location.protocol !== 'file:' && location.hostname !== 'fengguode.github.io';
     this.bindForms();
     if (!this.serverMode) {
       this.ready = true;
