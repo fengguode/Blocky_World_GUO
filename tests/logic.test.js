@@ -3400,6 +3400,9 @@ H.test('sanitized QA output preserves offline play without network or persistent
     encoding: 'utf8', timeout: 120000,
   });
   H.eq(build.status, 0, 'QA bundle build succeeds: ' + (build.stderr || build.stdout));
+  const generatedCss = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'style.css'), 'utf8');
+  builder.assertWorldPickerCss(generatedCss);
+  H.assert(!/\.auth-screen|\.visit-lobby|\.visit-hud|\.visit-mode-dialog/.test(generatedCss), 'generated CSS omits auth and visit UI rules');
   const memoryCalls = { storage: 0, fetch: 0 };
   const nativeStorageTrap = {
     getItem() { memoryCalls.storage++; throw new Error('persistent storage read'); },

@@ -153,8 +153,12 @@ async function build() {
   const sourceCss = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
   const cssStart = sourceCss.indexOf('/* ---------- local profile sign-in ---------- */');
   const cssEnd = sourceCss.indexOf('/* Shared visibility state for gameplay buttons and nested panels. */', cssStart);
-  if (cssStart < 0 || cssEnd < 0) throw new Error('Expected auth/visit CSS section boundaries were not found');
-  const css = sourceCss.slice(0, cssStart) + sourceCss.slice(cssEnd);
+  const worldCssStart = sourceCss.indexOf('.world-label {', cssStart);
+  const worldCssEnd = sourceCss.indexOf('.visit-lobby {', worldCssStart);
+  if (cssStart < 0 || cssEnd < 0 || worldCssStart < 0 || worldCssEnd < 0) throw new Error('Expected auth/visit/world-picker CSS boundaries were not found');
+  const worldPickerCss = sourceCss.slice(worldCssStart, worldCssEnd);
+  const css = sourceCss.slice(0, cssStart) + worldPickerCss + sourceCss.slice(cssEnd);
+  assertWorldPickerCss(css);
   fs.writeFileSync(path.join(OUT, 'style.css'), css);
 
   const files = [
@@ -205,6 +209,17 @@ function assertNoForbiddenReferences(text) {
   }
 }
 
+function assertWorldPickerCss(css) {
+  const required = [
+    ['world cards use a responsive grid', /\.world-cards\s*\{[^}]*display:\s*grid/i],
+    ['world cards retain their flex layout', /\.world-card\s*\{[^}]*display:\s*flex/i],
+    ['world cards collapse to one column on narrow screens', /@media\s*\(max-width:\s*420px\)\s*\{\s*\.world-cards\s*\{\s*grid-template-columns:\s*1fr/i],
+  ];
+  for (const [label, pattern] of required) {
+    if (!pattern.test(css)) throw new Error('Generated QA CSS is missing required world-picker layout: ' + label);
+  }
+}
+
 function assertSanitizedOutput() {
   const files = fs.readdirSync(path.join(OUT, 'js')).map((name) => path.join(OUT, 'js', name));
   const text = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8') + '\n' + fs.readFileSync(path.join(OUT, 'style.css'), 'utf8') + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
@@ -212,5 +227,5 @@ function assertSanitizedOutput() {
 }
 
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, validateOutputPath, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertWorldPickerCss, validateOutputPath, build };
 
