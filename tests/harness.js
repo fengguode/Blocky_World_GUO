@@ -217,6 +217,7 @@ function load(options) {
     cancelAnimationFrame: noopOp,
     matchMedia: () => ({ matches: !!options.touch, addEventListener: noopOp }),
     localStorage: storage,
+    BW_QA_MEMORY_ONLY: !!options.qaMemoryOnly,
     setTimeout: (f) => { return 0; },
     clearTimeout: noopOp,
     setInterval: () => 0,
@@ -276,8 +277,9 @@ function load(options) {
   const FILES = [
     'js/blocks.js', 'js/gl.js', 'js/world.js', 'js/mesher.js',
     'js/chars.js', 'js/input.js', 'js/camera.js', 'js/entity.js',
-    'js/bot.js', 'js/fight.js', 'js/touch.js', 'js/ui.js', 'js/main.js', 'js/network.js',
+    'js/bot.js', 'js/fight.js', 'js/touch.js', 'js/ui.js', 'js/storage.js', 'js/main.js',
   ];
+  if (options.includeNetwork !== false) FILES.push('js/network.js');
 
   const sources = FILES.map((f) => {
     const p = path.join(ROOT, f);
@@ -296,7 +298,11 @@ function load(options) {
     WORLD_SIZE, CHUNKS_PER_SIDE, CENTRE_CHUNK, WORLD_CENTRE, MIN_EDGE, MAX_EDGE,
     FACES, VERT_FLOATS, buildChunkMesh, disposeMesh, pidx, aoAt, _padBlocks,
     CHARACTERS, characterById, ANIMALS, animalById, PAGE_AUTH_ID, pageAuthIdForLoad,
-    Input, Cam, OBSERVE_VIEWS, Observer, Network,
+    Input, Cam, OBSERVE_VIEWS, Observer,
+    Network: typeof Network === 'undefined' ? undefined : Network,
+    PAGE_AUTH_ID: typeof PAGE_AUTH_ID === 'undefined' ? undefined : PAGE_AUTH_ID,
+    pageAuthIdForLoad: typeof pageAuthIdForLoad === 'undefined' ? undefined : pageAuthIdForLoad,
+    BWStorage,
     GRAVITY, Player, Animal, Projectile, Particles, PROJ_DEFS,
     Bot, Fight, Touch, UI, Audio, Game, migrateWorldSave,
     isTouch: isTouch, frame: frame,
