@@ -2987,6 +2987,40 @@ H.test('the auto profile still picks a distance while it is allowed to', () => {
     + good.Game.settings.renderDist + ')');
 });
 
+H.test('QA memory storage stays in page memory and makes no network calls', () => {
+  const calls = { storage: 0, network: 0 };
+  const nativeStorage = {
+    getItem() { calls.storage++; throw new Error('native localStorage accessed'); },
+    setItem() { calls.storage++; throw new Error('native localStorage accessed'); },
+    removeItem() { calls.storage++; throw new Error('native localStorage accessed'); },
+    key() { calls.storage++; throw new Error('native localStorage accessed'); },
+    get length() { calls.storage++; throw new Error('native localStorage accessed'); },
+  };
+  const fetchTrap = () => { calls.network++; throw new Error('network request attempted'); };
+  const qa = H.load({ qaMemoryOnly: true, includeNetwork: false, storage: nativeStorage, boot: false, fetch: fetchTrap });
+  H.eq(qa.Network, undefined, 'the network module is omitted');
+  H.eq(qa.windowStub.Network, undefined, 'the page has no network API');
+  H.assert(qa.Game && qa.World && qa.Game.render, 'the real game and renderer load');
+  qa.Game.world = qa.World.world = new qa.World(42);
+  qa.Game.load();
+  qa.Game.save();
+  H.assert(qa.BWStorage.getItem(qa.Game.saveKey('normal')), 'game saves use page memory');
+  H.assert(qa.BWStorage.length > 0, 'page memory reports its saved data');
+  H.eq(calls.storage, 0, 'QA never reads or writes native localStorage');
+  H.eq(calls.network, 0, 'QA never makes a network request');
+  const fresh = H.load({ qaMemoryOnly: true, includeNetwork: false, storage: nativeStorage, boot: false, fetch: fetchTrap });
+  H.eq(fresh.BWStorage.length, 0, 'a fresh page starts with empty memory');
+  H.eq(calls.storage, 0, 'fresh QA load still avoids native localStorage');
+});
+
+H.test('normal storage adapter preserves localStorage delegation', () => {
+  const native = H.makeStorage();
+  const ordinary = H.load({ storage: native, boot: false });
+  ordinary.BWStorage.setItem('adapter-check', 'saved');
+  H.eq(ordinary.BWStorage.getItem('adapter-check'), 'saved');
+  H.eq(native.getItem('adapter-check'), 'saved');
+});
+
 H.test('the save contains every key the loader reads', () => {
   const shared = H.makeStorage();
   const first = H.load({ storage: shared, boot: false });
