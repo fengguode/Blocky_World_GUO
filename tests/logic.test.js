@@ -3391,7 +3391,7 @@ H.test('sanitized QA output preserves offline play without network or persistent
   let symlinkRejected = false;
   try { builder.validateOutputPath(path.join(H.ROOT, '.qa-public'), symlinkFs); } catch (_) { symlinkRejected = true; }
   H.eq(symlinkRejected, true, 'a symlinked QA output is rejected before the build removes it');
-  for (const contaminated of ['Network', 'network.js']) {
+  for (const contaminated of ['Network', 'network.js', 'Marlene', 'Florenz', 'Feng', 'PIN', 'auth-profile', 'Choose your profile']) {
     let contaminationRejected = false;
     try { builder.assertNoForbiddenReferences('window.' + contaminated); } catch (_) { contaminationRejected = true; }
     H.eq(contaminationRejected, true, 'sanitizer rejects forbidden token ' + contaminated);
@@ -3400,6 +3400,10 @@ H.test('sanitized QA output preserves offline play without network or persistent
     encoding: 'utf8', timeout: 120000,
   });
   H.eq(build.status, 0, 'QA bundle build succeeds: ' + (build.stderr || build.stdout));
+  const generatedHtml = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'index.html'), 'utf8');
+  H.assert(/<title>Blocky World QA<\/title>/i.test(generatedHtml), 'QA page uses a generic app title');
+  H.assert(/apple-mobile-web-app-title" content="Blocky World QA/i.test(generatedHtml), 'mobile app metadata uses the generic title');
+  H.assert(/<h1>Blocky World QA<\/h1>/i.test(generatedHtml), 'game heading uses the generic title');
   const generatedCss = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'style.css'), 'utf8');
   builder.assertWorldPickerCss(generatedCss);
   H.assert(!/\.auth-screen|\.visit-lobby|\.visit-hud|\.visit-mode-dialog/.test(generatedCss), 'generated CSS omits auth and visit UI rules');

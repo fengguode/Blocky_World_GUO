@@ -149,6 +149,8 @@ async function build() {
     html = removeHtmlElementById(html, id);
   }
   html = html.replace(/\s*<div class="session-row">[\s\S]*?<\/div>\s*/g, '\n');
+  html = html.replace(/Marlene\s*&amp;\s*Florenz's Game/gi, 'Blocky World QA');
+  html = html.replace(/\b(?:Marlene|Florenz|Feng)\b/gi, 'Player');
   fs.writeFileSync(path.join(OUT, 'index.html'), html);
   const sourceCss = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
   const cssStart = sourceCss.indexOf('/* ---------- local profile sign-in ---------- */');
@@ -199,6 +201,7 @@ async function build() {
 function assertNoForbiddenReferences(text) {
   const forbidden = [
     ['server/network/auth UI', /\bserver\b|\bNetwork\b|network\.js|networkRemote|auth-screen|login-form|visit-lobby|visit-hud|visit-mode-dialog|shared-fight-dialog|session-row/i],
+    ['identifying profile/PIN UI', /\b(?:Marlene|Florenz|Feng)\b|\bPIN\b|auth-profile|profile-setup|login-form|choose your profile|sign in/i],
     ['server/visit mode', /serverMode|visitRole|visitActive|visit\/|sharedFight|sharedMode/i],
     ['persistent storage', /localStorage|sessionStorage|indexedDB/i],
     ['network transport', /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|\/api\//i],
