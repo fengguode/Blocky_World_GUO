@@ -6,6 +6,84 @@
 const UI = {
   toastTimer: null,
 
+  drawCharacterPortrait(canvas, character) {
+    if (!canvas || !canvas.getContext) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.fillRect !== 'function') return;
+    const themes = {
+      steve: { skin: '#d8a477', hair: '#704936', shirt: '#4b91ce', pants: '#344d79', shoes: '#55483f' },
+      alex: { skin: '#e0ac7d', hair: '#d3953e', shirt: '#54aa83', pants: '#465a51', shoes: '#76523a' },
+      spider: { skin: '#d7a078', hair: '#3f3445', shirt: '#c94f50', pants: '#385c9a', shoes: '#d04f47' },
+      doll: { skin: '#f2c0a4', hair: '#d960a4', shirt: '#e875b6', pants: '#f0c1d9', shoes: '#b54d88' },
+      golem: { skin: '#9b9b8b', hair: '#77796e', shirt: '#969789', pants: '#77796e', shoes: '#676b64' },
+      ninja: { skin: '#dcaa7c', hair: '#453b38', shirt: '#d16b35', pants: '#373e4c', shoes: '#343942' },
+    };
+    const t = themes[character && character.id] || themes.steve;
+    const color = character && character.color || '#4b91ce';
+    // A deliberately chunky, low-resolution builder portrait. The same shape
+    // works at menu and selection sizes without external art.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    const id = character && character.id;
+    const isGolem = id === 'golem';
+    const headX = isGolem ? 6 : 8;
+    const headW = isGolem ? 36 : 32;
+    ctx.fillStyle = '#fff1cf';
+    ctx.fillRect(14, 2, 20, 2); ctx.fillRect(10, 6, 28, 2);
+    ctx.fillRect(headX, 10, headW, isGolem ? 24 : 20);
+    ctx.fillStyle = t.skin; ctx.fillRect(headX + 2, 12, headW - 4, isGolem ? 20 : 16);
+    ctx.fillStyle = t.hair; ctx.fillRect(headX, 8, headW, 8); ctx.fillRect(headX, 14, 4, 8); ctx.fillRect(headX + headW - 4, 12, 4, 8);
+    if (id === 'alex') {
+      ctx.fillRect(34, 10, 10, 5); ctx.fillRect(38, 14, 8, 8); ctx.fillRect(40, 20, 5, 6); // ranger ponytail
+    } else if (isGolem) {
+      ctx.fillStyle = '#77796e'; ctx.fillRect(6, 8, 36, 5); ctx.fillRect(6, 13, 5, 11);
+      ctx.fillStyle = '#c3c2a9'; ctx.fillRect(9, 16, 4, 3); ctx.fillRect(35, 24, 4, 4); // stone flecks
+    } else if (id === 'doll') {
+      ctx.fillRect(6, 14, 6, 12); ctx.fillRect(36, 14, 6, 12); // long side curls
+      ctx.fillStyle = '#fff1cf'; ctx.fillRect(34, 4, 8, 4); ctx.fillRect(36, 2, 4, 8); // bright bow
+    }
+    ctx.fillStyle = '#44382e'; ctx.fillRect(15, 20, 4, 4); ctx.fillRect(29, 20, 4, 4);
+    ctx.fillStyle = '#fffaf0'; ctx.fillRect(15, 20, 2, 2); ctx.fillRect(29, 20, 2, 2);
+    ctx.fillStyle = t.skin; ctx.fillRect(21, 24, 6, 3);
+    ctx.fillStyle = '#aa5547'; ctx.fillRect(20, 29, 9, 2);
+    if (id === 'spider') {
+      ctx.fillStyle = '#37699a'; ctx.fillRect(10, 19, 28, 7); // bright original hero mask
+      ctx.fillStyle = '#fff3d9'; ctx.fillRect(14, 20, 7, 3); ctx.fillRect(27, 20, 7, 3);
+      ctx.fillStyle = '#e3a878'; ctx.fillRect(19, 26, 10, 5);
+    } else if (id === 'ninja') {
+      ctx.fillStyle = '#e6b657'; ctx.fillRect(8, 17, 32, 3); ctx.fillRect(34, 15, 8, 3); // tied headband
+      ctx.fillStyle = '#413b3b'; ctx.fillRect(12, 25, 24, 6); // lower face wrap
+    }
+    ctx.fillStyle = '#f7d394'; ctx.fillRect(isGolem ? 4 : 6, 34, isGolem ? 40 : 36, 3);
+    const torsoX = isGolem ? 5 : 8;
+    const torsoW = isGolem ? 38 : 32;
+    ctx.fillStyle = t.shirt;
+    ctx.fillRect(torsoX, 36, torsoW, 16);
+    ctx.fillRect(isGolem ? 0 : 2, 38, isGolem ? 10 : 8, 13);
+    ctx.fillRect(isGolem ? 38 : 38, 38, isGolem ? 10 : 8, 13);
+    ctx.fillStyle = color; ctx.fillRect(20, 36, 8, 13); // signature chest patch
+    if (id === 'doll') {
+      ctx.fillStyle = t.shirt; ctx.fillRect(6, 48, 36, 5); ctx.fillRect(10, 53, 28, 5); // flared dress hem
+      ctx.fillStyle = '#fff1cf'; ctx.fillRect(11, 56, 3, 3); ctx.fillRect(21, 56, 3, 3); ctx.fillRect(33, 56, 3, 3);
+    }
+    ctx.fillStyle = t.pants;
+    if (!isGolem && id !== 'doll') { ctx.fillRect(10, 52, 12, 8); ctx.fillRect(26, 52, 12, 8); }
+    else if (isGolem) { ctx.fillRect(8, 52, 14, 8); ctx.fillRect(26, 52, 14, 8); }
+    else { ctx.fillRect(10, 57, 12, 3); ctx.fillRect(26, 57, 12, 3); }
+    ctx.fillStyle = t.shoes; ctx.fillRect(isGolem ? 6 : 8, 60, isGolem ? 17 : 15, 4); ctx.fillRect(25, 60, isGolem ? 17 : 15, 4);
+    if (id === 'ninja') { ctx.fillStyle = '#f2c46b'; ctx.fillRect(5, 39, 5, 4); ctx.fillRect(38, 41, 5, 4); }
+    // Tiny leaf-like pixels make the portrait feel at home in the storybook world.
+    ctx.fillStyle = '#829b53'; ctx.fillRect(1, 31, 5, 3); ctx.fillRect(42, 29, 5, 3);
+  },
+
+  mountPortraits(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-portrait]').forEach(canvas => {
+      const character = characterById(canvas.dataset.portrait);
+      this.drawCharacterPortrait(canvas, character);
+    });
+  },
+
   init() {
     const $ = (id) => document.getElementById(id);
 
@@ -64,6 +142,13 @@ const UI = {
     document.getElementById('pause').classList.remove('show');
     const label = document.getElementById('world-label');
     if (label) label.textContent = 'Current world: ' + (Game.activeWorldType === 'flat' ? 'Flat World' : 'Normal World');
+    const character = characterById(Game.pick.p1);
+    const portrait = document.getElementById('menu-character-preview');
+    if (portrait) this.drawCharacterPortrait(portrait, character);
+    const name = document.getElementById('menu-character-name');
+    const style = document.getElementById('menu-character-style');
+    if (name) name.textContent = character.name;
+    if (style) style.textContent = character.style;
     if (window.Network && Network.serverMode) Network.refreshVisitLobby();
   },
 
@@ -92,8 +177,8 @@ const UI = {
   /* ---------- character select ---------- */
   showCharSelect() {
     const box = document.getElementById('menu-extra');
-    const p1 = Game.pick.p1 || 'steve';
-    const p2 = Game.pick.p2 || 'golem';
+    let p1 = Game.pick.p1 || 'steve';
+    let p2 = Game.pick.p2 || 'golem';
     let editing = 1;
 
     // On a phone there is only room for one pair of thumbs, so the second
@@ -108,7 +193,10 @@ const UI = {
     const render = () => {
       const cards = CHARACTERS.map(c => {
         const sel = (editing === 1 && c.id === p1) || (editing === 2 && c.id === p2);
-        return '<div class="char-card ' + (sel ? 'sel' : '') + '" data-id="' + c.id + '">' +
+        return '<div class="char-card ' + (sel ? 'sel' : '') + '" data-id="' + c.id + '"' +
+          ' role="button" tabindex="0" aria-pressed="' + sel + '">' +
+          '<canvas class="character-portrait" width="48" height="64" data-portrait="' + c.id + '" aria-hidden="true"></canvas>' +
+          '<div class="char-card-copy">' +
           '<div class="cname" style="color:' + c.color + '">' + c.name + '</div>' +
           '<div class="cstyle">' + c.style + '</div>' +
           '<div class="cdesc">' + c.desc + '</div>' +
@@ -119,7 +207,7 @@ const UI = {
           '<div class="stat-line"><span>RANGE</span><span class="track"><i style="width:' +
             (c.stats.range * 100) + '%;background:' + c.color + '"></i></span></div>' +
           '<div class="cdesc" style="margin-top:8px;color:' + c.color + '">ULT: ' + c.ultName + '</div>' +
-          '<div class="cdesc" style="font-size:11px;opacity:.65">' + c.ultDesc + '</div>' +
+          '<div class="cdesc" style="font-size:11px;opacity:.65">' + c.ultDesc + '</div></div>' +
           '</div>';
       }).join('');
 
@@ -157,13 +245,24 @@ const UI = {
           '<button id="back-menu">Back</button>' +
         '</div>';
 
+      UI.mountPortraits(box);
+
       box.querySelector('#slot1').onclick = () => { editing = 1; render(); };
       box.querySelector('#slot2').onclick = () => { editing = 2; render(); };
       box.querySelectorAll('.char-card').forEach(card => {
-        card.onclick = () => {
-          if (editing === 1) Game.pick.p1 = card.dataset.id;
-          else Game.pick.p2 = card.dataset.id;
+        const selectCard = () => {
+          if (editing === 1) Game.pick.p1 = p1 = card.dataset.id;
+          else Game.pick.p2 = p2 = card.dataset.id;
           render();
+          const selectedCard = box.querySelector('.char-card[data-id="' + card.dataset.id + '"]');
+          if (selectedCard) selectedCard.focus();
+        };
+        card.onclick = selectCard;
+        card.onkeydown = (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectCard();
+          }
         };
       });
       const botT = box.querySelector('#bot-toggle');
@@ -195,12 +294,17 @@ const UI = {
         '<div class="character-choices">' + CHARACTERS.map(c =>
           '<button type="button" class="character-choice ' + (c.id === selected.id ? 'selected' : '') + '"' +
             ' data-character="' + c.id + '" aria-pressed="' + (c.id === selected.id) + '">' +
+            '<canvas class="character-portrait" width="48" height="64" data-portrait="' + c.id + '" aria-hidden="true"></canvas>' +
+            '<span class="character-choice-copy">' +
             '<span class="choice-name" style="color:' + c.color + '">' + c.name + '</span>' +
             '<span class="choice-style">' + c.style + '</span>' +
+            '</span>' +
           '</button>'
         ).join('') + '</div>' +
         '<p class="character-current">Select a block to build or the shovel to remove · Blocks are unlimited</p>' +
         '<div class="btn-grid"><button class="primary" id="done-character-select">Done</button></div>';
+
+      UI.mountPortraits(box);
 
       box.querySelectorAll('.character-choice').forEach(button => {
         button.onclick = () => {
