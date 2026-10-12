@@ -408,6 +408,20 @@ T.ice = pushTile('ice', pixelArtTile(PAL.ice, [
   { x: 1, y: 9, rows: ['dd  ', '  lll', ' lll ', '  dd '], colors: { l: shadeColor(PAL.ice, 28), d: shadeColor(PAL.ice, -32) } },
   { x: 11, y: 12, rows: ['ll ', 'lll d', ' dd '], colors: { l: shadeColor(PAL.ice, 28), d: shadeColor(PAL.ice, -32) } },
 ]));
+function flowerTile(name, petals, center) {
+  return pushTile(name, function (d) {
+    fillTile(d, [0, 0, 0], 0);
+    const stem = [62, 156, 105], leaf = [84, 190, 126];
+    stampTile(d, 6, 3, ['  ppp  ', ' ppppp ', 'pppcppp', ' ppppp ', '  ppp  '],
+      { p: petals, c: center });
+    stampTile(d, 7, 8, [' s ', ' s ', ' s ', 'sls', ' ss', '  s'],
+      { s: stem, l: leaf });
+  });
+}
+T.flower_rose = flowerTile('flower_rose', [238, 116, 146], [255, 220, 112]);
+T.flower_sun = flowerTile('flower_sun', [255, 208, 74], [255, 242, 196]);
+T.flower_blue = flowerTile('flower_blue', [122, 190, 246], [255, 220, 112]);
+
 T.gold = pushTile('gold', pixelArtTile(PAL.gold, [
   { x: 0, y: 1, rows: ['  vv  ', ' vllv ', 'vvllvv', '  vv  '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
   { x: 8, y: 0, rows: ['  vv  ', ' vvllv', 'vllvv ', ' vv   '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
@@ -586,6 +600,9 @@ const BLOCKS = [
   { id: 19, name: 'Flowing Water 3', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
   { id: 20, name: 'Flowing Water 2', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
   { id: 21, name: 'Flowing Water 1', solid: false, opaque: false, liquid: true, tiles: { all: T.water } },
+  { id: 22, name: 'Rose', solid: false, opaque: false, cutout: true, plant: true, tiles: { all: T.flower_rose } },
+  { id: 23, name: 'Sunflower', solid: false, opaque: false, cutout: true, plant: true, tiles: { all: T.flower_sun } },
+  { id: 24, name: 'Blue Flower', solid: false, opaque: false, cutout: true, plant: true, tiles: { all: T.flower_blue } },
 ];
 
 for (const b of BLOCKS) {

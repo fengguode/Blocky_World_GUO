@@ -294,6 +294,7 @@ function load(options) {
     createGL, createProgram, M4, buildCube, buildQuad, buildSprite,
     CHUNK, WORLD_H, SEA_LEVEL, Chunk, World, noise2, fbm,
     WORLD_SIZE, CHUNKS_PER_SIDE, CENTRE_CHUNK, WORLD_CENTRE, MIN_EDGE, MAX_EDGE,
+    isStorybookWorld,
     FACES, VERT_FLOATS, buildChunkMesh, disposeMesh, pidx, aoAt, _padBlocks,
     CHARACTERS, characterById, ANIMALS, animalById, PAGE_AUTH_ID, pageAuthIdForLoad,
     Input, Cam, OBSERVE_VIEWS, Observer, Network,

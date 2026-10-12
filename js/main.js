@@ -6,6 +6,10 @@
 const SAVE_KEY = 'blocky-world-local-save-v1';
 const ACTIVE_WORLD_KEY = 'blocky-world-selected-type';
 
+function isStorybookWorld(world) {
+  return !!world && world.worldType !== 'flat' && world.seed === STORYBOOK_SEED;
+}
+
 function migrateWorldSave(saved) {
   if (!saved || saved.worldSize === WORLD_SIZE) return saved;
   const hasExpandedCoordinates = saved.worldSize == null && (() => {
@@ -282,6 +286,8 @@ const Game = {
       uniform float uTintR;
       uniform float uTintG;
       uniform float uTintB;
+      uniform vec2 uStorybookCenter;
+      uniform float uStorybookActive;
       out vec4 frag;
 
       void main() {
@@ -289,6 +295,10 @@ const Game = {
         if (c.a < uAlphaCut) discard;
         vec3 col = c.rgb * vLight;
         col *= vec3(uTintR, uTintG, uTintB);
+        if (uStorybookActive > 0.5) {
+          float sceneWarmth = 1.0 - smoothstep(24.0, 60.0, distance(vWorld.xz, uStorybookCenter));
+          col *= mix(vec3(1.0), vec3(1.2, 1.08, 0.72), sceneWarmth * 0.66);
+        }
         if (uIsLiquid > 0.5) {
           // Two moving light bands mimic travelling ripples and soft caustics.
           float waveA = sin(vWorld.x * 0.42 + uTime * 1.15) *
@@ -296,7 +306,13 @@ const Game = {
           float waveB = sin((vWorld.x + vWorld.z) * 0.72 - uTime * 1.4);
           float crest = smoothstep(0.92, 0.99, waveA + waveB * 0.28);
           col *= 1.0 + waveA * 0.045 + waveB * 0.025;
-          col = mix(col, vec3(0.68, 0.88, 0.98), crest * 0.16);
+          if (uStorybookActive > 0.5) {
+            float clearingGlow = 1.0 - smoothstep(7.0, 42.0, distance(vWorld.xz, uStorybookCenter));
+            vec3 rippleColor = mix(vec3(0.68, 0.88, 0.98), vec3(1.0, 0.78, 0.48), clearingGlow * 0.86);
+            col = mix(col, rippleColor, clearingGlow * 0.09 + crest * 0.3);
+          } else {
+            col = mix(col, vec3(0.68, 0.88, 0.98), crest * 0.16);
+          }
         }
         col = mix(col, uFogColor, vFog);
         frag = vec4(col, c.a);
@@ -1897,6 +1913,17 @@ const Game = {
     const top = mix([0.025,0.035,0.10], [0.20,0.52,0.92]);
     const bottom = mix([0.10,0.13,0.24], [0.72,0.86,1.0]);
     bottom[0] += dawn * 0.12;
+    const player = this.players && this.players[0];
+    const welcomeWarmth = isStorybookWorld(this.world) && player &&
+      Math.hypot(player.pos[0] - WORLD_CENTRE, player.pos[2] - WORLD_CENTRE) < 56;
+    if (welcomeWarmth) {
+      const warmTop = [0.48, 0.26, 0.39];
+      const warmBottom = [1.0, 0.56, 0.34];
+      for (let i = 0; i < 3; i++) {
+        top[i] += (warmTop[i] - top[i]) * 0.32;
+        bottom[i] += (warmBottom[i] - bottom[i]) * 0.42;
+      }
+    }
     return { top, bottom, star: Math.max(0, 1 - t * 2), night: 1 - t };
   },
 
@@ -1976,6 +2003,10 @@ const Game = {
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
     gl.uniform1f(prog.u.uTime, this.time);
+    const showStorybook = isStorybookWorld(this.world);
+    const showCenter = showStorybook ? WORLD_CENTRE : -1000000;
+    gl.uniform2f(prog.u.uStorybookCenter, showCenter, showCenter);
+    gl.uniform1f(prog.u.uStorybookActive, showStorybook ? 1 : 0);
 
     // opaque
     gl.uniform1f(prog.u.uAlphaCut, 0.5);
@@ -2038,6 +2069,8 @@ const Game = {
     gl.uniform3f(prog.u.uFogColor, sky.bottom[0], sky.bottom[1], sky.bottom[2]);
     gl.uniform1f(prog.u.uDayLight, dayF);
     gl.uniform1f(prog.u.uTime, this.time);
+    gl.uniform2f(prog.u.uStorybookCenter, showCenter, showCenter);
+    gl.uniform1f(prog.u.uStorybookActive, showStorybook ? 1 : 0);
     gl.uniform1f(prog.u.uTintR, 1);
     gl.uniform1f(prog.u.uTintG, 1);
     gl.uniform1f(prog.u.uTintB, 1);
