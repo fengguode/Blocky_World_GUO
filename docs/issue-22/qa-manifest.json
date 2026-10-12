@@ -9,11 +9,22 @@
     "storybook_ui_test_js": "6 portraits, 12 UI structure checks passed",
     "node_check_js_ui_js": "passed",
     "git_diff_check": "passed",
-    "independent_review": "no actionable findings at head f12e7f9fdf8f05b8642aac69679f2a284496056f"
+    "independent_review": "no actionable findings at head f12e7f9fdf8f05b8642aac69679f2a284496056f",
+    "pages_build": "passed; run 38250227125",
+    "responsive_viewport": "650x884; menu and gameplay paths visible",
+    "performance_650x884_before": "60 FPS; p95 16.8 ms; JS heap 26.8 MiB",
+    "performance_650x884_after": "60 FPS; p95 16.8 ms; JS heap 23.4 MiB",
+    "browser_interaction": "mouse/accessibility activation selected Alex and launched Play & Build at 650x884"
   },
   "touch_acceptance": {
-    "touch_only_walkthrough": "pending",
-    "physical_ios_safari": "not tested",
-    "available_pointer_path": "desktop mouse/accessibility clicks; not touch-only"
+    "automated_touch_event_coverage": [
+      "mobile action and view buttons release when a finger lifts",
+      "touch can select a hotbar slot after UI builds the slots",
+      "a typical thumb-width touch swipe makes a useful camera turn",
+      "mobile auth and menu panels retain vertical touch scrolling",
+      "the touch layer attaches its listeners on a touch device only"
+    ],
+    "browser_touch_event_synthesis": "not available in this browser API; browser clicks were mouse/accessibility input",
+    "physical_ios_safari": "not tested"
   }
 }
