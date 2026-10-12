@@ -46,7 +46,7 @@ const Touch = {
     document.addEventListener('contextmenu', stop);
     document.addEventListener('touchmove', (e) => {
       // Let native scrolling and synthesized click events work for UI panels.
-      if (e.target.closest && e.target.closest('#menu, .menu-card, #hotbar')) return;
+      if (e.target.closest && e.target.closest('#menu, .menu-card, .auth-screen, #hotbar')) return;
       e.preventDefault();
     }, { passive: false });
     // iOS Safari can fail to scroll fixed overlays inside the fixed game page.

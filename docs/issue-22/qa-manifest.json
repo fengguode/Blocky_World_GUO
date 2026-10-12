@@ -1,0 +1,19 @@
+{
+  "pull_request": "https://github.com/fengguode/Blocky_World_GUO/pull/30",
+  "head_sha": "f12e7f9fdf8f05b8642aac69679f2a284496056f",
+  "base_sha": "bc2bfcdd3e46c2a80f2277385861dd4bfa31f386",
+  "before_ui_source": "bc2bfcdd3e46c2a80f2277385861dd4bfa31f386",
+  "after_ui_source": "f12e7f9fdf8f05b8642aac69679f2a284496056f",
+  "verification": {
+    "node_tests_run_js": "22 suites, 221 passed, 0 failed",
+    "storybook_ui_test_js": "6 portraits, 12 UI structure checks passed",
+    "node_check_js_ui_js": "passed",
+    "git_diff_check": "passed",
+    "independent_review": "no actionable findings at head f12e7f9fdf8f05b8642aac69679f2a284496056f"
+  },
+  "touch_acceptance": {
+    "touch_only_walkthrough": "pending",
+    "physical_ios_safari": "not tested",
+    "available_pointer_path": "desktop mouse/accessibility clicks; not touch-only"
+  }
+}
