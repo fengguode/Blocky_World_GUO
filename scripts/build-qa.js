@@ -96,12 +96,17 @@ function removeHtmlElementById(html, id) {
 
 function stripNetworkOnlyMain(source) {
   source = source.replace(/\bconst animalHit = breakJustPressed && \(this\.tryHitAnimal\(p\) \|\| this\.tryHitVisitingPlayer\(p\)\);/, 'const animalHit = breakJustPressed && this.tryHitAnimal(p);');
-  for (const name of [
+  const networkOnlyMethods = [
     'tryHitVisitingPlayer', 'startHostedFightPreview', 'openSharedFightChoice',
     'startSharedFight', 'serializeSharedFightState', 'applySharedFightState',
-    'enterSharedWorld', 'restorePersonalWorld',
-  ]) source = removeObjectMethod(source, name);
-  source = removeObjectMethod(source, 'enterSharedMode');
+    'enterSharedWorld', 'restorePersonalWorld', 'enterSharedMode',
+  ];
+  for (const name of networkOnlyMethods) source = removeObjectMethod(source, name);
+  for (const name of networkOnlyMethods) {
+    if (new RegExp('^\\s{2}(?:async\\s+)?' + name + '\\s*\\(', 'm').test(source)) {
+      throw new Error('Network-only Game method remains in QA output: ' + name);
+    }
+  }
   const enterMode = [
     '  enterMode(mode) {',
     "    const next = ['play', 'fight', 'observe'].includes(mode) ? mode : 'play';",
