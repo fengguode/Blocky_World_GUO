@@ -177,8 +177,8 @@ const UI = {
   /* ---------- character select ---------- */
   showCharSelect() {
     const box = document.getElementById('menu-extra');
-    const p1 = Game.pick.p1 || 'steve';
-    const p2 = Game.pick.p2 || 'golem';
+    let p1 = Game.pick.p1 || 'steve';
+    let p2 = Game.pick.p2 || 'golem';
     let editing = 1;
 
     // On a phone there is only room for one pair of thumbs, so the second
@@ -251,9 +251,11 @@ const UI = {
       box.querySelector('#slot2').onclick = () => { editing = 2; render(); };
       box.querySelectorAll('.char-card').forEach(card => {
         const selectCard = () => {
-          if (editing === 1) Game.pick.p1 = card.dataset.id;
-          else Game.pick.p2 = card.dataset.id;
+          if (editing === 1) Game.pick.p1 = p1 = card.dataset.id;
+          else Game.pick.p2 = p2 = card.dataset.id;
           render();
+          const selectedCard = box.querySelector('.char-card[data-id="' + card.dataset.id + '"]');
+          if (selectedCard) selectedCard.focus();
         };
         card.onclick = selectCard;
         card.onkeydown = (event) => {

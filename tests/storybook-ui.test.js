@@ -56,5 +56,7 @@ assert.match(fs.readFileSync(path.join(root, 'js/touch.js'), 'utf8'), /menu\.scr
 assert.match(css, /#touch-buttons\s*\{[\s\S]*?pointer-events:\s*none/, 'touch actions keep the action group from blocking look input');
 assert.match(ui, /role="button" tabindex="0" aria-pressed=/, 'fight character cards can receive keyboard focus');
 assert.match(ui, /event\.key === 'Enter' \|\| event\.key === ' '/, 'fight character cards activate with Enter or Space');
+assert.match(ui, /const selectedCard = box\.querySelector\('\.char-card\[data-id="' \+ card\.dataset\.id \+ '"\]'\);\s*if \(selectedCard\) selectedCard\.focus\(\);/, 'fight character focus returns to the selected card after rerender');
+assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*?animation-iteration-count:\s*1\s*!important/, 'reduced-motion mode prevents rapid infinite animation loops');
 
-console.log('Portrait rendering passed for 6 characters; 10 UI structure checks passed.');
+console.log('Portrait rendering passed for 6 characters; 12 UI structure checks passed.');
