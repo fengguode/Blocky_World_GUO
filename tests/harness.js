@@ -297,7 +297,7 @@ function load(options) {
     CHUNK, WORLD_H, SEA_LEVEL, Chunk, World, noise2, fbm,
     WORLD_SIZE, CHUNKS_PER_SIDE, CENTRE_CHUNK, WORLD_CENTRE, MIN_EDGE, MAX_EDGE,
     FACES, VERT_FLOATS, buildChunkMesh, disposeMesh, pidx, aoAt, _padBlocks,
-    CHARACTERS, characterById, ANIMALS, animalById, PAGE_AUTH_ID, pageAuthIdForLoad,
+    CHARACTERS, characterById, ANIMALS, animalById,
     Input, Cam, OBSERVE_VIEWS, Observer,
     Network: typeof Network === 'undefined' ? undefined : Network,
     PAGE_AUTH_ID: typeof PAGE_AUTH_ID === 'undefined' ? undefined : PAGE_AUTH_ID,
