@@ -6,12 +6,12 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const ROOT = path.resolve(process.env.BW_QA_SOURCE_DIR || REPO_ROOT);
 const OUT = path.join(REPO_ROOT, '.qa-public');
 
-function validateOutputPath(candidate) {
+function validateOutputPath(candidate, fileSystem = fs) {
   const resolved = path.resolve(candidate);
   if (resolved !== OUT || path.dirname(resolved) !== REPO_ROOT || path.basename(resolved) !== '.qa-public') {
     throw new Error('QA output must be the dedicated .qa-public directory');
   }
-  if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) {
+  if (fileSystem.existsSync(resolved) && fileSystem.lstatSync(resolved).isSymbolicLink()) {
     throw new Error('QA output directory must not be a symbolic link');
   }
   return resolved;
@@ -139,6 +139,7 @@ function stripNetworkOnlyMain(source) {
 }
 
 async function build() {
+  validateOutputPath(OUT);
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
   let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
@@ -191,11 +192,9 @@ async function build() {
   assertSanitizedOutput();
 }
 
-function assertSanitizedOutput() {
-  const files = fs.readdirSync(path.join(OUT, 'js')).map((name) => path.join(OUT, 'js', name));
-  const text = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8') + '\n' + fs.readFileSync(path.join(OUT, 'style.css'), 'utf8') + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
+function assertNoForbiddenReferences(text) {
   const forbidden = [
-    ['server/network/auth UI', /\\bserver\\b|\\bNetwork\\b|network\\.js|networkRemote|auth-screen|login-form|visit-lobby|visit-hud|visit-mode-dialog|shared-fight-dialog|session-row/i],
+    ['server/network/auth UI', /\bserver\b|\bNetwork\b|network\.js|networkRemote|auth-screen|login-form|visit-lobby|visit-hud|visit-mode-dialog|shared-fight-dialog|session-row/i],
     ['server/visit mode', /serverMode|visitRole|visitActive|visit\/|sharedFight|sharedMode/i],
     ['persistent storage', /localStorage|sessionStorage|indexedDB/i],
     ['network transport', /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|\/api\//i],
@@ -206,6 +205,12 @@ function assertSanitizedOutput() {
   }
 }
 
+function assertSanitizedOutput() {
+  const files = fs.readdirSync(path.join(OUT, 'js')).map((name) => path.join(OUT, 'js', name));
+  const text = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8') + '\n' + fs.readFileSync(path.join(OUT, 'style.css'), 'utf8') + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
+  assertNoForbiddenReferences(text);
+}
+
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, validateOutputPath, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, validateOutputPath, build };
 

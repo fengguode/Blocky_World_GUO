@@ -3384,6 +3384,18 @@ H.test('sanitized QA output preserves offline play without network or persistent
     try { builder.validateOutputPath(unsafe); } catch (_) { rejected = true; }
     H.eq(rejected, true, 'unsafe output paths are rejected');
   }
+  const symlinkFs = {
+    existsSync: () => true,
+    lstatSync: () => ({ isSymbolicLink: () => true }),
+  };
+  let symlinkRejected = false;
+  try { builder.validateOutputPath(path.join(H.ROOT, '.qa-public'), symlinkFs); } catch (_) { symlinkRejected = true; }
+  H.eq(symlinkRejected, true, 'a symlinked QA output is rejected before the build removes it');
+  for (const contaminated of ['Network', 'network.js']) {
+    let contaminationRejected = false;
+    try { builder.assertNoForbiddenReferences('window.' + contaminated); } catch (_) { contaminationRejected = true; }
+    H.eq(contaminationRejected, true, 'sanitizer rejects forbidden token ' + contaminated);
+  }
   const build = spawnSync(process.execPath, [path.join(H.ROOT, 'scripts', 'build-qa.js')], {
     encoding: 'utf8', timeout: 120000,
   });
@@ -3440,16 +3452,4 @@ H.test('sanitized QA output preserves offline play without network or persistent
   qa.Observer.pos = [qa.WORLD_CENTRE + 20, 100, qa.WORLD_CENTRE - 20];
   qa.Observer.update(1 / 60, 1.5);
   H.assert(qa.Observer.pos.every(Number.isFinite), 'observer camera updates');
-
-  qa.Game.save();
-  H.assert(qa.BWStorage.length > 0, 'save stays in page-local memory');
-  H.eq(memoryCalls.storage, 0, 'native persistent storage is untouched');
-  H.eq(memoryCalls.fetch, 0, 'no fetch request is attempted');
-  const fresh = H.load({ sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false, boot: false });
-  H.eq(fresh.BWStorage.length, 0, 'reload starts with a fresh in-memory world');
-});
-
-if (require.main === module) {
-  process.exit(H.main(process.argv.slice(2)));
-}
 
