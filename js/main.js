@@ -1288,7 +1288,7 @@ const Game = {
     const seed = Math.floor(Math.random() * 100000);
     this.pendingSeed = seed;
     this.saved = null;
-    if (!window.Network || !Network.serverMode) localStorage.removeItem(this.saveKey(this.activeWorldType));
+    if (!window.Network || !Network.serverMode) BWStorage.removeItem(this.saveKey(this.activeWorldType));
     this.state = 'loading';
     this.buildWorld(this.settings.renderDist).then(() => {
       this.state = 'menu';
@@ -1318,10 +1318,10 @@ const Game = {
         return;
       }
     } else {
-      const raw = localStorage.getItem(this.saveKey(worldType));
+      const raw = BWStorage.getItem(this.saveKey(worldType));
       this.saved = raw ? JSON.parse(raw) : null;
-      Network.activeWorldType = worldType;
-      try { localStorage.setItem(ACTIVE_WORLD_KEY, worldType); } catch (_) {}
+      if (window.Network) Network.activeWorldType = worldType;
+      try { BWStorage.setItem(ACTIVE_WORLD_KEY, worldType); } catch (_) {}
     }
     this.activeWorldType = worldType;
     if (this.saved && this.saved.settings) {
@@ -1434,16 +1434,16 @@ const Game = {
         if (Network.visitRole === 'owner' && Network.visitActive) return false;
         return Network.saveWorld(snapshot, { resetEdits: !!resetEdits });
       }
-      localStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
+      BWStorage.setItem(this.saveKey(this.activeWorldType), JSON.stringify(snapshot));
       return { status: 'saved' };
     } catch (e) { return false; /* storage may be blocked; the game still works */ }
   },
 
   load() {
     try {
-      this.activeWorldType = localStorage.getItem(ACTIVE_WORLD_KEY) === 'flat' ? 'flat' : 'normal';
+      this.activeWorldType = BWStorage.getItem(ACTIVE_WORLD_KEY) === 'flat' ? 'flat' : 'normal';
       this.pendingWorldType = this.activeWorldType;
-      let raw = window.Network && Network.serverMode ? null : localStorage.getItem(this.saveKey(this.activeWorldType));
+      let raw = window.Network && Network.serverMode ? null : BWStorage.getItem(this.saveKey(this.activeWorldType));
       if (window.Network && Network.serverMode) {
         this.saved = Network.savedWorld;
       } else if (raw) {
@@ -1451,16 +1451,16 @@ const Game = {
       } else if (this.activeWorldType === 'normal' && !(window.Network && Network.serverMode)) {
         // Migrate a prior local save by its game-specific data shape while
         // leaving the original browser entry untouched.
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
+        for (let i = 0; i < BWStorage.length; i++) {
+          const key = BWStorage.key(i);
           if (key === ACTIVE_WORLD_KEY || key === this.saveKey('flat')) continue;
-          const candidate = localStorage.getItem(key);
+          const candidate = BWStorage.getItem(key);
           try {
             const value = JSON.parse(candidate);
             if (value && Number.isInteger(value.seed) && value.pick && typeof value.pick === 'object' &&
                 value.settings && typeof value.settings === 'object' && Number.isInteger(value.slot)) {
               this.saved = value;
-              localStorage.setItem(SAVE_KEY, candidate);
+              BWStorage.setItem(SAVE_KEY, candidate);
               break;
             }
           } catch (_) { /* this browser entry is not a game save */ }
