@@ -3013,6 +3013,18 @@ H.test('QA memory storage stays in page memory and makes no network calls', () =
   H.eq(calls.storage, 0, 'fresh QA load still avoids native localStorage');
 });
 
+H.test('QA can switch worlds without a network module', async () => {
+  const qa = H.load({ qaMemoryOnly: true, includeNetwork: false, boot: false });
+  qa.Game.save = () => true;
+  qa.Game.buildWorld = async () => {};
+  qa.UI.showMainMenu = () => {};
+  qa.UI.toast = () => {};
+  await qa.Game.selectWorld('flat');
+  H.eq(qa.Game.activeWorldType, 'flat', 'the requested world becomes active');
+  H.eq(qa.BWStorage.getItem('blocky-world-selected-type'), 'flat', 'the selected world uses memory storage');
+  H.eq(qa.Network, undefined, 'the network module remains absent');
+});
+
 H.test('normal storage adapter preserves localStorage delegation', () => {
   const native = H.makeStorage();
   const ordinary = H.load({ storage: native, boot: false });
