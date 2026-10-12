@@ -53,6 +53,8 @@ A second local player can use a gamepad or arrow keys plus Numpad 1 / 2 / 3.
 
 ## Memory-only QA preview
 
+Public GitHub Pages staging is approved only for this sanitized static QA preview. It contains no family, server, account, or PIN data, and save data exists only in the current page's memory; reloading starts with a fresh world. This approval does not cover the normal game or family server. The exact Pages staging path is pending Design confirmation and will be recorded here before staging.
+
 `npm ci` installs the build-only minifier. Run `npm run build:qa` to create a static, network-free preview in `.qa-public/`. The QA entry omits the server bridge and shared-visit paths and keeps saves only in the current page's memory; reloading the page starts with a fresh world. It retains offline world generation, rendering, Fight Arena, and Observe World. The normal `index.html` and its persistent offline saves are unchanged.
 
 The build fails if the generated preview contains server, visit, network transport, or persistent browser-storage references. It is intended for the separate QA staging flow and does not publish or deploy the preview.
