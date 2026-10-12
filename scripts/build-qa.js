@@ -4,7 +4,18 @@ const terser = require('terser');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const ROOT = path.resolve(process.env.BW_QA_SOURCE_DIR || REPO_ROOT);
-const OUT = path.resolve(process.env.BW_QA_OUT_DIR || path.join(REPO_ROOT, '.qa-public'));
+const OUT = path.join(REPO_ROOT, '.qa-public');
+
+function validateOutputPath(candidate) {
+  const resolved = path.resolve(candidate);
+  if (resolved !== OUT || path.dirname(resolved) !== REPO_ROOT || path.basename(resolved) !== '.qa-public') {
+    throw new Error('QA output must be the dedicated .qa-public directory');
+  }
+  if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) {
+    throw new Error('QA output directory must not be a symbolic link');
+  }
+  return resolved;
+}
 
 function matchingBrace(source, open) {
   let depth = 0, quote = null, lineComment = false, blockComment = false, escaped = false;
@@ -30,7 +41,7 @@ function matchingBrace(source, open) {
 function removeObjectMethod(source, name) {
   const re = new RegExp('^\\s{2}(?:async\\s+)?' + name + '\\s*\\([^\\n]*?\\)\\s*\\{', 'm');
   const match = re.exec(source);
-  if (!match) throw new Error('Expected network-only Game method not found: ' + name);
+  if (!match) return source;
   const start = match.index;
   const open = source.indexOf('{', start);
   const close = matchingBrace(source, open);
@@ -66,6 +77,23 @@ function removeIfBlock(source, condition) {
   return source.slice(0, start) + source.slice(end);
 }
 
+function removeHtmlElementById(html, id) {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const opening = new RegExp('<([a-z][a-z0-9:-]*)\\b(?=[^>]*\\bid=["\\\']' + escaped + '["\\\'])[^>]*>', 'i');
+  const match = opening.exec(html);
+  if (!match) throw new Error('Expected network/auth UI element not found: ' + id);
+  const tag = match[1];
+  const tags = new RegExp('<\\/?' + tag + '\\b[^>]*>', 'gi');
+  tags.lastIndex = match.index;
+  let depth = 0, token;
+  while ((token = tags.exec(html))) {
+    if (/^<\//.test(token[0])) depth--;
+    else if (!/\/>$/.test(token[0])) depth++;
+    if (depth === 0) return html.slice(0, match.index) + html.slice(tags.lastIndex);
+  }
+  throw new Error('Unclosed network/auth UI element: ' + id);
+}
+
 function stripNetworkOnlyMain(source) {
   source = source.replace(/\bconst animalHit = breakJustPressed && \(this\.tryHitAnimal\(p\) \|\| this\.tryHitVisitingPlayer\(p\)\);/, 'const animalHit = breakJustPressed && this.tryHitAnimal(p);');
   for (const name of [
@@ -86,6 +114,8 @@ function stripNetworkOnlyMain(source) {
   if (insertBefore < 0) throw new Error('Could not insert the offline mode selector');
   source = source.slice(0, insertBefore) + enterMode + '\n' + source.slice(insertBefore);
   source = source.replace(/this\.enterSharedMode\(/g, 'this.enterMode(');
+  source = source.replace(/^\s*document\.getElementById\(['\"]shared-fight-dialog['\"]\)\.classList\.(?:add|remove)\(['\"]hidden['\"]\);\r?\n/gm, '');
+  source = source.replace(/\.auth-screen,?\s*/g, '');
   source = retainFinalElse(source, 'hostWaiting', 'connected');
   source = source.replace(/^\s*if \(p\.networkRemote && !p\.networkRemoteVisible\) continue;\r?\n/gm, '');
   source = source.replace(/^\s*this\.players\[1\]\.networkRemote(?:Visible|Initialized)?\s*=.*;\r?\n/gm, '');
@@ -106,10 +136,20 @@ function stripNetworkOnlyMain(source) {
 async function build() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
-  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
-    .replace(/\s*<script src="js\/network\.js"><\/script>\s*/g, '\n');
+  let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
+    .replace(/\s*<script src="js\/network\.js"><\/script>\s*/g, '\n')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  for (const id of ['auth-screen', 'visit-lobby', 'visit-hud', 'visit-mode-dialog', 'shared-fight-dialog']) {
+    html = removeHtmlElementById(html, id);
+  }
+  html = html.replace(/\s*<div class="session-row">[\s\S]*?<\/div>\s*/g, '\n');
   fs.writeFileSync(path.join(OUT, 'index.html'), html);
-  fs.copyFileSync(path.join(ROOT, 'style.css'), path.join(OUT, 'style.css'));
+  const sourceCss = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+  const cssStart = sourceCss.indexOf('/* ---------- local profile sign-in ---------- */');
+  const cssEnd = sourceCss.indexOf('/* Shared visibility state for gameplay buttons and nested panels. */', cssStart);
+  if (cssStart < 0 || cssEnd < 0) throw new Error('Expected auth/visit CSS section boundaries were not found');
+  const css = sourceCss.slice(0, cssStart) + sourceCss.slice(cssEnd);
+  fs.writeFileSync(path.join(OUT, 'style.css'), css);
 
   const files = [
     'blocks.js', 'gl.js', 'world.js', 'mesher.js', 'chars.js', 'input.js',
@@ -119,6 +159,7 @@ async function build() {
   for (const file of files) {
     let source = fs.readFileSync(path.join(ROOT, 'js', file), 'utf8');
     if (file === 'main.js') source = stripNetworkOnlyMain(source);
+    source = source.replace(/\.auth-screen,?\s*/g, '');
     const result = await terser.minify(source, {
       compress: { global_defs: { 'window.Network': false, 'window.BW_QA_MEMORY_ONLY': true, Network: false }, passes: 8 },
       mangle: false,
@@ -147,9 +188,9 @@ async function build() {
 
 function assertSanitizedOutput() {
   const files = fs.readdirSync(path.join(OUT, 'js')).map((name) => path.join(OUT, 'js', name));
-  const text = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8') + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
+  const text = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8') + '\n' + fs.readFileSync(path.join(OUT, 'style.css'), 'utf8') + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
   const forbidden = [
-    ['network module/API', /\bNetwork\b|network\.js|networkRemote/i],
+    ['server/network/auth UI', /\\bserver\\b|\\bNetwork\\b|network\\.js|networkRemote|auth-screen|login-form|visit-lobby|visit-hud|visit-mode-dialog|shared-fight-dialog|session-row/i],
     ['server/visit mode', /serverMode|visitRole|visitActive|visit\/|sharedFight|sharedMode/i],
     ['persistent storage', /localStorage|sessionStorage|indexedDB/i],
     ['network transport', /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|\/api\//i],
@@ -161,5 +202,5 @@ function assertSanitizedOutput() {
 }
 
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, validateOutputPath, build };
 
