@@ -8,7 +8,7 @@ Use the user-provided screenshot in [Issue #3](https://github.com/fengguode/Bloc
 
 ## Public QA staging
 
-Public staging is approved only for a separate, sanitized, memory-only QA build. It must exclude family-server access, sign-in and profile data, PINs, saved family worlds, and game network paths. The QA build uses in-memory saves, so a reload starts a fresh world, and remains isolated from the family server and its data. This approval does not authorize exposing the family server. See [PR #32](https://github.com/fengguode/Blocky_World_GUO/pull/32) for the sanitization implementation and verification record; that PR is still Draft and has not been merged.
+Public staging is approved only for a separate, sanitized QA preview. Any public QA build must exclude family-server access, sign-in and profile data, PINs, saved family worlds, and game network paths. It must use page-memory-only saves, so reloading starts a fresh world, and stay isolated from the family server and its data. This approval does not authorize exposing the family server. See [PR #32](https://github.com/fengguode/Blocky_World_GUO/pull/32) for the proposed sanitization implementation; that PR is still Draft and has not been merged. This section records the approved boundary, not release status.
 
 
 ## Offline single-player
