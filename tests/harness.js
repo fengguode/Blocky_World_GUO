@@ -170,6 +170,11 @@ function load(options) {
       addEventListener(type, listener) {
         (this.eventListeners[type] || (this.eventListeners[type] = [])).push(listener);
       },
+      dispatchUserEvent(event) {
+        if (this.disabled) return true;
+        for (const listener of this.eventListeners[event.type] || []) listener.call(this, event);
+        return !event.defaultPrevented;
+      },
       getContext: () => stubCanvas2D(),
       querySelectorAll: () => [],
       querySelector: () => null,

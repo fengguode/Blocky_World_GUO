@@ -2825,6 +2825,45 @@ H.test('Fight and Observe show their existing touch action on the shared action 
   H.assert(!action.classList.contains('touch-action-observe'), 'Play clears mode styling');
 });
 
+H.test('a user touch fires a ready Fight ultimate once and is ignored while disabled', () => {
+  const t = H.load({ touch: true, boot: false });
+  t.Touch.init();
+  const action = t.document.getElementById('touch-fly');
+  const player = {
+    ultMeter: 0, maxUlt: 100, char: { name: 'Spider', ultName: 'Beacon Burst' },
+    update() {}, yaw: 0, pitch: 0, ko: false, swing: null,
+  };
+  const opponent = { char: { name: 'Doll' }, update() {}, yaw: 0, pitch: 0, ko: false, swing: null };
+  t.Game.state = 'fight';
+  t.Game.players = [player, opponent];
+  t.Game.bot = null;
+  t.Game.clampToWorld = () => {};
+  t.Game.setFightTouchUltReady(false, true);
+  t.Cam.look = () => {};
+  t.Fight.update = () => {};
+  t.UI.updateHUD = () => {};
+  let activations = 0;
+  t.Fight.useUltimate = (attacker) => {
+    activations++;
+    attacker.ultMeter = 0;
+    return true;
+  };
+
+  action.dispatchUserEvent({ type: 'touchstart', cancelable: true, preventDefault() { this.defaultPrevented = true; } });
+  H.eq(t.Touch.btn.fly, false, 'a disabled ULT ignores a user touch');
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(activations, 0, 'an uncharged ultimate is not dispatched');
+
+  player.ultMeter = player.maxUlt;
+  t.Game.setFightTouchUltReady(true, true);
+  action.dispatchUserEvent({ type: 'touchstart', cancelable: true, preventDefault() { this.defaultPrevented = true; } });
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(activations, 1, 'a ready ULT touch dispatches the ultimate');
+
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(activations, 1, 'holding the action cannot dispatch a second ultimate');
+});
+
 H.test('touch controls help uses the visible Fight and Observe action labels', () => {
   const t = H.load({ touch: true, boot: false });
   const box = { innerHTML: '', querySelector: () => ({ onclick: null }) };
