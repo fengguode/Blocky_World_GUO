@@ -3453,3 +3453,15 @@ H.test('sanitized QA output preserves offline play without network or persistent
   qa.Observer.update(1 / 60, 1.5);
   H.assert(qa.Observer.pos.every(Number.isFinite), 'observer camera updates');
 
+  qa.Game.save();
+  H.assert(qa.BWStorage.length > 0, 'save stays in page-local memory');
+  H.eq(memoryCalls.storage, 0, 'native persistent storage is untouched');
+  H.eq(memoryCalls.fetch, 0, 'no fetch request is attempted');
+  const fresh = H.load({ sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false, boot: false });
+  H.eq(fresh.BWStorage.length, 0, 'reload starts with a fresh in-memory world');
+});
+
+if (require.main === module) {
+  process.exit(H.main(process.argv.slice(2)));
+}
+
