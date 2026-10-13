@@ -5,7 +5,6 @@ const { execFileSync } = require('node:child_process');
 const terser = require('terser');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const ROOT = REPO_ROOT;
 const OUT = path.join(REPO_ROOT, '.qa-public');
 const JS_FILES = [
   'blocks.js', 'gl.js', 'world.js', 'mesher.js', 'chars.js', 'input.js',
@@ -19,6 +18,16 @@ function sha256(value) {
 
 function gitValue(args) {
   return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+}
+
+function readSource(file) {
+  return execFileSync('git', ['show', 'HEAD:' + file], { cwd: REPO_ROOT, encoding: 'utf8' });
+}
+
+function assertCleanCheckout(status) {
+  if (String(status).trim()) {
+    throw new Error('QA builds require a clean Git checkout so the recorded source commit matches every input');
+  }
 }
 
 function walkFiles(root, prefix = '') {
@@ -163,6 +172,7 @@ function stripNetworkOnlyMain(source) {
 
 async function build() {
   validateOutputPath(OUT);
+  assertCleanCheckout(gitValue(['status', '--porcelain', '--untracked-files=all']));
   const stage = path.join(REPO_ROOT, '.qa-public.tmp-' + process.pid);
   const backup = path.join(REPO_ROOT, '.qa-public.previous-' + process.pid);
   for (const candidate of [stage, backup]) {
@@ -170,7 +180,7 @@ async function build() {
   }
   fs.mkdirSync(stage, { recursive: true });
   try {
-  let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
+  let html = readSource('index.html')
     .replace(/\s*<script src="js\/network\.js"><\/script>\s*/g, '\n')
     .replace(/<!--[\s\S]*?-->/g, '');
   for (const id of ['auth-screen', 'visit-lobby', 'visit-hud', 'visit-mode-dialog', 'shared-fight-dialog']) {
@@ -180,7 +190,7 @@ async function build() {
   html = html.replace(/Marlene\s*&amp;\s*Florenz's Game/gi, 'Blocky World QA');
   html = html.replace(/\b(?:Marlene|Florenz|Feng)\b/gi, 'Player');
   fs.writeFileSync(path.join(stage, 'index.html'), html);
-  const sourceCss = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+  const sourceCss = readSource('style.css');
   const cssStart = sourceCss.indexOf('/* ---------- local profile sign-in ---------- */');
   const cssEnd = sourceCss.indexOf('/* Shared visibility state for gameplay buttons and nested panels. */', cssStart);
   const worldCssStart = sourceCss.indexOf('.world-label {', cssStart);
@@ -193,7 +203,7 @@ async function build() {
 
   fs.mkdirSync(path.join(stage, 'js'), { recursive: true });
   for (const file of JS_FILES) {
-    let source = fs.readFileSync(path.join(ROOT, 'js', file), 'utf8');
+    let source = readSource('js/' + file);
     if (file === 'main.js') source = stripNetworkOnlyMain(source);
     source = source.replace(/\.auth-screen,?\s*/g, '');
     const result = await terser.minify(source, {
@@ -222,8 +232,12 @@ async function build() {
   assertSanitizedOutput(stage);
   const sourceFiles = ['index.html', 'style.css', ...JS_FILES.map((file) => path.join('js', file))];
   const sourceHashes = Object.fromEntries(sourceFiles.map((file) => [
-    file.split(path.sep).join('/'), sha256(fs.readFileSync(path.join(ROOT, file))),
+    file.split(path.sep).join('/'), sha256(readSource(file.split(path.sep).join('/'))),
   ]));
+  const sourceBlobs = Object.fromEntries(sourceFiles.map((file) => {
+    const relative = file.split(path.sep).join('/');
+    return [relative, gitValue(['rev-parse', 'HEAD:' + relative])];
+  }));
   const outputFiles = walkFiles(stage);
   const manifest = {
     schemaVersion: 1,
@@ -245,6 +259,7 @@ async function build() {
       'minify JavaScript using the pinned Terser dependency',
     ],
     inputSha256: sourceHashes,
+    inputGitBlobs: sourceBlobs,
     assets: Object.fromEntries(outputFiles.map((file) => [file, {
       sha256: sha256(fs.readFileSync(path.join(stage, file))),
       bytes: fs.statSync(path.join(stage, file)).size,
@@ -364,9 +379,9 @@ function assertNoCssResources(css) {
   while ((match = url.exec(decoded))) {
     const value = (match[1] || match[2] || match[3] || '').trim();
     const normalized = decodeCssEscapes(value).trim();
-    if (/^(?:\/\/|[a-z][a-z0-9+.-]*:)/i.test(normalized) && !/^data:/i.test(normalized)) throw new Error('Sanitized QA output contains an external CSS resource URL: ' + value);
-    if (/^data:/i.test(normalized) && !/^data:image\/(?:png|gif|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(normalized)) throw new Error('Sanitized QA output contains an unapproved CSS data URL: ' + value);
-    if (normalized && normalized[0] !== '#' && !/^data:/i.test(normalized) && /[\u0000-\u0020\\]/.test(normalized)) throw new Error('Sanitized QA output contains an unapproved CSS resource URL: ' + value);
+    if (normalized && !/^#[a-z0-9_.:-]+$/i.test(normalized)) {
+      throw new Error('Sanitized QA output contains a CSS resource outside the fragment-only allowlist: ' + value);
+    }
   }
 }
 
@@ -400,4 +415,4 @@ function assertSanitizedOutput(root = OUT) {
 }
 
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, JS_ASSET_ALLOWLIST, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, build };
