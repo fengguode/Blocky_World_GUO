@@ -8,20 +8,30 @@ img{display:block;width:100%;height:auto;background:#fff;border-radius:8px;margi
 small{color:#c2ccda}
 </style></head><body>
 <h1>Issue #21 · Pixel-craft material QA</h1>
-<p>Static, offline-only comparison using the same Storybook seed and fixed camera.</p>
-<div class="card"><h2>Gameplay views</h2>
+<p>Static, offline-only comparison using Storybook seed 1337. The automated contact sheets show the complete non-air block inventory; the game screenshots below provide a separate, limited gameplay-distance check.</p>
+<div class="card"><h2>Matched gameplay views</h2>
 <p><a href="before.html">Before · PR #27 scene with existing textures</a></p>
 <p><a href="after.html">After · PR #29 material textures with the PR #27 Storybook scene</a></p>
 <p>Scene source: <code>a66121c35895b6e716cfe150b16f5197f9f4f3b8</code><br>
-Material source: PR #29 head <code>5a1bb7401bfc977461e8f992092a3343359590c8</code> · seed 1337</p></div>
+Material source: PR #29 head <code>5a1bb7401bfc977461e8f992092a3343359590c8</code> · seed 1337</p>
+<p>Captured in the same Codex in-app desktop browser at 1280 × 720 after resetting both pages to the same seed and view. Gameplay and temporary block samples were held only in each page’s memory; they were not saved or sent over the network.</p></div>
 <div class="card"><h2>Before · complete block-family sheet</h2>
 <p>Baseline texture source: <code>10c7bb44540e83dc54c062b4ba855183fb1c5eef</code> (blocks 1–21).</p>
 <a href="issue-21/issue-21-texture-contact-sheet-before.svg"><img src="issue-21/issue-21-texture-contact-sheet-before.svg" alt="Before texture contact sheet grouped by material family"></a></div>
 <div class="card"><h2>After · complete block-family sheet</h2>
 <p>Current sheet covers all non-air blocks 1–24. Blocks 22–24 were added after the baseline.</p>
 <a href="issue-21/issue-21-texture-contact-sheet.svg"><img src="issue-21/issue-21-texture-contact-sheet.svg" alt="After texture contact sheet grouped by material family"></a></div>
-<div class="card"><h2>Validation</h2>
+<div class="card"><h2>Gameplay-distance observations and limits</h2>
+<ul>
+<li>At the matched first-person spawn view, the cobble path, grass, hut masonry, logs, foliage, flowers, and animals are present in both builds. The after view shows surface detail at this distance, with stronger flecks in the grass and wood/leaf texture.</li>
+<li>Gold and Glowstone were placed temporarily in both preview pages on the path and inspected from a few blocks away. Gold reads as a warm ochre block with darker ore-like marks. Glowstone’s cyan field and bright star are easy to pick out under the current lighting.</li>
+<li>The seed 1337 scene contains a flowing stream. From a lower free-camera view its blue surface is visible, but this run did not capture glass or ice at normal gameplay distance. Neither is available in the standard Play &amp; Build hotbar or present in the sampled scene.</li>
+<li>The preview remains labeled “fixed dawn camera” and keeps a purple sky/pink haze with strong teal-green ground tint. The DAY NOW control did not produce a verifiable daylight scene here. No warm-sunset capture was obtained, so lighting-dependent readability for glass, ice, ores, and emissive/decor blocks remains incomplete.</li>
+</ul>
+<p>No bounded texture edit was justified by this sample: the tested gold and Glowstone were distinguishable, while the unobserved materials and lighting states need evidence before palette changes can be judged.</p></div>
+<div class="card"><h2>Validation status</h2>
 <p>Automated checks: 234 passed across 23 suites, including block coverage, save behavior, performance regressions, and sanitized offline QA output. Independent contact-sheet review passed.</p>
-<p>Browser sample in Codex in-app browser, desktop profile, 1280 × 720 (hardware/GPU unavailable): before 1.7 FPS, p95 frame time 1016.2 ms, heap 21.8 MiB; after 5.3 FPS, 1007.3 ms, heap 22.6 MiB. This browser session was heavily throttled, so these readings do not establish acceptable device performance.</p>
-<small>Contact sheets document tile textures; normal-distance gameplay checks were limited to materials visible in the sampled scene.</small></div>
+<p>Browser sample in the same desktop in-app browser (hardware/GPU unavailable): before 1.7 FPS, p95 frame time 1016.2 ms, heap 21.8 MiB; after 5.3 FPS, 1007.3 ms, heap 22.6 MiB. The session was heavily throttled; these readings do not establish acceptable device performance.</p>
+<p><strong>Issue #21 is not accepted.</strong> Glass and ice gameplay-distance evidence, daylight/warm-sunset comparison, and a valid performance sample remain outstanding.</p>
+<small>Contact sheets document texture inventory; they do not prove in-game readability.</small></div>
 </body></html>
