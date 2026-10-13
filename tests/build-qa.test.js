@@ -106,7 +106,7 @@ async function run() {
     vm.createContext(context);
     vm.runInContext(fs.readFileSync(path.join(output, 'js/qa-fixture.js'), 'utf8'), context);
     assert.equal(fixtureWindow.BW_QA.applySetup(), true);
-    return {
+    return JSON.parse(JSON.stringify({
       save: JSON.parse(memory.get('blocky-world-local-save-v1')),
       activeWorld: memory.get('blocky-world-selected-type'),
       fixture: JSON.parse(JSON.stringify(fixtureWindow.BW_QA.fixture)),
@@ -117,7 +117,7 @@ async function run() {
         zoom: observer.zoom, target: observer.target, position: observer.pos, yaw: cam.yaw, pitch: cam.pitch,
       },
       dayPhase: game.dayPhase, time: game.time,
-    };
+    }));
   }
   const fixtureRun1 = runFixtureSetup(), fixtureRun2 = runFixtureSetup();
   assert.deepEqual(fixtureRun1, fixtureRun2, 'repeated fixture setup has identical world and camera state');
