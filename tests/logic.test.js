@@ -3524,6 +3524,100 @@ H.test('server save failure is not reported as confirmed progress', async () => 
     Game.runtimeFailure = oldFailure;
   }
 });
+H.suite('QA bundle');
+H.test('sanitized QA output preserves offline play without network or persistent storage', () => {
+  const path = require('node:path');
+  const builder = require(path.join(H.ROOT, 'scripts', 'build-qa.js'));
+  H.eq(builder.validateOutputPath(path.join(H.ROOT, '.qa-public')), path.join(H.ROOT, '.qa-public'), 'the dedicated output path is accepted');
+  for (const unsafe of [H.ROOT, path.dirname(H.ROOT)]) {
+    let rejected = false;
+    try { builder.validateOutputPath(unsafe); } catch (_) { rejected = true; }
+    H.eq(rejected, true, 'unsafe output paths are rejected');
+  }
+  const symlinkFs = {
+    existsSync: () => true,
+    lstatSync: () => ({ isSymbolicLink: () => true }),
+  };
+  let symlinkRejected = false;
+  try { builder.validateOutputPath(path.join(H.ROOT, '.qa-public'), symlinkFs); } catch (_) { symlinkRejected = true; }
+  H.eq(symlinkRejected, true, 'a symlinked QA output is rejected before the build removes it');
+  for (const contaminated of ['Network', 'network.js', 'Marlene', 'Florenz', 'Feng', 'PIN', 'auth-profile', 'Choose your profile']) {
+    let contaminationRejected = false;
+    try { builder.assertNoForbiddenReferences('window.' + contaminated); } catch (_) { contaminationRejected = true; }
+    H.eq(contaminationRejected, true, 'sanitizer rejects forbidden token ' + contaminated);
+  }
+  const build = spawnSync(process.execPath, [path.join(H.ROOT, 'scripts', 'build-qa.js')], {
+    encoding: 'utf8', timeout: 120000,
+  });
+  H.eq(build.status, 0, 'QA bundle build succeeds: ' + (build.stderr || build.stdout));
+  const generatedHtml = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'index.html'), 'utf8');
+  H.assert(/<title>Blocky World QA<\/title>/i.test(generatedHtml), 'QA page uses a generic app title');
+  H.assert(/apple-mobile-web-app-title" content="Blocky World QA/i.test(generatedHtml), 'mobile app metadata uses the generic title');
+  H.assert(/<h1>Blocky World QA<\/h1>/i.test(generatedHtml), 'game heading uses the generic title');
+  const generatedCss = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'style.css'), 'utf8');
+  builder.assertWorldPickerCss(generatedCss);
+  H.assert(!/\.auth-screen|\.visit-lobby|\.visit-hud|\.visit-mode-dialog/.test(generatedCss), 'generated CSS omits auth and visit UI rules');
+  const memoryCalls = { storage: 0, fetch: 0 };
+  const nativeStorageTrap = {
+    getItem() { memoryCalls.storage++; throw new Error('persistent storage read'); },
+    setItem() { memoryCalls.storage++; throw new Error('persistent storage write'); },
+    removeItem() { memoryCalls.storage++; throw new Error('persistent storage remove'); },
+    key() { memoryCalls.storage++; throw new Error('persistent storage key'); },
+    get length() { memoryCalls.storage++; throw new Error('persistent storage length'); },
+  };
+  const qa = H.load({
+    sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false,
+    boot: false, storage: nativeStorageTrap,
+    fetch() { memoryCalls.fetch++; throw new Error('unexpected network request'); },
+  });
+  H.eq(qa.Network, undefined, 'network module is absent');
+  H.eq(qa.windowStub.Network, undefined, 'no page network API is installed');
+  H.assert(typeof qa.Game.render === 'function', 'game renderer is present');
+  H.assert(typeof qa.Game.startObserve === 'function' && typeof qa.Observer.update === 'function', 'observer view is present');
+
+  const world = new qa.World(1337);
+  const chunk = world.getChunk(qa.CENTRE_CHUNK, qa.CENTRE_CHUNK, true);
+  world.generateChunk(chunk);
+  H.assert(chunk.generated, 'fixed-seed terrain generated');
+  const glRecord = { vaos: [], buffers: [] };
+  H.assert(qa.buildChunkMesh(H.stubGL(glRecord), world, chunk), 'generated terrain renders through the real mesher');
+  const repeat = new qa.World(1337);
+  H.eq(world.heightAt(qa.WORLD_CENTRE, qa.WORLD_CENTRE), repeat.heightAt(qa.WORLD_CENTRE, qa.WORLD_CENTRE), 'fixed seed reproduces terrain');
+
+  world.generateRadius(qa.CENTRE_CHUNK, qa.CENTRE_CHUNK, 1, null);
+  qa.Game.world = qa.World.world = world;
+  qa.Game.canvas = { requestPointerLock() {} };
+  const spawn = world.findSpawn();
+  const p1 = new qa.Player(world, qa.characterById(qa.Game.pick.p1), false);
+  p1.pos = spawn.slice(); p1.spawn = spawn.slice();
+  const p2 = new qa.Player(world, qa.characterById(qa.Game.pick.p2), true);
+  p2.pos = [spawn[0] + 2, spawn[1], spawn[2]]; p2.spawn = p2.pos.slice();
+  qa.Game.players = [p1, p2];
+  qa.Game.startFight();
+  H.eq(qa.Game.state, 'fight', 'local Fight mode starts');
+  H.assert(qa.Game.bot, 'offline computer opponent remains available');
+  qa.Game.canvas = { width: 1280, height: 720, clientWidth: 1280, clientHeight: 720 };
+  qa.Game.gl = H.stubGL({ vaos: [], buffers: [] });
+  qa.Game.gl.getProgramParameter = () => 1;
+  qa.Game.setupGL();
+  qa.Game.render(1 / 60);
+  H.assert(qa.Game.gl, 'the real renderer initialized with the stub WebGL context');
+  qa.Game.handleFightInput(p1, p2, { attack: true });
+  H.assert(p1.swing, 'local attack input enters the real attack path');
+  qa.Fight.update(1 / 60, p1, p2);
+  H.assert(Number.isFinite(p1.hp) && Number.isFinite(p2.hp), 'local fight update keeps fighter state valid');
+  qa.Observer.pos = [qa.WORLD_CENTRE + 20, 100, qa.WORLD_CENTRE - 20];
+  qa.Observer.update(1 / 60, 1.5);
+  H.assert(qa.Observer.pos.every(Number.isFinite), 'observer camera updates');
+
+  qa.Game.save();
+  H.assert(qa.BWStorage.length > 0, 'save stays in page-local memory');
+  H.eq(memoryCalls.storage, 0, 'native persistent storage is untouched');
+  H.eq(memoryCalls.fetch, 0, 'no fetch request is attempted');
+  const fresh = H.load({ sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false, boot: false });
+  H.eq(fresh.BWStorage.length, 0, 'reload starts with a fresh in-memory world');
+});
+
 if (require.main === module) {
   process.exit(H.main(process.argv.slice(2)));
 }

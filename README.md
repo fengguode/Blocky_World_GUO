@@ -60,6 +60,14 @@ A second local player can use a gamepad or arrow keys plus Numpad 1 / 2 / 3.
 - World edits, seed, player position, settings, character picks, and food inventory save automatically. Offline saves remain in the browser; LAN profile saves stay on the PC. Older saves keep their existing terrain and edits while the game moves their coordinates into the expanded map. The browser keeps a temporary profile-scoped recovery copy until the PC confirms the save, so a pending save can be recovered in the same browser after a tab closes. If the PC world changes before recovery, the game asks whether to restore the browser copy over the PC world or keep the newer PC world.
 - The server is built with Node.js built-ins and has no third-party runtime dependencies.
 
+## Memory-only QA preview
+
+Public GitHub Pages staging is approved only for this sanitized static QA preview. It contains no family, server, account, or PIN data, and save data exists only in the current page's memory; reloading starts with a fresh world. This approval does not cover the normal game or family server. The sanitized QA previews are staged on the separate `codex/public-staging-pages` branch at [Storybook preview](https://fengguode.github.io/Blocky_World_GUO/issue-27/) and [animal preview](https://fengguode.github.io/Blocky_World_GUO/issue-28/).
+
+`npm ci` installs the build-only minifier. Run `npm run build:qa` to create a static, network-free preview in `.qa-public/`. The QA entry omits the server bridge and shared-visit paths and keeps saves only in the current page's memory; reloading the page starts with a fresh world. It retains offline world generation, rendering, Fight Arena, and Observe World. The normal `index.html` and its persistent offline saves are unchanged.
+
+The build fails if the generated preview contains server, visit, network transport, or persistent browser-storage references. It is intended for the separate QA staging flow and does not publish or deploy the preview.
+
 ## Tests
 
 The repository has an opt-in test runner. Run it only when requested:
@@ -94,4 +102,5 @@ js/ui.js        menus, HUD, and sound
 js/main.js      state machine, saves, rendering, and frame loop
 js/network.js   profile sign-in and server-save bridge
 ```
+
 
