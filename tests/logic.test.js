@@ -580,6 +580,8 @@ H.test('Flat World with the Storybook seed receives no welcome palette or shader
   const showcaseSky = t.Game.skyColors();
   H.assert(showcaseSky.top.some((value, i) => Math.abs(value - normalSky.top[i]) > 1e-6),
     'the normal Storybook world keeps its welcome sky palette');
+  H.assert(showcaseSky.bottom[0] > normalSky.bottom[0] && showcaseSky.bottom[2] < normalSky.bottom[2],
+    'the welcome sky warms toward amber only in the Storybook world');
 });
 
 H.test('showcase column metadata packs ground, stream and clearing flags without changing terrain values', () => {
