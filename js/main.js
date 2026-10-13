@@ -298,7 +298,10 @@ const Game = {
         col *= vec3(uTintR, uTintG, uTintB);
         if (uStorybookActive > 0.5) {
           float sceneWarmth = 1.0 - smoothstep(28.0, 68.0, distance(vWorld.xz, uStorybookCenter));
-          col *= mix(vec3(1.0), vec3(1.26, 1.10, 0.76), sceneWarmth * 0.72);
+          float sceneLuma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          vec3 storybookColor = mix(vec3(sceneLuma), col, 0.62);
+          col = mix(col, storybookColor, sceneWarmth * 0.82);
+          col *= mix(vec3(1.0), vec3(1.16, 1.08, 0.84), sceneWarmth * 0.70);
         }
         if (uIsLiquid > 0.5) {
           // Two moving light bands mimic travelling ripples and soft caustics.
@@ -2009,11 +2012,11 @@ const Game = {
     const welcomeWarmth = isStorybookWorld(this.world) && player &&
       Math.hypot(player.pos[0] - WORLD_CENTRE, player.pos[2] - WORLD_CENTRE) < 56;
     if (welcomeWarmth) {
-      const warmTop = [0.48, 0.26, 0.39];
-      const warmBottom = [1.0, 0.56, 0.34];
+      const warmTop = [0.54, 0.31, 0.24];
+      const warmBottom = [1.0, 0.64, 0.36];
       for (let i = 0; i < 3; i++) {
-        top[i] += (warmTop[i] - top[i]) * 0.32;
-        bottom[i] += (warmBottom[i] - bottom[i]) * 0.42;
+        top[i] += (warmTop[i] - top[i]) * 0.58;
+        bottom[i] += (warmBottom[i] - bottom[i]) * 0.70;
       }
     }
     return { top, bottom, star: Math.max(0, 1 - t * 2), night: 1 - t };
