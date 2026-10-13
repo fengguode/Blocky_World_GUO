@@ -71,8 +71,8 @@ vm.runInContext('UI.showWorldSelect()', sandbox);
 assert.match(worldChooser.innerHTML, /You can switch worlds later; each keeps its own blocks and progress\./,
   'world choice reassures players that they can switch and keep progress');
 worldChooser.buttons['#choose-normal'].onclick();
-assert.strictEqual(selectedWorld, 'normal', 'normal world still selects its existing save');
+assert.strictEqual(selectedWorld, 'normal', 'normal world still uses its existing selection handler');
 worldChooser.buttons['#choose-flat'].onclick();
-assert.strictEqual(selectedWorld, 'flat', 'flat world still selects its existing save');
+assert.strictEqual(selectedWorld, 'flat', 'flat world still uses its existing selection handler');
 
 console.log('Portrait rendering passed for 6 characters; 15 UI structure checks passed.');
