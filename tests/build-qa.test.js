@@ -42,10 +42,12 @@ async function run() {
   ]) rejects(() => builder.assertNoExternalResources(resource), 'resource denylist rejects ' + resource);
 
   builder.assertNoExternalResources('<script src="js/main.js"></script><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,">');
-  builder.assertNoCssResources('body { background: url(assets/local.png); }');
+  builder.assertNoCssResources('clip-path: url(#clip-shape);');
   for (const css of [
     '@import "https://bad.example/a.css";',
     'x { background: url(//bad.example/a.png); }',
+    'x { background: url(/api/profile); }',
+    'x { background: url(unlisted.png); }',
     'x { background: image-set(url(local.png) 1x); }',
     'x { background: url(data:text/html;base64,PHNjcmlwdD4=); }',
   ]) rejects(() => builder.assertNoCssResources(css), 'CSS denylist rejects ' + css);
@@ -56,6 +58,8 @@ async function run() {
   assert(!allowed.includes('js/network.js'));
   assert.equal(builder.validateOutputPath(output), output);
   rejects(() => builder.validateOutputPath(root), 'builder refuses repository root as output');
+  builder.assertCleanCheckout('');
+  rejects(() => builder.assertCleanCheckout(' M js/main.js'), 'builder refuses inputs that differ from recorded HEAD');
 
   await builder.build();
   const first = Object.fromEntries(walk(output).map((file) => [file, digest(fs.readFileSync(path.join(output, file)))]));
@@ -67,6 +71,8 @@ async function run() {
   assert.equal(manifest.tool.terserVersion, '5.43.1');
   assert(manifest.inputSha256['index.html']);
   assert(manifest.inputSha256['js/main.js']);
+  assert.match(manifest.inputGitBlobs['js/main.js'], /^[0-9a-f]{40}$/);
+  assert.deepEqual(Object.keys(manifest.inputGitBlobs).sort(), Object.keys(manifest.inputSha256).sort());
   assert.equal(manifest.assets['index.html'].sha256, first['index.html']);
   for (const [file, record] of Object.entries(manifest.assets)) {
     assert.equal(first[file], record.sha256, 'manifest hash covers ' + file);
