@@ -94,10 +94,10 @@ async function run() {
     const fixtureWindow = { addEventListener() {} };
     const game = {
       state: 'menu', world: {}, players: [{ pos: [1, 2, 3] }, { pos: [4, 5, 6] }],
-      animals: [{ update() { return 'moving'; } }], time: 99,
+      time: 99, showDebug: true, update() { return 'moving'; }, aspect() { return 1; },
       startObserve() { this.state = 'observe'; }, updateAnimals() {},
     };
-    const observer = {}, cam = {};
+    const observer = {}, cam = { update(...args) { this.updateArgs = args; } };
     const context = {
       Map, Math: Object.create(Math), JSON, window: fixtureWindow,
       BWStorage: { setItem(key, value) { memory.set(key, String(value)); }, getItem(key) { return memory.get(key) || null; } },
@@ -112,24 +112,28 @@ async function run() {
       activeWorld: memory.get('blocky-world-selected-type'),
       fixture: JSON.parse(JSON.stringify(fixtureWindow.BW_QA.fixture)),
       randomSamples,
-      state: game.state, players: game.players.map((player) => player.pos),
-      animalsFrozen: game.animals.every((animal) => animal.update() === undefined),
+      state: game.state, players: game.players.map((player) => player.pos), updateResult: game.update(),
+      dayPhase: game.dayPhase, showDebug: game.showDebug,
       camera: {
-        index: observer.index, angle: observer.orbitAngle, radius: observer.orbitRadius, height: observer.orbitHeight,
-        zoom: observer.zoom, target: observer.target, position: observer.pos, yaw: cam.yaw, pitch: cam.pitch,
+        index: observer.index, target: observer.target, position: observer.pos, yaw: cam.yaw, pitch: cam.pitch,
+        camPosition: cam.pos, updateArgs: cam.updateArgs,
       },
-      dayPhase: game.dayPhase, time: game.time,
+      time: game.time,
     }));
   }
   const fixtureRun1 = runFixtureSetup(), fixtureRun2 = runFixtureSetup();
   assert.deepEqual(fixtureRun1, fixtureRun2, 'repeated fixture setup has identical world and camera state');
   assert.equal(fixtureRun1.save.seed, 1337);
-  assert.equal(fixtureRun1.camera.index, 1);
-  assert.deepEqual(fixtureRun1.camera.target, [100008, 30, 100008]);
-  assert.equal(fixtureRun1.camera.angle, 0.62);
-  assert.equal(fixtureRun1.camera.radius, 48);
-  assert.equal(fixtureRun1.camera.height, 28);
-  assert.equal(fixtureRun1.camera.yaw, 0.62);
+  assert.equal(fixtureRun1.fixture.randomSeed, 0x21f1337);
+  assert.equal(fixtureRun1.camera.index, 0);
+  assert.deepEqual(fixtureRun1.camera.target, [100008, 29, 100008]);
+  assert.deepEqual(fixtureRun1.camera.position, [100042, 59, 100042]);
+  assert.equal(fixtureRun1.camera.yaw, Math.PI / 4);
+  assert.equal(fixtureRun1.camera.pitch, -0.54);
+  assert.deepEqual(fixtureRun1.camera.updateArgs, [0, 1, [100042, 59, 100042]]);
+  assert.equal(fixtureRun1.updateResult, undefined, 'the fixture freezes game updates for a stable render');
+  assert.equal(fixtureRun1.dayPhase, 0.25);
+  assert.equal(fixtureRun1.showDebug, false);
 
   let nativeStorageTouches = 0;
   const context = {
