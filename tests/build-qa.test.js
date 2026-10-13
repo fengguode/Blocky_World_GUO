@@ -105,11 +105,13 @@ async function run() {
     };
     vm.createContext(context);
     vm.runInContext(fs.readFileSync(path.join(output, 'js/qa-fixture.js'), 'utf8'), context);
+    const randomSamples = [context.Math.random(), context.Math.random(), context.Math.random()];
     assert.equal(fixtureWindow.BW_QA.applySetup(), true);
     return JSON.parse(JSON.stringify({
       save: JSON.parse(memory.get('blocky-world-local-save-v1')),
       activeWorld: memory.get('blocky-world-selected-type'),
       fixture: JSON.parse(JSON.stringify(fixtureWindow.BW_QA.fixture)),
+      randomSamples,
       state: game.state, players: game.players.map((player) => player.pos),
       animalsFrozen: game.animals.every((animal) => animal.update() === undefined),
       camera: {
@@ -124,6 +126,10 @@ async function run() {
   assert.equal(fixtureRun1.save.seed, 1337);
   assert.equal(fixtureRun1.camera.index, 1);
   assert.deepEqual(fixtureRun1.camera.target, [100008, 30, 100008]);
+  assert.equal(fixtureRun1.camera.angle, 0.62);
+  assert.equal(fixtureRun1.camera.radius, 48);
+  assert.equal(fixtureRun1.camera.height, 28);
+  assert.equal(fixtureRun1.camera.yaw, 0.62);
 
   let nativeStorageTouches = 0;
   const context = {
