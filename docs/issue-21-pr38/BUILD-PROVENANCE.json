@@ -5,10 +5,14 @@
   "sourceBlockSha256": "4841a57fa3749a6fbdc0e5c977d8def7d28739430ac6beefa5bdc6bd12269842",
   "generatedBlockSha256": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
   "sanitizerBuildScriptCommit": "97891cbd4fcaa0f6aa84c88079ee0a83598850d2",
-  "sanitizerBuildScriptSha256": "92ea8c2cfabff872d2c6a39fb0b906f1a66ca6d52312a9f9ab9fe65cc5063e27",
-  "qaOnlyTransform": "Remove only the two event bindings for the stripped shared-fight dialog",
+  "sanitizerBuildScriptSha256": "858b37e50166446007c72abc0a0f6ce605bb9fd2a539f6a607da363f39b1fab9",
+  "buildId": "ff19914-qa3",
+  "qaOnlyTransforms": [
+    "Remove only event bindings for the stripped shared-fight dialog",
+    "Version local CSS and JavaScript asset URLs to avoid stale CDN/browser bundles"
+  ],
   "files": {
-    "index.html": "a2b5d13370a4ce39e3c77d25d305153acb28e32f5529fbfd80d0f321b55ffd92",
+    "index.html": "f7933d7729b3d67ea2b3985ed343bc1b7c9b309e8a95cb024b8044f072f468c7",
     "js/blocks.js": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
     "js/bot.js": "cf2b09a492771110cbe42489275a124849b63557a793d9f445fa7696b095da9d",
     "js/camera.js": "7eca0f1bed299c7981b20e4bbeaab7dd1b7b06ff3a37c5418ed048945c3e32b0",
