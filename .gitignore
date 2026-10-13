@@ -1,5 +1,8 @@
 .blocky-world-data/
 node_modules/
+.qa-public/
+.qa-public.tmp-*/
+.qa-public.previous-*/
 .env
 .env.*
 !.env.example

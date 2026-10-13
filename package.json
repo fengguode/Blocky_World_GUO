@@ -1,0 +1,13 @@
+{
+  "name": "blocky-world-qa-tools",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:qa": "node scripts/build-qa.js",
+    "test:qa": "node tests/build-qa.test.js",
+    "test": "node tests/run.js"
+  },
+  "devDependencies": {
+    "terser": "5.43.1"
+  }
+}
