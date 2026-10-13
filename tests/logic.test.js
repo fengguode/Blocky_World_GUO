@@ -3609,12 +3609,16 @@ H.test('sanitized QA output preserves offline play without network or persistent
   const qa = H.load({
     sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false,
     boot: false, storage: nativeStorageTrap,
+    missingElementIds: ['btn-fight-lobby-settings', 'btn-fight-lobby-exit'],
     fetch() { memoryCalls.fetch++; throw new Error('unexpected network request'); },
   });
   H.eq(qa.Network, undefined, 'network module is absent');
   H.eq(qa.windowStub.Network, undefined, 'no page network API is installed');
   H.assert(typeof qa.Game.render === 'function', 'game renderer is present');
   H.assert(typeof qa.Game.startObserve === 'function' && typeof qa.Observer.update === 'function', 'observer view is present');
+  qa.UI.init();
+  H.eq(qa.document.getElementById('btn-fight-lobby-settings'), null, 'sanitized QA page omits fight-lobby settings button');
+  H.eq(qa.document.getElementById('btn-fight-lobby-exit'), null, 'sanitized QA page omits fight-lobby exit button');
 
   const world = new qa.World(1337);
   const chunk = world.getChunk(qa.CENTRE_CHUNK, qa.CENTRE_CHUNK, true);
