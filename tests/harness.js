@@ -189,6 +189,7 @@ function load(options) {
   function noopOp() {}
 
   const elements = new Map();
+  const missingElementIds = new Set(options.missingElementIds || []);
   const touchLayer = makeEl('div');
   touchLayer.classList.add('hidden');
   elements.set('touch-ui', touchLayer);
@@ -196,6 +197,7 @@ function load(options) {
   const documentStub = {
     createElement: makeEl,
     getElementById: (id) => {
+      if (missingElementIds.has(id)) return null;
       if (!elements.has(id)) elements.set(id, makeEl('div'));
       return elements.get(id);
     },
