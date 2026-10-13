@@ -52,6 +52,7 @@ assert.match(html, /id="menu-character-preview"/, 'main menu includes the select
 assert.match(html, /id="touch-view"/, 'touch HUD keeps a dedicated camera control');
 assert.match(css, /env\(safe-area-inset-bottom\)/, 'touch HUD honors the device home indicator inset');
 assert.match(css, /#menu\s*\{[^}]*touch-action:\s*none/s, 'the intro menu preserves its custom touch-scroll gesture');
+assert.match(css, /#btn-game-settings\s*\{[^}]*min-height:\s*44px/s, 'the in-game Settings action has a 44px minimum touch target');
 assert.match(fs.readFileSync(path.join(root, 'js/touch.js'), 'utf8'), /menu\.scrollTop\s*=\s*Math\.max/, 'the touch handler scrolls long menu content directly');
 assert.match(css, /#touch-buttons\s*\{[\s\S]*?pointer-events:\s*none/, 'touch actions keep the action group from blocking look input');
 assert.match(ui, /role="button" tabindex="0" aria-pressed=/, 'fight character cards can receive keyboard focus');
