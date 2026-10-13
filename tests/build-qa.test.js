@@ -69,6 +69,8 @@ async function run() {
   assert.match(manifest.source.tree, /^[0-9a-f]{40}$/);
   assert.equal(manifest.tool.version, '1.0.0');
   assert.equal(manifest.tool.terserVersion, '5.43.1');
+  assert.deepEqual(manifest.qaFixture, builder.QA_FIXTURE, 'manifest records the Storybook seed and observer setup');
+  assert(manifest.transforms.includes('add a deterministic QA-only Storybook world and observer fixture'));
   assert(manifest.inputSha256['index.html']);
   assert(manifest.inputSha256['js/main.js']);
   assert.match(manifest.inputGitBlobs['js/main.js'], /^[0-9a-f]{40}$/);
@@ -84,6 +86,44 @@ async function run() {
   assert.match(html, /<title>Blocky World QA<\/title>/i);
   assert(!/auth-screen|login-form|profile-setup|network\.js|Florenz|Marlene|Feng|PIN/i.test(html));
   assert.deepEqual(walk(path.join(output, 'js')).map((file) => 'js/' + file).sort(), [...builder.JS_ASSET_ALLOWLIST].sort());
+  assert.match(html, /<script src="js\/qa-fixture\.js"><\/script>\s*<script src="js\/main\.js"><\/script>/);
+  assert.doesNotMatch(builder.qaFixtureSource(), /localStorage|sessionStorage|indexedDB|WebSocket|\bNetwork\b|https?:\/\//i);
+
+  function runFixtureSetup() {
+    const memory = new Map();
+    const fixtureWindow = { addEventListener() {} };
+    const game = {
+      state: 'menu', world: {}, players: [{ pos: [1, 2, 3] }, { pos: [4, 5, 6] }],
+      animals: [{ update() { return 'moving'; } }], time: 99,
+      startObserve() { this.state = 'observe'; }, updateAnimals() {},
+    };
+    const observer = {}, cam = {};
+    const context = {
+      Map, Math: Object.create(Math), JSON, window: fixtureWindow,
+      BWStorage: { setItem(key, value) { memory.set(key, String(value)); }, getItem(key) { return memory.get(key) || null; } },
+      Game: game, Observer: observer, Cam: cam, setTimeout() {},
+    };
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(output, 'js/qa-fixture.js'), 'utf8'), context);
+    assert.equal(fixtureWindow.BW_QA.applySetup(), true);
+    return {
+      save: JSON.parse(memory.get('blocky-world-local-save-v1')),
+      activeWorld: memory.get('blocky-world-selected-type'),
+      fixture: JSON.parse(JSON.stringify(fixtureWindow.BW_QA.fixture)),
+      state: game.state, players: game.players.map((player) => player.pos),
+      animalsFrozen: game.animals.every((animal) => animal.update() === undefined),
+      camera: {
+        index: observer.index, angle: observer.orbitAngle, radius: observer.orbitRadius, height: observer.orbitHeight,
+        zoom: observer.zoom, target: observer.target, position: observer.pos, yaw: cam.yaw, pitch: cam.pitch,
+      },
+      dayPhase: game.dayPhase, time: game.time,
+    };
+  }
+  const fixtureRun1 = runFixtureSetup(), fixtureRun2 = runFixtureSetup();
+  assert.deepEqual(fixtureRun1, fixtureRun2, 'repeated fixture setup has identical world and camera state');
+  assert.equal(fixtureRun1.save.seed, 1337);
+  assert.equal(fixtureRun1.camera.index, 1);
+  assert.deepEqual(fixtureRun1.camera.target, [100008, 30, 100008]);
 
   let nativeStorageTouches = 0;
   const context = {
@@ -108,7 +148,7 @@ async function run() {
   await builder.build();
   const second = Object.fromEntries(walk(output).map((file) => [file, digest(fs.readFileSync(path.join(output, file)))]));
   assert.deepEqual(second, first, 'repeated builds produce byte-identical output and provenance');
-  console.log('QA sanitizer tests passed (denylist, allowlist, output scan, manifest, reproducibility).');
+  console.log('QA sanitizer tests passed (denylist, allowlist, fixture, output scan, manifest, reproducibility).');
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; });

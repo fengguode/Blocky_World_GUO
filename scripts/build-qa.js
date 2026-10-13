@@ -10,7 +10,72 @@ const JS_FILES = [
   'blocks.js', 'gl.js', 'world.js', 'mesher.js', 'chars.js', 'input.js',
   'camera.js', 'entity.js', 'bot.js', 'fight.js', 'touch.js', 'ui.js', 'main.js',
 ];
-const JS_ASSET_ALLOWLIST = new Set([...JS_FILES.map((file) => 'js/' + file), 'js/storage.js']);
+const JS_ASSET_ALLOWLIST = new Set([...JS_FILES.map((file) => 'js/' + file), 'js/storage.js', 'js/qa-fixture.js']);
+const QA_FIXTURE = Object.freeze({
+  seed: 1337,
+  randomSeed: 0x51f15e,
+  worldType: 'normal',
+  player: [100008, 30, 100008],
+  camera: {
+    viewIndex: 1, orbitAngle: 0.62, orbitRadius: 48, orbitHeight: 28, zoom: 1,
+    target: [100008, 30, 100008], yaw: 0.62, pitch: -Math.atan2(28, 48),
+    position: [100008 + Math.sin(0.62) * 48, 58, 100008 + Math.cos(0.62) * 48],
+  },
+});
+
+function qaFixtureSource() {
+  return [
+    "'use strict';",
+    '(function () {',
+    '  const fixture = ' + JSON.stringify(QA_FIXTURE) + ';',
+    '  let state = fixture.randomSeed | 0;',
+    '  Math.random = function () {',
+    '    state = (state + 0x6D2B79F5) | 0;',
+    '    let value = state;',
+    '    value = Math.imul(value ^ (value >>> 15), value | 1);',
+    '    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);',
+    '    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;',
+    '  };',
+    "  BWStorage.setItem('blocky-world-selected-type', fixture.worldType);",
+    "  BWStorage.setItem('blocky-world-local-save-v1', JSON.stringify({",
+    '    worldType: fixture.worldType, seed: fixture.seed, worldSize: 200000, player1: fixture.player,',
+    "    slot: 0, pick: { p1: 'steve', p2: 'golem', p2bot: true, botLevel: 1 },",
+    '    settings: { sensitivity: 0.0024, renderDist: 5, dayNight: true, sfx: false, renderDistAuto: false },',
+    '    inventory: { apple: 0, meat: 0 }, edits: [],',
+    '  }));',
+    '  const qa = window.BW_QA = { fixture: fixture, ready: false, applySetup: applySetup };',
+    '  function applySetup() {',
+    "    if (typeof Game === 'undefined' || !Game.world || Game.state !== 'menu') return false;",
+    '    Object.defineProperty(Game, "dayPhase", { configurable: true, get: function () { return 0.25; }, set: function () {} });',
+    '    Game.startObserve();',
+    '    Game.animals.forEach(function (animal) { animal.update = function () {}; });',
+    '    Game.updateAnimals = function () {};',
+    '    Game.players.forEach(function (player) { player.pos = fixture.player.slice(); });',
+    '    Observer.index = fixture.camera.viewIndex;',
+    '    Observer.orbitAngle = fixture.camera.orbitAngle;',
+    '    Observer.orbitRadius = fixture.camera.orbitRadius;',
+    '    Observer.orbitHeight = fixture.camera.orbitHeight;',
+    '    Observer.zoom = fixture.camera.zoom;',
+    '    Observer.target = fixture.camera.target.slice();',
+    '    Observer.pos = fixture.camera.position.slice();',
+    '    Cam.yaw = fixture.camera.yaw;',
+    '    Cam.pitch = fixture.camera.pitch;',
+    '    Game.time = 0;',
+    '    qa.ready = true;',
+    '    return true;',
+    '  }',
+    '  window.addEventListener("load", function () {',
+    '    let attempts = 0;',
+    '    const poll = function () {',
+    '      if (applySetup()) return;',
+    '      if (++attempts < 600) setTimeout(poll, 100);',
+    '    };',
+    '    poll();',
+    '  });',
+    '})();',
+    '',
+  ].join('\n');
+}
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -229,6 +294,9 @@ async function build() {
     'window.BWStorage = BWStorage;',
     '',
   ].join('\n'));
+  fs.writeFileSync(path.join(stage, 'js', 'qa-fixture.js'), qaFixtureSource());
+  html = html.replace('<script src="js/main.js"></script>', '<script src="js/qa-fixture.js"></script>\n<script src="js/main.js"></script>');
+  fs.writeFileSync(path.join(stage, 'index.html'), html);
   assertSanitizedOutput(stage);
   const sourceFiles = ['index.html', 'style.css', ...JS_FILES.map((file) => path.join('js', file))];
   const sourceHashes = Object.fromEntries(sourceFiles.map((file) => [
@@ -257,7 +325,9 @@ async function build() {
       'remove network-only game branches and compile Network references out',
       'replace persistent browser storage with page-memory-only BWStorage',
       'minify JavaScript using the pinned Terser dependency',
+      'add a deterministic QA-only Storybook world and observer fixture',
     ],
+    qaFixture: QA_FIXTURE,
     inputSha256: sourceHashes,
     inputGitBlobs: sourceBlobs,
     assets: Object.fromEntries(outputFiles.map((file) => [file, {
@@ -415,4 +485,4 @@ function assertSanitizedOutput(root = OUT) {
 }
 
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, QA_FIXTURE, qaFixtureSource, build };
