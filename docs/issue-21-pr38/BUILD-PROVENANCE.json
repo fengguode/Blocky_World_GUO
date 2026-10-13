@@ -1,0 +1,26 @@
+{
+  "sourceCommit": "ff19914b18d280216c464833ecee5fad789cc822",
+  "sourceTree": "68b05d639b7ce41dfcca3782b19dbd5c287c487b",
+  "sourceBlockGitBlob": "b21083fc52f0cf200a4e0f6478519f3d622644ee",
+  "sourceBlockSha256": "4841a57fa3749a6fbdc0e5c977d8def7d28739430ac6beefa5bdc6bd12269842",
+  "generatedBlockSha256": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
+  "sanitizerBuildScriptCommit": "97891cbd4fcaa0f6aa84c88079ee0a83598850d2",
+  "files": {
+    "index.html": "a2b5d13370a4ce39e3c77d25d305153acb28e32f5529fbfd80d0f321b55ffd92",
+    "js/blocks.js": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
+    "js/bot.js": "cf2b09a492771110cbe42489275a124849b63557a793d9f445fa7696b095da9d",
+    "js/camera.js": "7eca0f1bed299c7981b20e4bbeaab7dd1b7b06ff3a37c5418ed048945c3e32b0",
+    "js/chars.js": "e86289f76439515e6b4f6f65d8558644abcefadd4cbed2aeb44795efe7e57bff",
+    "js/entity.js": "64cacc3596cbef09fa6c3a1cf4168c4fbf784d786c4a5a038d22db8645e22ee7",
+    "js/fight.js": "dfcb6aad3528d28e08048163a6a7722da4877d253867092d60bc2fa8b46edfb3",
+    "js/gl.js": "3565cbfef7ad3485b164b4ef8718df6552027dc238e98ca4af9e2bced0a7c804",
+    "js/input.js": "903b62e07175d9b4f1a0b23690a416c621bbd17cb27276cf5e17223bf3a0bf37",
+    "js/main.js": "0b2e7a05d07a064ae7e57396b3c2f1954b198002a5d7d66003ad6b80ebc4e30a",
+    "js/mesher.js": "fb6bbc01ddfb063c13fd0a52036c6a416217d509c9c2efbf63fa691f23d2c31d",
+    "js/storage.js": "81a291f035b12cbc556d38d9cdaa410ba7620382c75cbbf586fbf644ce1e35fc",
+    "js/touch.js": "80dd902ff97b79449dfc1bdea47849c15b1ae2efc026cc74515c0569fe81ea17",
+    "js/ui.js": "18310cb79baa945a33a93dbd81be5f3742b7231d61f83a394b84c59fa6cb9f35",
+    "js/world.js": "adf75cd76e2c1089e102006c9ccd3cb76de06afc97a2da29ce5fea9ab49972d9",
+    "style.css": "1a42b7c4a0343adc8d44d28fb16e3e27fea0dd23bb0d6206b10a13d57a9e8506"
+  }
+}
