@@ -1,1 +1,27 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'"><title>Issue #21 visual QA</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#101722;color:#f6ead8;max-width:720px;margin:4rem auto;padding:0 1.25rem}a{color:#8ed6ff}.card{border:1px solid #52627a;border-radius:14px;padding:1.2rem;margin:1rem 0;background:#1c2837}</style></head><body><h1>Issue #21 · Pixel-craft material QA</h1><p>Static, offline-only comparison using the same Storybook seed and camera.</p><div class="card"><h2>Gameplay views</h2><p><a href="before.html">Before · PR #27 scene with existing textures</a></p><p><a href="after.html">After · PR #29 material textures combined with PR #27 Storybook scene</a></p></div><p>Scene source: <code>a66121c35895b6e716cfe150b16f5197f9f4f3b8</code><br>Material source: PR #29 head <code>5a1bb7401bfc977461e8f992092a3343359590c8</code> · seed 1337</p></body></html>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Issue #21 visual QA</title><style>
+body{font:16px/1.5 system-ui,sans-serif;background:#101722;color:#f6ead8;max-width:900px;margin:3rem auto;padding:0 1.25rem}
+a{color:#8ed6ff}.card{border:1px solid #52627a;border-radius:14px;padding:1.2rem;margin:1rem 0;background:#1c2837}
+img{display:block;width:100%;height:auto;background:#fff;border-radius:8px;margin:1rem 0}
+small{color:#c2ccda}
+</style></head><body>
+<h1>Issue #21 · Pixel-craft material QA</h1>
+<p>Static, offline-only comparison using the same Storybook seed and fixed camera.</p>
+<div class="card"><h2>Gameplay views</h2>
+<p><a href="before.html">Before · PR #27 scene with existing textures</a></p>
+<p><a href="after.html">After · PR #29 material textures with the PR #27 Storybook scene</a></p>
+<p>Scene source: <code>a66121c35895b6e716cfe150b16f5197f9f4f3b8</code><br>
+Material source: PR #29 head <code>5a1bb7401bfc977461e8f992092a3343359590c8</code> · seed 1337</p></div>
+<div class="card"><h2>Before · complete block-family sheet</h2>
+<p>Baseline texture source: <code>10c7bb44540e83dc54c062b4ba855183fb1c5eef</code> (blocks 1–21).</p>
+<a href="issue-21/issue-21-texture-contact-sheet-before.svg"><img src="issue-21/issue-21-texture-contact-sheet-before.svg" alt="Before texture contact sheet grouped by material family"></a></div>
+<div class="card"><h2>After · complete block-family sheet</h2>
+<p>Current sheet covers all non-air blocks 1–24. Blocks 22–24 were added after the baseline.</p>
+<a href="issue-21/issue-21-texture-contact-sheet.svg"><img src="issue-21/issue-21-texture-contact-sheet.svg" alt="After texture contact sheet grouped by material family"></a></div>
+<div class="card"><h2>Validation</h2>
+<p>Automated checks: 234 passed across 23 suites, including block coverage, save behavior, performance regressions, and sanitized offline QA output. Independent contact-sheet review passed.</p>
+<p>Browser sample in Codex in-app browser, desktop profile, 1280 × 720 (hardware/GPU unavailable): before 1.7 FPS, p95 frame time 1016.2 ms, heap 21.8 MiB; after 5.3 FPS, 1007.3 ms, heap 22.6 MiB. This browser session was heavily throttled, so these readings do not establish acceptable device performance.</p>
+<small>Contact sheets document tile textures; normal-distance gameplay checks were limited to materials visible in the sampled scene.</small></div>
+</body></html>
