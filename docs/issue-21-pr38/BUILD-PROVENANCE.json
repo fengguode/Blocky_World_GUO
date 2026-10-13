@@ -5,6 +5,8 @@
   "sourceBlockSha256": "4841a57fa3749a6fbdc0e5c977d8def7d28739430ac6beefa5bdc6bd12269842",
   "generatedBlockSha256": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
   "sanitizerBuildScriptCommit": "97891cbd4fcaa0f6aa84c88079ee0a83598850d2",
+  "sanitizerBuildScriptSha256": "92ea8c2cfabff872d2c6a39fb0b906f1a66ca6d52312a9f9ab9fe65cc5063e27",
+  "qaOnlyTransform": "Remove only the two event bindings for the stripped shared-fight dialog",
   "files": {
     "index.html": "a2b5d13370a4ce39e3c77d25d305153acb28e32f5529fbfd80d0f321b55ffd92",
     "js/blocks.js": "fa9ca0c3f0f42d4e303f2e6e76d4a595166724e66bc89848cbacc2099308d4b3",
@@ -19,7 +21,7 @@
     "js/mesher.js": "fb6bbc01ddfb063c13fd0a52036c6a416217d509c9c2efbf63fa691f23d2c31d",
     "js/storage.js": "81a291f035b12cbc556d38d9cdaa410ba7620382c75cbbf586fbf644ce1e35fc",
     "js/touch.js": "80dd902ff97b79449dfc1bdea47849c15b1ae2efc026cc74515c0569fe81ea17",
-    "js/ui.js": "18310cb79baa945a33a93dbd81be5f3742b7231d61f83a394b84c59fa6cb9f35",
+    "js/ui.js": "e7daf7d694d12ba326cbdc7cf2cd2a29cca50a931622260c327bd9d1e7a68b00",
     "js/world.js": "adf75cd76e2c1089e102006c9ccd3cb76de06afc97a2da29ce5fea9ab49972d9",
     "style.css": "1a42b7c4a0343adc8d44d28fb16e3e27fea0dd23bb0d6206b10a13d57a9e8506"
   }
