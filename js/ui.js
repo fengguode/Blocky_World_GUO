@@ -157,7 +157,7 @@ const UI = {
     box.innerHTML =
       '<section class="world-select" aria-labelledby="world-select-title">' +
         '<h3 id="world-select-title">Choose a world</h3>' +
-        '<p>Each world keeps its own blocks and progress.</p>' +
+        '<p>You can switch worlds later; each keeps its own blocks and progress.</p>' +
         '<div class="world-cards">' +
           '<button type="button" class="world-card" id="choose-normal">' +
             '<strong>Normal World</strong><span>Hills, trees, water and open places to explore.</span>' +

@@ -59,4 +59,20 @@ assert.match(ui, /event\.key === 'Enter' \|\| event\.key === ' '/, 'fight charac
 assert.match(ui, /const selectedCard = box\.querySelector\('\.char-card\[data-id="' \+ card\.dataset\.id \+ '"\]'\);\s*if \(selectedCard\) selectedCard\.focus\(\);/, 'fight character focus returns to the selected card after rerender');
 assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*?animation-iteration-count:\s*1\s*!important/, 'reduced-motion mode prevents rapid infinite animation loops');
 
-console.log('Portrait rendering passed for 6 characters; 12 UI structure checks passed.');
+const worldChooser = { innerHTML: '', buttons: {} };
+worldChooser.querySelector = (selector) => worldChooser.buttons[selector];
+sandbox.document.getElementById = (id) => id === 'menu-extra' ? worldChooser : null;
+let selectedWorld = null;
+sandbox.Game = { activeWorldType: 'normal', selectWorld(type) { selectedWorld = type; } };
+worldChooser.buttons['#choose-normal'] = { onclick: null };
+worldChooser.buttons['#choose-flat'] = { onclick: null };
+worldChooser.buttons['#world-select-back'] = { onclick: null };
+vm.runInContext('UI.showWorldSelect()', sandbox);
+assert.match(worldChooser.innerHTML, /You can switch worlds later; each keeps its own blocks and progress\./,
+  'world choice reassures players that they can switch and keep progress');
+worldChooser.buttons['#choose-normal'].onclick();
+assert.strictEqual(selectedWorld, 'normal', 'normal world still selects its existing save');
+worldChooser.buttons['#choose-flat'].onclick();
+assert.strictEqual(selectedWorld, 'flat', 'flat world still selects its existing save');
+
+console.log('Portrait rendering passed for 6 characters; 15 UI structure checks passed.');
