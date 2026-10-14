@@ -165,16 +165,22 @@ function load(options) {
         contains: (name) => classes.has(name),
       },
       eventListeners: {},
+      attributes: {},
       appendChild: noopOp,
       addEventListener(type, listener) {
         (this.eventListeners[type] || (this.eventListeners[type] = [])).push(listener);
+      },
+      dispatchUserEvent(event) {
+        if (this.disabled) return true;
+        for (const listener of this.eventListeners[event.type] || []) listener.call(this, event);
+        return !event.defaultPrevented;
       },
       getContext: () => stubCanvas2D(),
       querySelectorAll: () => [],
       querySelector: () => null,
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
       focus: noopOp,
-      setAttribute: noopOp,
+      setAttribute(name, value) { this.attributes[name] = String(value); },
       textContent: '',
       innerHTML: '',
       dataset: {},

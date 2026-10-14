@@ -255,7 +255,7 @@ const Touch = {
     if (view) view.classList.toggle('hidden', !on || !Game || Game.state !== 'play');
   },
 
-  relabel(mode) {
+  relabel(mode, actionReady) {
     const hit = document.getElementById('touch-hit');
     const use = document.getElementById('touch-use');
     const fly = document.getElementById('touch-fly');
@@ -265,17 +265,37 @@ const Touch = {
       hit.textContent = 'HIT';
       use.textContent = 'SKILL';
       if (jump) jump.textContent = 'JUMP';
-      if (fly) fly.style.display = 'none';
+      if (fly) {
+        fly.textContent = 'ULT';
+        fly.disabled = actionReady !== true;
+        fly.setAttribute('aria-label', actionReady ? 'Use ultimate' : 'Ultimate not ready');
+        fly.title = actionReady ? 'Use ultimate' : 'Ultimate not ready';
+        fly.classList.add('touch-action-fight');
+        fly.classList.remove('touch-action-observe');
+      }
     } else if (mode === 'observe') {
       hit.textContent = '▲';
       use.textContent = '▼';
       if (jump) jump.textContent = 'FWD';
-      if (fly) fly.style.display = 'none';
+      if (fly) {
+        fly.textContent = 'PHOTO';
+        fly.disabled = false;
+        fly.setAttribute('aria-label', 'Take a photo');
+        fly.title = 'Take a photo';
+        fly.classList.remove('touch-action-fight');
+        fly.classList.add('touch-action-observe');
+      }
     } else {
       hit.textContent = 'BREAK';
       use.textContent = 'PLACE';
       if (jump) jump.textContent = 'JUMP';
-      if (fly) fly.style.display = '';
+      if (fly) {
+        fly.textContent = 'FLY';
+        fly.disabled = false;
+        fly.setAttribute('aria-label', 'Toggle flying');
+        fly.title = 'Toggle flying';
+        fly.classList.remove('touch-action-fight', 'touch-action-observe');
+      }
     }
   },
 };
