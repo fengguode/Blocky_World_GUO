@@ -396,6 +396,22 @@ H.test('animal instance batches upload per-box transforms and issue one instance
     Game.cube = originalCube;
   }
 });
+
+H.test('animal instance lighting rotates face normals with the box yaw', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'js/main.js'), 'utf8');
+  const programStart = source.indexOf('this.progBox = createProgram(gl,');
+  H.assert(programStart >= 0, 'box shader should exist');
+  const vertexStart = source.indexOf('`', programStart);
+  const vertexEnd = source.indexOf('`', vertexStart + 1);
+  H.assert(vertexStart >= 0 && vertexEnd > vertexStart, 'box vertex shader source should be extractable');
+  const vertexShader = source.slice(vertexStart + 1, vertexEnd);
+  H.assert(/vec3 worldNormal = aNormal;/.test(vertexShader), 'ordinary cube faces should retain their original normals');
+  H.assert(/worldNormal = vec3\(\s*aBoxRotation\.x \* aNormal\.x \+ aBoxRotation\.y \* aNormal\.z,\s*aNormal\.y,\s*-aBoxRotation\.y \* aNormal\.x \+ aBoxRotation\.x \* aNormal\.z\);/s.test(vertexShader),
+    'instanced animal normals should use the same yaw rotation as their geometry');
+  H.assert(/vNormal = worldNormal;/.test(vertexShader), 'the shader should pass world-space face normals forward');
+  H.assert(/dot\(worldNormal, normalize\(vec3\(0\.4, 0\.9, 0\.35\)\)\)/.test(vertexShader),
+    'directional face lighting should follow the rotated normal');
+});
 H.test('every hotbar entry is a real, solid block', () => {
   H.eq(g.HOTBAR_BLOCKS.length, 9);
   for (const id of g.HOTBAR_BLOCKS) {

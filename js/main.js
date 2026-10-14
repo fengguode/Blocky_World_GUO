@@ -347,9 +347,16 @@ const Game = {
       void main() {
         vUV = aUV;
         vTile = mix(uTile, aBoxTile, uInstanced);
-        vNormal = aNormal;
+        vec3 worldNormal = aNormal;
+        if (uInstanced > 0.5) {
+          worldNormal = vec3(
+            aBoxRotation.x * aNormal.x + aBoxRotation.y * aNormal.z,
+            aNormal.y,
+            -aBoxRotation.y * aNormal.x + aBoxRotation.x * aNormal.z);
+        }
+        vNormal = worldNormal;
         // simple directional shading so boxy characters read as 3D
-        float key = 0.45 + 0.55 * max(0.0, dot(aNormal, normalize(vec3(0.4, 0.9, 0.35))));
+        float key = 0.45 + 0.55 * max(0.0, dot(worldNormal, normalize(vec3(0.4, 0.9, 0.35))));
         vShade = key * mix(0.45, 1.0, uDayLight);
         // aPos is the cube's local vertex. Use the box's world-space center
         // for fog so small character parts keep their material textures.
