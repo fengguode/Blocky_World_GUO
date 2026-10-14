@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "source": {
-    "commit": "2abcd1f1b5f37818fafbe6d48cec64694612b52f",
-    "tree": "9b4aea05a0e5fc212c2372ee58253c6c13e747c9"
+    "commit": "ad99e3a8739ff88e1a1c060ef1fc84882f3e2e7a",
+    "tree": "33750583a66326644c6ae3ddb674cea957886ab5"
   },
   "tool": {
     "name": "blocky-world-sanitized-qa-builder",
@@ -24,7 +24,7 @@
   ],
   "inputSha256": {
     "index.html": "c81de0f30a89e40e183ea1e7972d43bf554fab223ebfbf82bba4a94644347847",
-    "style.css": "f7601a6031865555eac2e9050f0d347a5a0ee18b57aff7232e829f611c0ad32d",
+    "style.css": "9a1b5959962d60750f6fee2a37f1a471fa2cdb9c2770a33a20afbb4b5eace62d",
     "js/blocks.js": "7f10018267abc12f248c8482a76a2cfbeec8bf6582cf7a70a882b7391bb478b7",
     "js/gl.js": "0bbf961f9dd95a12062f264a3923d5b3e9718f35adc3dbe4c07362d7f016adfa",
     "js/world.js": "85d542c61937ccfe2f5ebea20c0cc537d04192f146e685f88a8e734883593016",
@@ -36,12 +36,12 @@
     "js/bot.js": "9261a8a7d2bdcd780a050cccc2a95d5c00d0fe7bb289e821ebaa3a218fe8258f",
     "js/fight.js": "a779441821e83b93adfe6cbbf70bdb5c22764ceae5b9e3ace8d68eadfa209fc5",
     "js/touch.js": "4a43ed1fc165b923fa8c43bcfe7945c46912d88aa1e44cdc7991ea99094254e3",
-    "js/ui.js": "b02b628dc1e4ca7448ac326976daec89d3ddd12fb2a4e4096a4629784827e6e8",
+    "js/ui.js": "e3cfa12d79a5789b304efd84852084da925aacc547762b521394e3e44631a43e",
     "js/main.js": "a774b72e2bdc7cae1bdd8aed6762d3c07511293f6e9cfb69c04fbb018a7d4c83"
   },
   "inputGitBlobs": {
     "index.html": "b270805669377750813ddc7a1e8d53537d191a3e",
-    "style.css": "75c2f396990c68be2ae8088c37851141626659bf",
+    "style.css": "208f4b31eabe366520110efeb8548aef117c7fe8",
     "js/blocks.js": "c26b7fe902a7661e2253dd59a01db1ed3582e1aa",
     "js/gl.js": "085776a064fa13f4e95eeac1047ab556e4d9d141",
     "js/world.js": "8a5a029a302086805a3d9877fd26d92976380199",
@@ -53,12 +53,12 @@
     "js/bot.js": "775c27428964f48b68fa2ba090a5145263e75b83",
     "js/fight.js": "22f4f23eb638167db97a47075dad1adf986cf9ab",
     "js/touch.js": "2c489c7c8208113415ded7fa81b2bd26eaaa9a0c",
-    "js/ui.js": "89b55f0cf423ae745db3975ebddf9511bda70797",
+    "js/ui.js": "08e358b81f2b3537ba3cf2569e3de318cb18a4b6",
     "js/main.js": "f4e42367a85e4773befd24289162acb5c165499c"
   },
   "assets": {
     "index.html": {
-      "sha256": "b910fe6a3ad55157973a7a45f1250786efbab68f4decb9bedfd081c8f50cd4af",
+      "sha256": "405ec660783f7a3446e7d3914855855f1722b7831497e9e88ad7fef6f049597e",
       "bytes": 6661
     },
     "js/blocks.js": {
@@ -110,16 +110,16 @@
       "bytes": 5941
     },
     "js/ui.js": {
-      "sha256": "185682bfbfb44a3b0840cf88a0edbe64e40a63bac15df6ade983d4ed5db2fa13",
-      "bytes": 23677
+      "sha256": "e7daf7d694d12ba326cbdc7cf2cd2a29cca50a931622260c327bd9d1e7a68b00",
+      "bytes": 23700
     },
     "js/world.js": {
       "sha256": "adf75cd76e2c1089e102006c9ccd3cb76de06afc97a2da29ce5fea9ab49972d9",
       "bytes": 21849
     },
     "style.css": {
-      "sha256": "dedb6d9ec054a88e335ff4bd7ab739193bc104652e87bf1311a53408d3457ab8",
-      "bytes": 41184
+      "sha256": "e79679c464aaa7b4205bacbb524025c37f3fb8f52a8cdb67566c093edbc5b49e",
+      "bytes": 41202
     }
   }
 }

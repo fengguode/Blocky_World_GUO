@@ -678,7 +678,7 @@ kbd {
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
 
 /* ---------- pause / settings ---------- */
-#btn-game-settings { position: fixed; z-index: 85; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); padding: 10px 12px; pointer-events: auto; touch-action: manipulation; }
+#btn-game-settings { position: fixed; z-index: 85; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); min-height: 44px; padding: 10px 12px; pointer-events: auto; touch-action: manipulation; }
 #pause .menu-card { touch-action: pan-y; }
 #pause {
   position: fixed;
