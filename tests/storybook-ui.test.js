@@ -126,6 +126,10 @@ assert.deepStrictEqual(availableHotbarItems.slice(9).map(({ id, name, kind }) =>
 assert.strictEqual(hotbarBar.children.length, 12, 'UI.buildHotbar renders all 12 available slots');
 assert.deepStrictEqual(Array.from(hotbarBar.children, (slot) => Number(slot.dataset.slot)),
   Array.from({ length: 12 }, (_, i) => i), 'rendered slot indices cover 0 through 11');
+assert.deepStrictEqual(hotbarBar.children.map((slot) => slot.title), [
+  'Grass', 'Stone', 'Cobble', 'Dirt', 'Planks', 'Log', 'Leaves', 'Glowstone', 'Gold',
+  'Shovel', 'Apple', 'Meat',
+], 'all 12 rendered hotbar titles match the intended item order');
 assert.deepStrictEqual(hotbarBar.children.slice(9).map((slot) => slot.title), ['Shovel', 'Apple', 'Meat'],
   'rendered slots 9-11 retain their tool and food labels');
 assert.match(css, /#menu\s*\{[^}]*touch-action:\s*none/s, 'the intro menu preserves its custom touch-scroll gesture');
