@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="2174" viewBox="0 0 900 2174" data-texture-source="87142cb44cee6c4ee50df3893cd0b7fe49a579eb">
+<desc>Texture atlas source: 87142cb44cee6c4ee50df3893cd0b7fe49a579eb</desc>
+<defs><pattern id="check" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#fff"/><rect width="8" height="8" fill="#e4e8ee"/><rect x="8" y="8" width="8" height="8" fill="#e4e8ee"/></pattern></defs>
+<rect width="100%" height="100%" fill="#fff"/><text x="18" y="27" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#243044">Issue #21 · all block families · main 87142cb</text>
+<text x="362" y="63" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#53627a">TOP</text>
+<text x="494" y="63" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#53627a">SIDE</text>
+<text x="626" y="63" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#53627a">BOTTOM</text>
+<rect x="0" y="82" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="104" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Terrain &amp; soil</text>
+<g data-family="Terrain &amp; soil" data-block-id="1" aria-label="Grass">
+<text x="18" y="150" font-family="Arial,sans-serif" font-size="13" fill="#243044">01 · Grass</text>
+<rect x="330" y="116" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="116" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeElEQVR4nGOwOjLtPwwLzcn7j8zHJobOZ0CWAOHgu+vBGF0cWR7DAHQF6AbAxEAYwwXoGtENgGFccgyEFKDLo4szoCvCphkfZiBVwxAwAFtiItoAXIkFX0ATTImE0gJGNBJKSNeOoaYJjDAg5HyYAWTHAs4wIBcDABIulfDRRGBLAAAAAElFTkSuQmCC"/>
+<rect x="462" y="116" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="116" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAbklEQVR4nGOwOjLtPwwH313/H5lPjBwDsQpBWGhOHoY8A0wChNEVEyPGABLwsksAY5gkKWIMMEFkSVLEMAwgFaMYYKLhhYFJMgCGYwKKUDDJBqC7iGwDSA4DYjC690gyAOYlsg3AFlv0DwOqGwAAFgcIiXtqKqsAAAAASUVORK5CYII="/>
+<rect x="594" y="116" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="116" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGPwskv4TwlmgDFMNLwwMNEGgBTHBBRhYGIMYYDZhqwRZihJLqDIC4QwPgsIGoDNi8jhQ5QB6JqRw4j2XqBKIBJtADlRiZGU8aVGbAYTdAG6AeiGkxwGVI8FAPd03bx5KYBrAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Terrain &amp; soil" data-block-id="2" aria-label="Dirt">
+<text x="18" y="228" font-family="Arial,sans-serif" font-size="13" fill="#243044">02 · Dirt</text>
+<rect x="330" y="194" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="194" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGPwskv4TwlmgDFMNLwwMNEGgBTHBBRhYGIMYYDZhqwRZihJLqDIC4QwPgsIGoDNi8jhQ5QB6JqRw4j2XqBKIBJtADlRiZGU8aVGbAYTdAG6AeiGkxwGVI8FAPd03bx5KYBrAAAAAElFTkSuQmCC"/>
+<rect x="462" y="194" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="194" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGPwskv4TwlmgDFMNLwwMNEGgBTHBBRhYGIMYYDZhqwRZihJLqDIC4QwPgsIGoDNi8jhQ5QB6JqRw4j2XqBKIBJtADlRiZGU8aVGbAYTdAG6AeiGkxwGVI8FAPd03bx5KYBrAAAAAElFTkSuQmCC"/>
+<rect x="594" y="194" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="194" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGPwskv4TwlmgDFMNLwwMNEGgBTHBBRhYGIMYYDZhqwRZihJLqDIC4QwPgsIGoDNi8jhQ5QB6JqRw4j2XqBKIBJtADlRiZGU8aVGbAYTdAG6AeiGkxwGVI8FAPd03bx5KYBrAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Terrain &amp; soil" data-block-id="5" aria-label="Sand">
+<text x="18" y="306" font-family="Arial,sans-serif" font-size="13" fill="#243044">05 · Sand</text>
+<rect x="330" y="272" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="272" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGO4dmzaf0owA4zx6tYqrJigAaRqwOkCED6woQEDE20AIU24vMhAyAZC4ULQAEJeJNoAXGFDkgsIxgI5UcpASSICG0BqvBOVDvAZhi5PUiBi8yLJsUB2OsCFAYr6MODl/HZwAAAAAElFTkSuQmCC"/>
+<rect x="462" y="272" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="272" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGO4dmzaf0owA4zx6tYqrJigAaRqwOkCED6woQEDE20AIU24vMhAyAZC4ULQAEJeJNoAXGFDkgsIxgI5UcpASSICG0BqvBOVDvAZhi5PUiBi8yLJsUB2OsCFAYr6MODl/HZwAAAAAElFTkSuQmCC"/>
+<rect x="594" y="272" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="272" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGO4dmzaf0owA4zx6tYqrJigAaRqwOkCED6woQEDE20AIU24vMhAyAZC4ULQAEJeJNoAXGFDkgsIxgI5UcpASSICG0BqvBOVDvAZhi5PUiBi8yLJsUB2OsCFAYr6MODl/HZwAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Terrain &amp; soil" data-block-id="13" aria-label="Snow">
+<text x="18" y="384" font-family="Arial,sans-serif" font-size="13" fill="#243044">13 · Snow</text>
+<rect x="330" y="350" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="350" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVR4nGN49OnXfxg+desRHCOL48MMFBuArOnj//8ohhBjGAM220lxBeVeoKoB5GCSDMDmOqINwBXARBmAK5rp5wKiw4DshIQrOVOUkMgygBwMAJh5vhnuRsGcAAAAAElFTkSuQmCC"/>
+<rect x="462" y="350" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="350" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVR4nGN49OnXfxg+desRHCOL48MMFBuArOnj//8ohhBjGAM220lxBeVeoKoB5GCSDMDmOqINwBXARBmAK5rp5wKiw4DshIQrOVOUkMgygBwMAJh5vhnuRsGcAAAAAElFTkSuQmCC"/>
+<rect x="594" y="350" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="350" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVR4nGN49OnXfxg+desRHCOL48MMFBuArOnj//8ohhBjGAM220lxBeVeoKoB5GCSDMDmOqINwBXARBmAK5rp5wKiw4DshIQrOVOUkMgygBwMAJh5vhnuRsGcAAAAAElFTkSuQmCC"/>
+</g>
+<rect x="0" y="428" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="450" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Stone, masonry &amp; ore</text>
+<g data-family="Stone, masonry &amp; ore" data-block-id="3" aria-label="Stone">
+<text x="18" y="496" font-family="Arial,sans-serif" font-size="13" fill="#243044">03 · Stone</text>
+<rect x="330" y="462" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="462" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAbklEQVR4nGNIyGn7D8IVLfNQMEjMzivlP0weF2bAphmkkRjNYAPItRnFBaTYiNUAfJiQ4QQNgBmCzatEG4DPEKINwOUdkgwgOwxIMgDmTKITErpG9BRJdELClpzRFWNL7gzYnE9KTJAViBQbgIwBslhOzYb+96IAAAAASUVORK5CYII="/>
+<rect x="462" y="462" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="462" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAbklEQVR4nGNIyGn7D8IVLfNQMEjMzivlP0weF2bAphmkkRjNYAPItRnFBaTYiNUAfJiQ4QQNgBmCzatEG4DPEKINwOUdkgwgOwxIMgDmTKITErpG9BRJdELClpzRFWNL7gzYnE9KTJAViBQbgIwBslhOzYb+96IAAAAASUVORK5CYII="/>
+<rect x="594" y="462" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="462" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAbklEQVR4nGNIyGn7D8IVLfNQMEjMzivlP0weF2bAphmkkRjNYAPItRnFBaTYiNUAfJiQ4QQNgBmCzatEG4DPEKINwOUdkgwgOwxIMgDmTKITErpG9BRJdELClpzRFWNL7gzYnE9KTJAViBQbgIwBslhOzYb+96IAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Stone, masonry &amp; ore" data-block-id="4" aria-label="Cobble">
+<text x="18" y="574" font-family="Arial,sans-serif" font-size="13" fill="#243044">04 · Cobble</text>
+<rect x="330" y="540" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="540" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGPwCCv6D8J5NTOwYkJyDMgKWiatQ8HIinHJMeBSAFMEswCXPAMhJxLyIgOyInIwdQ0gxis4DSAU2rgswHABvpjAJo8RBrgSEt5oJAbTNhrJCX24AcSEPm1dQGkYAAAHYU+BisxtOwAAAABJRU5ErkJggg=="/>
+<rect x="462" y="540" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="540" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGPwCCv6D8J5NTOwYkJyDMgKWiatQ8HIinHJMeBSAFMEswCXPAMhJxLyIgOyInIwdQ0gxis4DSAU2rgswHABvpjAJo8RBrgSEt5oJAbTNhrJCX24AcSEPm1dQGkYAAAHYU+BisxtOwAAAABJRU5ErkJggg=="/>
+<rect x="594" y="540" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="540" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGPwCCv6D8J5NTOwYkJyDMgKWiatQ8HIinHJMeBSAFMEswCXPAMhJxLyIgOyInIwdQ0gxis4DSAU2rgswHABvpjAJo8RBrgSEt5oJAbTNhrJCX24AcSEPm1dQGkYAAAHYU+BisxtOwAAAABJRU5ErkJggg=="/>
+</g>
+<g data-family="Stone, masonry &amp; ore" data-block-id="6" aria-label="Bricks">
+<text x="18" y="652" font-family="Arial,sans-serif" font-size="13" fill="#243044">06 · Bricks</text>
+<rect x="330" y="618" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="618" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAc0lEQVR4nGOYk3HhPy7sZBaDUw4mz9AVtu8/DMMkYHyQAmR5dIxiALJGELvIbhleA2DyDCAChpFNJhYzkOpndDEGdD+BnIbPz+jyDOh+IuRndHEGUvxLMAwoTgfY/Ex0OsDnZ+Q0gp5OiA4DdJtH0wECAwAxrGVVd1G1xgAAAABJRU5ErkJggg=="/>
+<rect x="462" y="618" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="618" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAc0lEQVR4nGOYk3HhPy7sZBaDUw4mz9AVtu8/DMMkYHyQAmR5dIxiALJGELvIbhleA2DyDCAChpFNJhYzkOpndDEGdD+BnIbPz+jyDOh+IuRndHEGUvxLMAwoTgfY/Ex0OsDnZ+Q0gp5OiA4DdJtH0wECAwAxrGVVd1G1xgAAAABJRU5ErkJggg=="/>
+<rect x="594" y="618" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="618" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAc0lEQVR4nGOYk3HhPy7sZBaDUw4mz9AVtu8/DMMkYHyQAmR5dIxiALJGELvIbhleA2DyDCAChpFNJhYzkOpndDEGdD+BnIbPz+jyDOh+IuRndHEGUvxLMAwoTgfY/Ex0OsDnZ+Q0gp5OiA4DdJtH0wECAwAxrGVVd1G1xgAAAABJRU5ErkJggg=="/>
+</g>
+<g data-family="Stone, masonry &amp; ore" data-block-id="16" aria-label="Gold">
+<text x="18" y="730" font-family="Arial,sans-serif" font-size="13" fill="#243044">16 · Gold</text>
+<rect x="330" y="696" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="696" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGP4f8HrPzH46jIFMEYXZyCkAEXuUQwYI6tjgCnAJolNDl2eAZvp2AzB5TqivIAPM5CqYZAbAAsHUsICMxBxRCdeA5A14tOMzYVERyMuF5IUiHhdMDiikRwMAALsBxiTErMxAAAAAElFTkSuQmCC"/>
+<rect x="462" y="696" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="696" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGP4f8HrPzH46jIFMEYXZyCkAEXuUQwYI6tjgCnAJolNDl2eAZvp2AzB5TqivIAPM5CqYZAbAAsHUsICMxBxRCdeA5A14tOMzYVERyMuF5IUiHhdMDiikRwMAALsBxiTErMxAAAAAElFTkSuQmCC"/>
+<rect x="594" y="696" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="696" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGP4f8HrPzH46jIFMEYXZyCkAEXuUQwYI6tjgCnAJolNDl2eAZvp2AzB5TqivIAPM5CqYZAbAAsHUsICMxBxRCdeA5A14tOMzYVERyMuF5IUiHhdMDiikRwMAALsBxiTErMxAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Stone, masonry &amp; ore" data-block-id="17" aria-label="Bedrock">
+<text x="18" y="808" font-family="Arial,sans-serif" font-size="13" fill="#243044">17 · Bedrock</text>
+<rect x="330" y="774" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="774" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZUlEQVR4nGOwsfP5D8NqGmYkYwYQQYkhDDAGIUPEJNRQMIYBuAzBpgmrC/DZSpQXiDEIm4FEGUCxC0gyADkgiYlWrLFAbNQSTAfEuAJnOiA2VRIdiOhRCYtOsmIB2RCyXUC1dAAAzpyGHCyRYd8AAAAASUVORK5CYII="/>
+<rect x="462" y="774" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="774" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZUlEQVR4nGOwsfP5D8NqGmYkYwYQQYkhDDAGIUPEJNRQMIYBuAzBpgmrC/DZSpQXiDEIm4FEGUCxC0gyADkgiYlWrLFAbNQSTAfEuAJnOiA2VRIdiOhRCYtOsmIB2RCyXUC1dAAAzpyGHCyRYd8AAAAASUVORK5CYII="/>
+<rect x="594" y="774" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="774" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZUlEQVR4nGOwsfP5D8NqGmYkYwYQQYkhDDAGIUPEJNRQMIYBuAzBpgmrC/DZSpQXiDEIm4FEGUCxC0gyADkgiYlWrLFAbNQSTAfEuAJnOiA2VRIdiOhRCYtOsmIB2RCyXUC1dAAAzpyGHCyRYd8AAAAASUVORK5CYII="/>
+</g>
+<rect x="0" y="852" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="874" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Wood</text>
+<g data-family="Wood" data-block-id="7" aria-label="Log">
+<text x="18" y="920" font-family="Arial,sans-serif" font-size="13" fill="#243044">07 · Log</text>
+<rect x="330" y="886" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="886" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAP0lEQVR4nGOoC1v2nxLMQDUDVjVdIgnTzoCupE14Mf0MgInPKTkCxmQZsKnrFvkGwDQOnAEDFwsDlxIHLDcCAFEorfPGW/3CAAAAAElFTkSuQmCC"/>
+<rect x="462" y="886" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="886" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAW0lEQVR4nGMIs8v6b6saCMZ5YU1gDBKDicPYMDmYPEyOgaoGwBTiMgCZJtoAZEzQAHQnIouBMIxP0AB0jeiG0N4FuMJgiEYjSQYgBxLJXsAXVUSHAUUuGLDcCACa3PtR6OMKPgAAAABJRU5ErkJggg=="/>
+<rect x="594" y="886" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="886" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAP0lEQVR4nGOoC1v2nxLMQDUDVjVdIgnTzoCupE14Mf0MgInPKTkCxmQZsKnrFvkGwDQOnAEDFwsDlxIHLDcCAFEorfPGW/3CAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Wood" data-block-id="8" aria-label="Planks">
+<text x="18" y="998" font-family="Arial,sans-serif" font-size="13" fill="#243044">08 · Planks</text>
+<rect x="330" y="964" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="964" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAcElEQVR4nGNY0nLiPyWYoSVlxX98OMqqDqwQlzzYAGwmk2UASDFMA0wTsgEEvQAzAIaRDUC2AMMF6M7F5QVsFpAciOgWMKCbSipmoHo6IBRtWKMR3X/o/iTZAGzpgSgDsEUVerwTZQDZYUCWAZSmAwDEJIqZUnrCJwAAAABJRU5ErkJggg=="/>
+<rect x="462" y="964" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="964" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAcElEQVR4nGNY0nLiPyWYoSVlxX98OMqqDqwQlzzYAGwmk2UASDFMA0wTsgEEvQAzAIaRDUC2AMMF6M7F5QVsFpAciOgWMKCbSipmoHo6IBRtWKMR3X/o/iTZAGzpgSgDsEUVerwTZQDZYUCWAZSmAwDEJIqZUnrCJwAAAABJRU5ErkJggg=="/>
+<rect x="594" y="964" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="964" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAcElEQVR4nGNY0nLiPyWYoSVlxX98OMqqDqwQlzzYAGwmk2UASDFMA0wTsgEEvQAzAIaRDUC2AMMF6M7F5QVsFpAciOgWMKCbSipmoHo6IBRtWKMR3X/o/iTZAGzpgSgDsEUVerwTZQDZYUCWAZSmAwDEJIqZUnrCJwAAAABJRU5ErkJggg=="/>
+</g>
+<rect x="0" y="1042" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="1064" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Foliage &amp; flowers</text>
+<g data-family="Foliage &amp; flowers" data-block-id="9" aria-label="Leaves">
+<text x="18" y="1110" font-family="Arial,sans-serif" font-size="13" fill="#243044">09 · Leaves</text>
+<rect x="330" y="1076" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1076" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAjUlEQVR4nKWT0Q2AIAxE79NpHIQ5nMY4BwM4CCtpxEiOUtomflzCR/u4HgXruYN0SS3HxsIj7mkHUdjpg6WSqxjSNSuFFvAFaI0M0MYiVQem7RDgh+KAicsYwHoNF+CEjOkCeSNwBtNFioYIWtFhkQwn4BEaxHLA6aeSqyA+k5sJXdQ7CEKGOgsgIWrNDbkpCl1YMgm1AAAAAElFTkSuQmCC"/>
+<rect x="462" y="1076" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1076" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAjUlEQVR4nKWT0Q2AIAxE79NpHIQ5nMY4BwM4CCtpxEiOUtomflzCR/u4HgXruYN0SS3HxsIj7mkHUdjpg6WSqxjSNSuFFvAFaI0M0MYiVQem7RDgh+KAicsYwHoNF+CEjOkCeSNwBtNFioYIWtFhkQwn4BEaxHLA6aeSqyA+k5sJXdQ7CEKGOgsgIWrNDbkpCl1YMgm1AAAAAElFTkSuQmCC"/>
+<rect x="594" y="1076" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1076" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAjUlEQVR4nKWT0Q2AIAxE79NpHIQ5nMY4BwM4CCtpxEiOUtomflzCR/u4HgXruYN0SS3HxsIj7mkHUdjpg6WSqxjSNSuFFvAFaI0M0MYiVQem7RDgh+KAicsYwHoNF+CEjOkCeSNwBtNFioYIWtFhkQwn4BEaxHLA6aeSqyA+k5sJXdQ7CEKGOgsgIWrNDbkpCl1YMgm1AAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Foliage &amp; flowers" data-block-id="22" aria-label="Rose">
+<text x="18" y="1188" font-family="Arial,sans-serif" font-size="13" fill="#243044">22 · Rose</text>
+<rect x="330" y="1154" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1154" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP7gXcmk/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAo8ZYzDK/e94AAAAASUVORK5CYII="/>
+<rect x="462" y="1154" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1154" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP7gXcmk/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAo8ZYzDK/e94AAAAASUVORK5CYII="/>
+<rect x="594" y="1154" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1154" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP7gXcmk/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAo8ZYzDK/e94AAAAASUVORK5CYII="/>
+</g>
+<g data-family="Foliage &amp; flowers" data-block-id="23" aria-label="Sunflower">
+<text x="18" y="1266" font-family="Arial,sans-serif" font-size="13" fill="#243044">23 · Sunflower</text>
+<rect x="330" y="1232" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1232" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVR4nGNgGP7g/wWv/zBMkWaSDUHR+OkIFQyhhjdI1gwCdnMyydM4OAwAaQ7ZV/efYkMGPhxoCgAsplxk71bvzAAAAABJRU5ErkJggg=="/>
+<rect x="462" y="1232" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1232" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVR4nGNgGP7g/wWv/zBMkWaSDUHR+OkIFQyhhjdI1gwCdnMyydM4OAwAaQ7ZV/efYkMGPhxoCgAsplxk71bvzAAAAABJRU5ErkJggg=="/>
+<rect x="594" y="1232" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1232" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVR4nGNgGP7g/wWv/zBMkWaSDUHR+OkIFQyhhjdI1gwCdnMyydM4OAwAaQ7ZV/efYkMGPhxoCgAsplxk71bvzAAAAABJRU5ErkJggg=="/>
+</g>
+<g data-family="Foliage &amp; flowers" data-block-id="24" aria-label="Blue Flower">
+<text x="18" y="1344" font-family="Arial,sans-serif" font-size="13" fill="#243044">24 · Blue Flower</text>
+<rect x="330" y="1310" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1310" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP6gat+3/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAwGVdyNPQoEUAAAAASUVORK5CYII="/>
+<rect x="462" y="1310" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1310" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP6gat+3/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAwGVdyNPQoEUAAAAASUVORK5CYII="/>
+<rect x="594" y="1310" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1310" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGP6gat+3/zBMkWaSDUHW9P9OAeWGUMUbJGsGAbs5meRpHBwGgDSH7Kv7T7EhAx8ONAUAwGVdyNPQoEUAAAAASUVORK5CYII="/>
+</g>
+<rect x="0" y="1388" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="1410" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Glass, ice &amp; water</text>
+<g data-family="Glass, ice &amp; water" data-block-id="10" aria-label="Glass">
+<text x="18" y="1456" font-family="Arial,sans-serif" font-size="13" fill="#243044">10 · Glass</text>
+<rect x="330" y="1422" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1422" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAATUlEQVR4nGPY9O3/JUowA4iouPBCixyM1YBHf/4/BGGyDIBpJtYQFAPQNRFjCPW9QJVApLkBS1782IeMSTIAXTNJLkDWOMQDkTYGUIIBi6y27IxAmLAAAAAASUVORK5CYII="/>
+<rect x="462" y="1422" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1422" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAATUlEQVR4nGPY9O3/JUowA4iouPBCixyM1YBHf/4/BGGyDIBpJtYQFAPQNRFjCPW9QJVApLkBS1782IeMSTIAXTNJLkDWOMQDkTYGUIIBi6y27IxAmLAAAAAASUVORK5CYII="/>
+<rect x="594" y="1422" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1422" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAATUlEQVR4nGPY9O3/JUowA4iouPBCixyM1YBHf/4/BGGyDIBpJtYQFAPQNRFjCPW9QJVApLkBS1782IeMSTIAXTNJLkDWOMQDkTYGUIIBi6y27IxAmLAAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="12" aria-label="Water">
+<text x="18" y="1534" font-family="Arial,sans-serif" font-size="13" fill="#243044">12 · Water</text>
+<rect x="330" y="1500" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1500" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="462" y="1500" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1500" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="594" y="1500" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1500" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="15" aria-label="Ice">
+<text x="18" y="1612" font-family="Arial,sans-serif" font-size="13" fill="#243044">15 · Ice</text>
+<rect x="330" y="1578" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1578" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaUlEQVR4nGPY9OP/fxieducryZgBRFBiCAOMgW5I2Z6rGIqR1cDUMSArAGmCYUKaYWoY0BViMwCb63AagMtAXK4jaADRgTiwBuAKeZJdQE6CwpmQyHIBIa9gs4CkQMSWoEiOBXRXUhyNALe7ZkwCHxUeAAAAAElFTkSuQmCC"/>
+<rect x="462" y="1578" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1578" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaUlEQVR4nGPY9OP/fxieducryZgBRFBiCAOMgW5I2Z6rGIqR1cDUMSArAGmCYUKaYWoY0BViMwCb63AagMtAXK4jaADRgTiwBuAKeZJdQE6CwpmQyHIBIa9gs4CkQMSWoEiOBXRXUhyNALe7ZkwCHxUeAAAAAElFTkSuQmCC"/>
+<rect x="594" y="1578" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1578" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaUlEQVR4nGPY9OP/fxieducryZgBRFBiCAOMgW5I2Z6rGIqR1cDUMSArAGmCYUKaYWoY0BViMwCb63AagMtAXK4jaADRgTiwBuAKeZJdQE6CwpmQyHIBIa9gs4CkQMSWoEiOBXRXUhyNALe7ZkwCHxUeAAAAAElFTkSuQmCC"/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="18" aria-label="Flowing Water 4">
+<text x="18" y="1690" font-family="Arial,sans-serif" font-size="13" fill="#243044">18 · Flowing Water 4</text>
+<rect x="330" y="1656" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1656" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="462" y="1656" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1656" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="594" y="1656" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1656" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="19" aria-label="Flowing Water 3">
+<text x="18" y="1768" font-family="Arial,sans-serif" font-size="13" fill="#243044">19 · Flowing Water 3</text>
+<rect x="330" y="1734" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1734" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="462" y="1734" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1734" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="594" y="1734" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1734" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="20" aria-label="Flowing Water 2">
+<text x="18" y="1846" font-family="Arial,sans-serif" font-size="13" fill="#243044">20 · Flowing Water 2</text>
+<rect x="330" y="1812" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1812" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="462" y="1812" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1812" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="594" y="1812" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1812" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+</g>
+<g data-family="Glass, ice &amp; water" data-block-id="21" aria-label="Flowing Water 1">
+<text x="18" y="1924" font-family="Arial,sans-serif" font-size="13" fill="#243044">21 · Flowing Water 1</text>
+<rect x="330" y="1890" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="1890" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="462" y="1890" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="1890" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+<rect x="594" y="1890" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="1890" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhklEQVR4nGPQaDmxixLMAGM4zHlwBxmTZAC6ZlyGYBNnwKUZWSE+MawG4PMWuhhOF2BTLJS3aRcIoxgAE4RJYLMdJg+TQ9bDgBwg6DYga8TlSgZsUYNuIz5vYjUAV/RhNQBfwsEVeMjyDPgkcQUessEM+CRxeQnZYIwwQLeV6MxEcW4kFwMAW/hJ5bdktkIAAAAASUVORK5CYII="/>
+</g>
+<rect x="0" y="1968" width="900" height="34" fill="#eaf0f7"/>
+<text x="18" y="1990" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#243044">Lighting &amp; decoration</text>
+<g data-family="Lighting &amp; decoration" data-block-id="11" aria-label="Glowstone">
+<text x="18" y="2036" font-family="Arial,sans-serif" font-size="13" fill="#243044">11 · Glowstone</text>
+<rect x="330" y="2002" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="2002" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWElEQVR4nGOo+Pb/PyWYAZkTduUuHJNsAEjTjX//4ZhYQxiQbUY3gBhDGNA1/7/gRZJLKHcBVcKAKrFAlXRADEZ3JUkGYAsnog3AFtUkGUCxC6gSBjSJRgAkDGjwlNG9YQAAAABJRU5ErkJggg=="/>
+<rect x="462" y="2002" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="2002" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWElEQVR4nGOo+Pb/PyWYAZkTduUuHJNsAEjTjX//4ZhYQxiQbUY3gBhDGNA1/7/gRZJLKHcBVcKAKrFAlXRADEZ3JUkGYAsnog3AFtUkGUCxC6gSBjSJRgAkDGjwlNG9YQAAAABJRU5ErkJggg=="/>
+<rect x="594" y="2002" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="2002" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWElEQVR4nGOo+Pb/PyWYAZkTduUuHJNsAEjTjX//4ZhYQxiQbUY3gBhDGNA1/7/gRZJLKHcBVcKAKrFAlXRADEZ3JUkGYAsnog3AFtUkGUCxC6gSBjSJRgAkDGjwlNG9YQAAAABJRU5ErkJggg=="/>
+</g>
+<g data-family="Lighting &amp; decoration" data-block-id="14" aria-label="Pumpkin">
+<text x="18" y="2114" font-family="Arial,sans-serif" font-size="13" fill="#243044">14 · Pumpkin</text>
+<rect x="330" y="2080" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="330" y="2080" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAASElEQVR4nGM4FqPx/0WdFxgjs/9NScDKRlfPQHUDQIphmGQDkDWTbAC6ZmRD6OOCwRMLg9cAbIFLtgEwOZK9QJELBj4QcRkAAF3kpe9pBr5dAAAAAElFTkSuQmCC"/>
+<rect x="462" y="2080" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="462" y="2080" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAASElEQVR4nGM4FqPx/0WdFxgjs/9NScDKRlfPQHUDQIphmGQDkDWTbAC6ZmRD6OOCwRMLg9cAbIFLtgEwOZK9QJELBj4QcRkAAF3kpe9pBr5dAAAAAElFTkSuQmCC"/>
+<rect x="594" y="2080" width="64" height="64" fill="url(#check)" stroke="#aeb8c6"/>
+<image x="594" y="2080" width="64" height="64" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAASElEQVR4nGM4FqPx/0WdFxgjs/9NScDKRlfPQHUDQIphmGQDkDWTbAC6ZmRD6OOCwRMLg9cAbIFLtgEwOZK9QJELBj4QcRkAAF3kpe9pBr5dAAAAAElFTkSuQmCC"/>
+</g>
+</svg>
