@@ -1245,6 +1245,10 @@ const Game = {
     // Show a prompt when the mouse is free, so the camera never looks broken.
     const hint = document.getElementById('capture-hint');
     if (!hint) return;
+    hint.dataset.mode = this.mode;
+    hint.querySelectorAll('[data-capture-mode]').forEach((section) => {
+      section.hidden = section.dataset.captureMode !== this.mode;
+    });
     const playing = (this.state === 'play' || this.state === 'fight') && !this.paused;
     const needsPrompt = playing && !this.isTouch && !locked;
     hint.classList.toggle('show', needsPrompt);
