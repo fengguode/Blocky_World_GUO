@@ -47,12 +47,14 @@ function createCommittedCheckout(sourceRoot) {
   const root = path.join(temporaryRoot, 'repo');
   try {
     const commit = git(sourceRoot, ['rev-parse', 'HEAD']);
+    const token = crypto.randomBytes(24).toString('hex');
     const objectDirectory = path.resolve(sourceRoot, git(sourceRoot, ['rev-parse', '--git-path', 'objects']));
     const gitDirectory = path.join(root, '.git');
     execFileSync('git', ['init', '--quiet', root], { cwd: sourceRoot, encoding: 'utf8' });
     fs.mkdirSync(gitDirectory, { recursive: true });
     fs.mkdirSync(path.join(gitDirectory, 'objects', 'info'), { recursive: true });
     fs.writeFileSync(path.join(gitDirectory, 'HEAD'), commit + '\n');
+    fs.writeFileSync(path.join(gitDirectory, 'qa-test-checkout.marker'), token + '\n');
     fs.writeFileSync(path.join(gitDirectory, 'objects', 'info', 'alternates'), objectDirectory.replace(/\\/g, '/') + '\n');
 
     const records = execFileSync('git', ['ls-tree', '-rz', '--full-tree', commit], { cwd: sourceRoot });
@@ -72,11 +74,21 @@ function createCommittedCheckout(sourceRoot) {
     if (status) throw new Error('Disposable QA checkout at ' + root + ' is not clean (top ' + git(root, ['rev-parse', '--show-toplevel']) + ', gitdir ' + git(root, ['rev-parse', '--git-dir']) + '):\n' + status);
     return {
       root,
+      token,
       dispose() { fs.rmSync(temporaryRoot, { recursive: true, force: true }); },
     };
   } catch (error) {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
     throw error;
+  }
+}
+
+function isDisposableCheckout(root, token) {
+  if (!/^[a-f0-9]{48}$/.test(String(token || ''))) return false;
+  try {
+    return fs.readFileSync(path.join(root, '.git', 'qa-test-checkout.marker'), 'utf8').trim() === token;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -134,6 +146,7 @@ module.exports = {
   createCommittedCheckout,
   exerciseDirtyBuildGuard,
   gitStatus,
+  isDisposableCheckout,
   nodePathEnv,
   snapshotTree,
   spawnBuilder,

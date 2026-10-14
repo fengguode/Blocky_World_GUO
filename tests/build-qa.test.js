@@ -9,10 +9,15 @@ const { spawnSync } = require('node:child_process');
 const terser = require('terser');
 const qaTestCheckout = require('./qa-test-checkout');
 
-const root = process.env.BW_QA_TEST_ROOT || path.join(__dirname, '..');
+const isolatedChild = process.env.BW_QA_TEST_ISOLATED_CHECKOUT === '1';
+const root = isolatedChild ? path.resolve(process.cwd()) : path.join(__dirname, '..');
 const output = path.join(root, '.qa-public');
 const builder = require(path.join(root, 'scripts', 'build-qa.js'));
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
+
+if (isolatedChild && !qaTestCheckout.isDisposableCheckout(root, process.env.BW_QA_TEST_CHECKOUT_TOKEN)) {
+  throw new Error('Isolated QA test mode requires the private marker for its own disposable checkout');
+}
 
 function rejects(fn, message) {
   assert.throws(fn, undefined, message);
@@ -136,7 +141,8 @@ async function runWithoutTouchingDeveloperCheckout() {
       timeout: 180000,
       env: qaTestCheckout.nodePathEnv(sourceRoot, {
         ...process.env,
-        BW_QA_TEST_ROOT: checkout.root,
+        BW_QA_TEST_ISOLATED_CHECKOUT: '1',
+        BW_QA_TEST_CHECKOUT_TOKEN: checkout.token,
       }),
     });
     if (result.stdout) process.stdout.write(result.stdout);
@@ -151,5 +157,5 @@ async function runWithoutTouchingDeveloperCheckout() {
   console.log('Live checkout and existing .qa-public preview preserved.');
 }
 
-if (process.env.BW_QA_TEST_ROOT) run().catch((error) => { console.error(error); process.exitCode = 1; });
+if (isolatedChild) run().catch((error) => { console.error(error); process.exitCode = 1; });
 else runWithoutTouchingDeveloperCheckout().catch((error) => { console.error(error); process.exitCode = 1; });
