@@ -15,7 +15,7 @@ const output = path.join(root, '.qa-public');
 const builder = require(path.join(root, 'scripts', 'build-qa.js'));
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
-if (isolatedChild && !qaTestCheckout.isDisposableCheckout(root, process.env.BW_QA_TEST_CHECKOUT_TOKEN)) {
+if (isolatedChild && !qaTestCheckout.isDisposableCheckout(root, process.env.BW_QA_TEST_CHECKOUT_TOKEN, path.join(__dirname, '..'))) {
   throw new Error('Isolated QA test mode requires the private marker for its own disposable checkout');
 }
 
@@ -133,6 +133,25 @@ async function run() {
 async function runWithoutTouchingDeveloperCheckout() {
   const sourceRoot = path.join(__dirname, '..');
   const developerState = qaTestCheckout.captureDeveloperState(sourceRoot);
+  const forgedToken = 'f'.repeat(48);
+  assert.equal(qaTestCheckout.isDisposableCheckout(sourceRoot, forgedToken, sourceRoot, {
+    realpathSync: fs.realpathSync.bind(fs),
+    readFileSync() { throw new Error('marker must not be read for the live checkout'); },
+  }), false, 'a forged token cannot make the live checkout disposable');
+  const forged = spawnSync(process.execPath, [__filename], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    timeout: 30000,
+    env: qaTestCheckout.nodePathEnv(sourceRoot, {
+      ...process.env,
+      BW_QA_TEST_ISOLATED_CHECKOUT: '1',
+      BW_QA_TEST_CHECKOUT_TOKEN: forgedToken,
+    }),
+  });
+  assert.notEqual(forged.status, 0, 'isolated mode rejects a forged token from the live checkout root');
+  assert.match(forged.stderr, /private marker for its own disposable checkout/);
+  assert.deepEqual(qaTestCheckout.captureDeveloperState(sourceRoot), developerState,
+    'forged live-root invocation fails before changing the worktree or existing .qa-public output');
   const checkout = qaTestCheckout.createCommittedCheckout(sourceRoot);
   try {
     const result = spawnSync(process.execPath, [__filename], {

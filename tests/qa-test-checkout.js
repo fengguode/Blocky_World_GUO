@@ -43,7 +43,7 @@ function captureDeveloperState(root) {
 }
 
 function createCommittedCheckout(sourceRoot) {
-  const temporaryRoot = fs.mkdtempSync(path.join(sourceRoot, '.qa-test-checkout-'));
+  const temporaryRoot = fs.mkdtempSync(path.join(sourceRoot, 'node_modules', '.qa-test-checkout-'));
   const root = path.join(temporaryRoot, 'repo');
   try {
     const commit = git(sourceRoot, ['rev-parse', 'HEAD']);
@@ -83,10 +83,20 @@ function createCommittedCheckout(sourceRoot) {
   }
 }
 
-function isDisposableCheckout(root, token) {
+function canonicalPath(fileSystem, value) {
+  const resolved = fileSystem.realpathSync(value);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function isDisposableCheckout(root, token, expectedSourceRoot, fileSystem = fs) {
   if (!/^[a-f0-9]{48}$/.test(String(token || ''))) return false;
   try {
-    return fs.readFileSync(path.join(root, '.git', 'qa-test-checkout.marker'), 'utf8').trim() === token;
+    const canonicalRoot = canonicalPath(fileSystem, root);
+    const canonicalSource = canonicalPath(fileSystem, expectedSourceRoot);
+    const relative = path.relative(path.join(canonicalSource, 'node_modules'), canonicalRoot);
+    const parts = relative.split(path.sep);
+    if (parts.length !== 2 || parts[1] !== 'repo' || !/^\.qa-test-checkout-[a-z0-9]+$/i.test(parts[0])) return false;
+    return fileSystem.readFileSync(path.join(canonicalRoot, '.git', 'qa-test-checkout.marker'), 'utf8').trim() === token;
   } catch (_) {
     return false;
   }
@@ -147,6 +157,7 @@ module.exports = {
   exerciseDirtyBuildGuard,
   gitStatus,
   isDisposableCheckout,
+  canonicalPath,
   nodePathEnv,
   snapshotTree,
   spawnBuilder,
