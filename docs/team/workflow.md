@@ -21,6 +21,18 @@ Prefer isolated task branches and pull requests after the workspace is connected
 
 Do not commit, push, merge, publish, or deploy without explicit authorization. Do not change live services or data. Keep Done (implementation complete), Verified (acceptance evidence recorded), Accepted (founder acceptance), and Released (authorized distribution) separate. Tie release notes and evidence to the exact reviewed candidate.
 
+### Daily production release readiness
+
+Keep `main` production-ready for a daily release cadence. On each active workday, aim to release a small, usable improvement once its release gates pass. If new work is not ready, keep the last known-good playable release available and record the blocker and next action; never ship a broken or unverified build just to meet the date.
+
+For every release candidate:
+
+- Run and record the relevant automated checks and an independent review against the exact candidate.
+- Smoke-test the exact browser build and its changed user paths. Check offline behavior and touch controls when the change can affect them.
+- Do not ask end users to perform QA.
+- Publish only with explicit authorization, then verify the deployed URL and the core Play & Build path.
+- Record the exact commit, release notes, verification evidence, and a rollback path to the last known-good version.
+
 ## Product context
 
 Blocky World is an offline-capable browser voxel game with build, fight, and observe modes, touch and desktop controls, and local browser persistence. Product behavior, children’s feedback, priorities, and acceptance criteria must come from the user or recorded evidence; do not invent them from code or README prose.
