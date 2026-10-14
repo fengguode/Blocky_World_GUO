@@ -9,7 +9,7 @@
     "version": "1.0.0",
     "terserVersion": "5.43.1",
     "node": "v24.14.0",
-    "sanitizerSha256": "a7c6eb316d81ccdb70708b9d5c0ff1ac8f5c5e96381018878641fb01c5c9fc68",
+    "sanitizerSha256": "7ae72a27a85e6293b95e399c81ee04e3fef67f21936e9a07cad6f271bf6cf853",
     "packageSha256": "aa1bc3e39d4e3993a48491a245950cec30d865c7fb2e4cfdfcaee7e2574c4d78",
     "lockfileSha256": "2bd0bbfb3455c650041bb6f98d4a5f38388439865fca0381b73b5ec66f0fead5"
   },
@@ -18,6 +18,7 @@
     "omit network.js and whitelist only the required local game modules",
     "remove network-only game branches and compile Network references out",
     "remove shared-fight lobby handlers whose dialog is omitted from offline QA HTML",
+    "version local CSS and JavaScript URLs by the source commit to avoid stale cached QA assets",
     "replace persistent browser storage with page-memory-only BWStorage",
     "minify JavaScript using the pinned Terser dependency"
   ],
@@ -57,8 +58,8 @@
   },
   "assets": {
     "index.html": {
-      "sha256": "c4c2b3d16f9063c673556cf300b2c2224107f2e57ca22fe539f5550f708ed982",
-      "bytes": 6016
+      "sha256": "b910fe6a3ad55157973a7a45f1250786efbab68f4decb9bedfd081c8f50cd4af",
+      "bytes": 6661
     },
     "js/blocks.js": {
       "sha256": "c0792323b54dbae24273ad98dc9fcb7a137431d937fac93a3a7c1d70a4eeb14c",
