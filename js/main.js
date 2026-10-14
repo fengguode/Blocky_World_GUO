@@ -324,9 +324,14 @@ const Game = {
       layout(location=0) in vec3 aPos;
       layout(location=1) in vec3 aNormal;
       layout(location=2) in vec2 aUV;
+      layout(location=3) in vec3 aBoxCenter;
+      layout(location=4) in vec3 aBoxSize;
+      layout(location=5) in vec2 aBoxRotation;
+      layout(location=6) in float aBoxTile;
 
       uniform mat4 uMVP;
       uniform float uTile;
+      uniform float uInstanced;
       uniform vec3 uCamPos;
       uniform vec3 uBoxCenter;
       uniform float uFogNear;
@@ -341,16 +346,31 @@ const Game = {
 
       void main() {
         vUV = aUV;
-        vTile = uTile;
-        vNormal = aNormal;
+        vTile = mix(uTile, aBoxTile, uInstanced);
+        vec3 worldNormal = aNormal;
+        if (uInstanced > 0.5) {
+          worldNormal = vec3(
+            aBoxRotation.x * aNormal.x + aBoxRotation.y * aNormal.z,
+            aNormal.y,
+            -aBoxRotation.y * aNormal.x + aBoxRotation.x * aNormal.z);
+        }
+        vNormal = worldNormal;
         // simple directional shading so boxy characters read as 3D
-        float key = 0.45 + 0.55 * max(0.0, dot(aNormal, normalize(vec3(0.4, 0.9, 0.35))));
+        float key = 0.45 + 0.55 * max(0.0, dot(worldNormal, normalize(vec3(0.4, 0.9, 0.35))));
         vShade = key * mix(0.45, 1.0, uDayLight);
         // aPos is the cube's local vertex. Use the box's world-space center
         // for fog so small character parts keep their material textures.
-        float d = distance(uCamPos, uBoxCenter);
+        vec3 worldPos = aPos;
+        if (uInstanced > 0.5) {
+          vec3 scaledPos = aPos * aBoxSize;
+          worldPos = aBoxCenter + vec3(
+            aBoxRotation.x * scaledPos.x + aBoxRotation.y * scaledPos.z,
+            scaledPos.y,
+            -aBoxRotation.y * scaledPos.x + aBoxRotation.x * scaledPos.z);
+        }
+        float d = distance(uCamPos, uInstanced > 0.5 ? aBoxCenter : uBoxCenter);
         vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
-        gl_Position = uMVP * vec4(aPos, 1.0);
+        gl_Position = uMVP * vec4(uInstanced > 0.5 ? worldPos : aPos, 1.0);
       }`,
       `#version 300 es
       precision highp float;
@@ -446,6 +466,7 @@ const Game = {
     gl.bindVertexArray(null);
 
     this.cube = this.uploadMesh(buildCube());
+    this.initAnimalBatch();
     this.quad = this.uploadMesh(buildQuad());
     this.sprite = this.uploadMesh(buildSprite());
 
@@ -479,7 +500,46 @@ const Game = {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW);
 
     gl.bindVertexArray(null);
-    return { vao, count: m.indices.length };
+    return { vao, count: m.indices.length, vbo, nbo, ubo, ibo };
+  },
+
+  initAnimalBatch() {
+    const gl = this.gl;
+    if (typeof gl.vertexAttribDivisor !== 'function' || typeof gl.drawElementsInstanced !== 'function') {
+      this.animalBatchCapacity = 0;
+      this.animalBatchData = new Float32Array(0);
+      this.animalBatchVAO = null;
+      this.animalBatchBuffer = null;
+      return;
+    }
+    const floatsPerBox = 9;
+    this.animalBatchCapacity = 32;
+    this.animalBatchData = new Float32Array(this.animalBatchCapacity * floatsPerBox);
+    this.animalBatchVAO = gl.createVertexArray();
+    this.animalBatchBuffer = gl.createBuffer();
+
+    gl.bindVertexArray(this.animalBatchVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.vbo);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.nbo);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.ubo);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cube.ibo);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.animalBatchData.byteLength, gl.DYNAMIC_DRAW);
+    const stride = floatsPerBox * Float32Array.BYTES_PER_ELEMENT;
+    for (const [location, width, offset] of [[3, 3, 0], [4, 3, 3], [5, 2, 6], [6, 1, 8]]) {
+      gl.enableVertexAttribArray(location);
+      gl.vertexAttribPointer(location, width, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
+      gl.vertexAttribDivisor(location, 1);
+    }
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
   },
 
   bindResize() {
@@ -2290,9 +2350,54 @@ const Game = {
     gl.uniform1f(p.u.uAlpha, alpha === undefined ? 1 : alpha);
     gl.uniform1f(p.u.uTile, tile || 0);
     gl.uniform1f(p.u.uUseTex, tile === undefined || tile === null ? 0 : 1);
+    gl.uniform1f(p.u.uInstanced, 0);
 
     gl.bindVertexArray(this.cube.vao);
     gl.drawElements(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0);
+  },
+
+  drawAnimalBoxes(prog, boxes) {
+    if (!boxes.length) return;
+    const gl = this.gl;
+    const floatsPerBox = 9;
+    if (boxes.length > this.animalBatchCapacity) {
+      this.animalBatchCapacity = boxes.length;
+      this.animalBatchData = new Float32Array(this.animalBatchCapacity * floatsPerBox);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this.animalBatchData.byteLength, gl.DYNAMIC_DRAW);
+    }
+
+    const data = this.animalBatchData;
+    for (let i = 0; i < boxes.length; i++) {
+      const box = boxes[i];
+      const at = i * floatsPerBox;
+      const c = box.yaw ? Math.cos(box.yaw) : 1;
+      const s = box.yaw ? Math.sin(box.yaw) : 0;
+      data[at] = box.pos[0];
+      data[at + 1] = box.pos[1];
+      data[at + 2] = box.pos[2];
+      data[at + 3] = box.size[0];
+      data[at + 4] = box.size[1];
+      data[at + 5] = box.size[2];
+      data[at + 6] = c;
+      data[at + 7] = s;
+      data[at + 8] = box.tile || 0;
+    }
+
+    const p = this.progBox;
+    gl.useProgram(p);
+    gl.uniformMatrix4fv(p.u.uMVP, false, Cam.viewProj);
+    gl.uniform3f(p.u.uBoxCenter, 0, 0, 0);
+    gl.uniform3f(p.u.uTint, 1, 1, 1);
+    gl.uniform1f(p.u.uAlpha, 1);
+    gl.uniform1f(p.u.uTile, 0);
+    gl.uniform1f(p.u.uUseTex, 1);
+    gl.uniform1f(p.u.uInstanced, 1);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data.subarray(0, boxes.length * floatsPerBox));
+    gl.bindVertexArray(this.animalBatchVAO);
+    gl.drawElementsInstanced(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0, boxes.length);
   },
 
   renderEntities(prog, dayF) {
@@ -2553,6 +2658,8 @@ const Game = {
     const s = a.scale;
     const yaw = a.yaw;
     const base = a.pos;
+    const boxes = [];
+    const drawBox = (prog, pos, size, tile, tint, rotY) => boxes.push({ pos, size, tile, yaw: rotY || 0 });
     const legH = d.h * 0.42;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -2561,6 +2668,13 @@ const Game = {
       y,
       base[2] + fz * forward * s + rz * side * s,
     ];
+    const drawSteppedMass = (centerY, layers, tile, scaleVertical = false) => {
+      const verticalScale = scaleVertical ? s : 1;
+      for (const [forward, side, yOffset, width, height, depth] of layers) {
+        drawBox(prog, point(forward, side, centerY + yOffset * verticalScale),
+          [width * s, height * verticalScale, depth * s], tile, [1, 1, 1], yaw, 1);
+      }
+    };
     const bodyY = base[1] + legH + d.h * 0.32;
     const headY = base[1] + legH + d.h * 0.8;
     const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
@@ -2573,50 +2687,106 @@ const Game = {
       [-d.d * 0.29, -d.w * 0.29], [-d.d * 0.29, d.w * 0.29],
       [d.d * 0.28, -d.w * 0.29], [d.d * 0.28, d.w * 0.29],
     ]) {
-      this.drawBox(prog, point(forward, side, base[1] + legH * 0.5),
+      drawBox(prog, point(forward, side, base[1] + legH * 0.5),
         [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, 1);
     }
 
     const bodySize = d.id === 'pig'
-      ? [d.w * 1.16 * s, d.h * 0.58, d.d * 0.76 * s]
+      ? [d.w * 1.08 * s, d.h * 0.48, d.d * 0.72 * s]
       : d.id === 'sheep'
-        ? [d.w * 1.08 * s, d.h * 0.74, d.d * 0.84 * s]
+        ? [d.w * 0.7 * s, d.h * 0.52, d.d * 0.62 * s]
         : d.id === 'chick'
-          ? [d.w * 1.02 * s, d.h * 0.86, d.d * 1.04 * s]
+          ? [d.w * 0.82 * s, d.h * 0.6, d.d * 0.84 * s]
           : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
-    this.drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
+
+    if (d.id === 'pig') {
+      // A low barrel, soft belly, back ridge, and forward shoulder form one
+      // stepped loaf instead of a single long cuboid.
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 1.08, d.h * 0.48, d.d * 0.72],
+        [-d.d * 0.02, 0, -d.h * 0.16, d.w * 0.84, d.h * 0.18, d.d * 0.82],
+        [-d.d * 0.18, 0, d.h * 0.22, d.w * 0.84, d.h * 0.18, d.d * 0.56],
+        [d.d * 0.28, 0, d.h * 0.04, d.w * 0.82, d.h * 0.3, d.d * 0.38],
+      ], d.body);
+    } else if (d.id === 'sheep') {
+      // Keep a smaller wool core visible between the staggered fleece lobes.
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 0.7, d.h * 0.52, d.d * 0.62],
+        [-d.d * 0.04, 0, -d.h * 0.15, d.w * 0.84, d.h * 0.18, d.d * 0.72],
+        [-d.d * 0.1, 0, d.h * 0.22, d.w * 0.74, d.h * 0.17, d.d * 0.62],
+      ], d.body);
+    } else if (d.id === 'chick') {
+      // Three shallow tiers give the chick a tucked belly and a soft crown.
+      drawSteppedMass(bodyY, [
+        [0, 0, 0, d.w * 0.82, d.h * 0.6, d.d * 0.84],
+        [0, 0, -d.h * 0.18, d.w * 0.7, d.h * 0.2, d.d * 0.74],
+        [-d.d * 0.03, 0, d.h * 0.23, d.w * 0.7, d.h * 0.18, d.d * 0.68],
+      ], d.body);
+    } else {
+      drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
+    }
 
     if (d.id === 'pig') {
       // The pig skin tile carries its flank patches, keeping the body detail in one draw.
       // One short tail box is enough to read from behind without another draw call.
-      this.drawBox(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
+      drawBox(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
         [0.14 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
     } else if (d.id === 'sheep') {
-      // Separate wool puffs form a rounded fleece silhouette around the darker face.
-      const fleeceY = base[1] + legH + d.h * 0.68;
+      // Uneven, overlapping lobes break the rectangular core into a stepped fleece.
+      const fleeceY = bodyY + d.h * 0.15;
       for (const [forward, side, yOffset, width, height, depth] of [
-        [-d.d * 0.4, 0, 0, 0.42, 0.26, 0.38],
-        [-d.d * 0.12, -d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
-        [-d.d * 0.12, d.w * 0.42, -0.02, 0.36, 0.28, 0.34],
-        [d.d * 0.2, -d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
-        [d.d * 0.2, d.w * 0.39, 0.01, 0.34, 0.25, 0.32],
-        [d.d * 0.42, 0, 0.015, 0.34, 0.24, 0.32],
+        [-d.d * 0.36, 0, -d.h * 0.02, d.w * 0.38, d.h * 0.29, d.d * 0.31],
+        [-d.d * 0.16, -d.w * 0.4, -d.h * 0.04, d.w * 0.36, d.h * 0.3, d.d * 0.32],
+        [-d.d * 0.16, d.w * 0.4, -d.h * 0.04, d.w * 0.36, d.h * 0.3, d.d * 0.32],
+        [d.d * 0.14, -d.w * 0.41, 0, d.w * 0.38, d.h * 0.31, d.d * 0.31],
+        [d.d * 0.14, d.w * 0.41, 0, d.w * 0.38, d.h * 0.31, d.d * 0.31],
+        [d.d * 0.37, 0, d.h * 0.025, d.w * 0.4, d.h * 0.3, d.d * 0.28],
+        [-d.d * 0.04, 0, d.h * 0.17, d.w * 0.5, d.h * 0.22, d.d * 0.38],
       ]) {
-        this.drawBox(prog, point(forward, side, fleeceY + yOffset),
+        drawBox(prog, point(forward, side, fleeceY + yOffset),
           [width * s, height * s, depth * s], d.body, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'chick') {
-      // A chest patch and projecting wings give the chick a smaller rounded outline.
-      this.drawBox(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
+      // A larger egg-shaped body, chest patch, and projecting wings help the chick read at play distance.
+      drawBox(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
         [d.w * 0.34 * s, d.h * 0.3, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY),
-          [0.07 * s, 0.22 * s, 0.29 * s], d.accent, [1, 1, 1], yaw, 1);
+        drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY + d.h * 0.03),
+          [0.14 * s, 0.22 * s, 0.34 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+      // Three gold tail feathers fan out behind the body so the chick has a bird-like rear silhouette.
+      for (const side of [-1, 0, 1]) {
+        drawBox(prog, point(-d.d * 0.48, side * d.w * 0.12, bodyY + d.h * (side === 0 ? 0.12 : 0.08)),
+          [0.13 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
       }
     }
 
-    this.drawBox(prog, point(headForward, 0, headY),
-      [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
+    if (d.id === 'pig') {
+      // The brow and cheeks step inward toward a friendlier, shorter face.
+      drawSteppedMass(headY, [
+        [headForward, 0, -headHeight * 0.04, headWidth * 0.9, headHeight * 0.72, headDepth * 0.9],
+        [headForward - headDepth * 0.04, 0, headHeight * 0.27, headWidth * 0.74, headHeight * 0.22, headDepth * 0.74],
+        [headForward, -headWidth * 0.28, -headHeight * 0.15, headWidth * 0.2, headHeight * 0.3, headDepth * 0.34],
+        [headForward, headWidth * 0.28, -headHeight * 0.15, headWidth * 0.2, headHeight * 0.3, headDepth * 0.34],
+      ], d.face, true);
+    } else if (d.id === 'sheep') {
+      drawSteppedMass(headY, [
+        [headForward, 0, -headHeight * 0.04, headWidth * 0.82, headHeight * 0.72, headDepth * 0.86],
+        [headForward - headDepth * 0.04, 0, headHeight * 0.28, headWidth * 0.72, headHeight * 0.2, headDepth * 0.74],
+        [headForward, -headWidth * 0.32, -headHeight * 0.12, headWidth * 0.2, headHeight * 0.28, headDepth * 0.3],
+        [headForward, headWidth * 0.32, -headHeight * 0.12, headWidth * 0.2, headHeight * 0.28, headDepth * 0.3],
+      ], d.face, true);
+    } else if (d.id === 'chick') {
+      drawSteppedMass(headY, [
+        [headForward, 0, -headHeight * 0.04, headWidth * 0.88, headHeight * 0.76, headDepth * 0.88],
+        [headForward - headDepth * 0.04, 0, headHeight * 0.3, headWidth * 0.7, headHeight * 0.22, headDepth * 0.72],
+        [headForward, -headWidth * 0.34, -headHeight * 0.1, headWidth * 0.18, headHeight * 0.28, headDepth * 0.28],
+        [headForward, headWidth * 0.34, -headHeight * 0.1, headWidth * 0.18, headHeight * 0.28, headDepth * 0.28],
+      ], d.face, true);
+    } else {
+      drawBox(prog, point(headForward, 0, headY),
+        [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
+    }
 
     const headFront = headForward + headDepth * 0.5 + 0.025;
     const eyeY = headY + headHeight * 0.06 * s;
@@ -2624,48 +2794,58 @@ const Game = {
     const eyeTile = d.id === 'wolf' ? T.wolf_eye : T.eye;
     const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : 0.145;
     for (const side of [-1, 1]) {
-      this.drawBox(prog, point(headFront, side * eyeSide, eyeY),
+      drawBox(prog, point(headFront, side * eyeSide, eyeY),
         [eyeSize * s, eyeSize * 1.08 * s, 0.045 * s], eyeTile, [1, 1, 1], yaw, 1);
     }
 
     if (d.id === 'pig') {
       const earY = headY + headHeight * 0.62 * s;
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headForward + 0.015, side * headWidth * 0.37, earY),
+        drawBox(prog, point(headForward + 0.015, side * headWidth * 0.37, earY),
           [0.12 * s, 0.18 * s, 0.15 * s], d.accent, [1, 1, 1], yaw, 1);
       }
       const snoutY = headY - headHeight * 0.2 * s;
-      this.drawBox(prog, point(headFront + 0.035, 0, snoutY),
+      drawBox(prog, point(headFront + 0.035, 0, snoutY),
         [0.34 * s, 0.22 * s, 0.11 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headFront + 0.075, side * 0.075, snoutY),
+        drawBox(prog, point(headFront + 0.075, side * 0.075, snoutY),
           [0.045 * s, 0.075 * s, 0.025 * s], T.eye, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'sheep') {
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headForward, side * headWidth * 0.56, headY + 0.015),
+        drawBox(prog, point(headForward, side * headWidth * 0.56, headY + 0.015),
           [0.14 * s, 0.09 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
       }
-      this.drawBox(prog, point(headFront + 0.03, 0, headY - headHeight * 0.22 * s),
+      drawBox(prog, point(headFront + 0.03, 0, headY - headHeight * 0.22 * s),
         [0.18 * s, 0.13 * s, 0.07 * s], d.accent, [1, 1, 1], yaw, 1);
-      this.drawBox(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
+      drawBox(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
         [0.21 * s, 0.16 * s, 0.2 * s], d.body, [1, 1, 1], yaw, 1);
     } else if (d.id === 'chick') {
-      this.drawBox(prog, point(headForward - 0.015, 0, headY + headHeight * 0.58 * s),
-        [0.18 * s, 0.22 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
-      this.drawBox(prog, point(headFront + 0.06, 0, headY - headHeight * 0.18 * s),
-        [0.23 * s, 0.15 * s, 0.17 * s], d.beak, [1, 1, 1], yaw, 1);
+      for (const [forward, side, size] of [
+        [headForward - 0.015, 0, [0.16, 0.19, 0.15]],
+        [headForward + 0.015, -headWidth * 0.16, [0.11, 0.14, 0.13]],
+        [headForward + 0.015, headWidth * 0.16, [0.11, 0.14, 0.13]],
+      ]) {
+        drawBox(prog, point(forward, side, headY + headHeight * 0.58 * s),
+          size.map((n, i) => n * s), d.accent, [1, 1, 1], yaw, 1);
+      }
+      const beakY = headY - headHeight * 0.18 * s;
+      drawBox(prog, point(headFront + 0.045, 0, beakY),
+        [0.2 * s, 0.13 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(headFront + 0.13, 0, beakY - 0.005),
+        [0.13 * s, 0.1 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
     } else if (d.id === 'wolf') {
       // Keep the established original wolf read: grey muzzle, pointed ears, amber eyes, short tail.
-      this.drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
+      drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
         [0.3 * s, 0.2 * s, 0.1 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        this.drawBox(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
+        drawBox(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
           [0.12 * s, 0.22 * s, 0.12 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
       }
-      this.drawBox(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
+      drawBox(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
         [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
     }
+    this.drawAnimalBoxes(prog, boxes);
   },
   saveScreenshot() {
     try {

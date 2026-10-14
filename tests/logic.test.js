@@ -259,24 +259,28 @@ H.test('pig, sheep, and chick silhouettes have distinct proportions', () => {
 });
 
 H.test('animal renderers draw visible faces, multiple colors, and silhouette details', () => {
-  const originalDrawBox = Game.drawBox;
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
   try {
     for (const id of ['pig', 'sheep', 'chick']) {
       const def = ANIMALS.find(a => a.id === id);
       const calls = [];
-      Game.drawBox = (prog, pos, size, tile, tint, yaw, alpha) => calls.push({ pos, size, tile, tint, yaw, alpha });
+      let batches = 0;
+      Game.drawAnimalBoxes = (prog, boxes) => { batches++; calls.push(...boxes); };
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
       const tiles = new Set(calls.map(c => c.tile));
       H.assert(calls.length >= (id === 'chick' ? 13 : 14), id + ' needs visible silhouette and face detail');
+      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' should retain all approved detail boxes');
+      H.eq(batches, 1, id + ' should submit all detail boxes in one instanced draw');
       H.assert(tiles.size >= 3, id + ' should use multiple colors/materials');
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
       if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
       if (id === 'sheep') {
-        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.3 && c.size[1] >= 0.24 && c.size[1] < 0.3 && c.size[2] >= 0.3).length,
-          6, 'sheep needs a six-puff wool outline');
+        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.3 && c.size[1] > 0.2 && c.size[1] < 0.35 && c.size[2] >= 0.3).length,
+          7, 'sheep needs seven staggered fleece lobes');
+        H.eq(calls.filter(c => c.tile === def.body).length, 11, 'sheep body should keep its three core tiers, seven lobes, and forehead tuft');
       }
       if (id === 'pig') {
-        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.4 && c.size[1] < 0.5);
         H.assert(body && body.size[0] > body.size[2], 'pig should have a broad, low silhouette');
       }
       if (id === 'sheep') {
@@ -285,14 +289,128 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
       }
       if (id === 'chick') {
         H.assert(calls.some(c => c.tile === def.beak && c.size[0] >= 0.2), 'chick needs a prominent beak');
-        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
-        const head = calls.find(c => c.tile === def.face && c.size[1] > 0.5 && c !== body);
+        H.eq(calls.filter(c => c.tile === def.accent && c.pos[1] > 1.1).length, 3, 'chick should have three separate crest feathers');
+        H.eq(calls.filter(c => c.tile === def.accent && c.pos[1] < 1.1 && c.pos[2] > 0.2 && c.size[2] === 0.24).length,
+          3, 'chick should have a three-feather tail fan');
+        H.assert(def.w >= 0.8 && def.h >= 0.9, 'chick should stay small but large enough to read at play distance');
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5 && c.size[1] < 0.6);
+        const head = calls.find(c => c.tile === def.face && c.size[1] > 0.4);
         H.assert(body && head && head.size[0] >= body.size[0] * 0.8, 'chick should have a compact body and large readable head');
       }
     }
   } finally {
-    Game.drawBox = originalDrawBox;
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
   }
+});
+
+H.test('animal stepped head tiers follow each animal scale vertically', () => {
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  try {
+    const captureHeadTiers = (def, scale, headY, headHeight) => {
+      const headCalls = [];
+      Game.drawAnimalBoxes = (prog, boxes) => {
+        for (const { pos, size, tile } of boxes) {
+        if (tile === def.face && pos[1] > headY - headHeight * 0.16 * scale) headCalls.push({ pos, size });
+        }
+      };
+      Game.drawAnimal(null, { def, pos: [0, 0, 0], scale, yaw: 0, walkAnim: 0 }, 1);
+      return headCalls;
+    };
+
+    for (const id of ['pig', 'sheep', 'chick']) {
+      const def = ANIMALS.find(a => a.id === id);
+      const headY = def.h * (0.42 + 0.8);
+      const headHeight = def.h * (id === 'chick' ? 0.72 : id === 'sheep' ? 0.48 : 0.5);
+      const unitTiers = captureHeadTiers(def, 1, headY, headHeight);
+      const scaledTiers = captureHeadTiers(def, 1.15, headY, headHeight);
+      H.eq(unitTiers.length, 4, id + ' should render four stepped head tiers');
+      H.eq(scaledTiers.length, unitTiers.length, id + ' should keep all head tiers when scaled');
+
+      for (let i = 0; i < unitTiers.length; i++) {
+        const unitTier = unitTiers[i];
+        const scaledTier = scaledTiers[i];
+        H.assert(unitTier.size[1] > 0, id + ' head tier ' + i + ' should have positive height');
+        for (const [axis, dimension] of [[0, 'width'], [1, 'height'], [2, 'depth']]) {
+          H.assert(Math.abs(scaledTier.size[axis] / unitTier.size[axis] - 1.15) < 1e-9,
+            id + ' head tier ' + i + ' ' + dimension + ' should follow entity scale');
+        }
+        H.assert(Math.abs(scaledTier.pos[1] - (headY + (unitTier.pos[1] - headY) * 1.15)) < 1e-9,
+          id + ' head tier ' + i + ' vertical offset should follow entity scale');
+      }
+    }
+  } finally {
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+  }
+});
+
+H.test('animal instance batches upload per-box transforms and issue one instanced draw', () => {
+  const originalGL = Game.gl;
+  const originalProgram = Game.progBox;
+  const originalVAO = Game.animalBatchVAO;
+  const originalBuffer = Game.animalBatchBuffer;
+  const originalCapacity = Game.animalBatchCapacity;
+  const originalData = Game.animalBatchData;
+  const originalCube = Game.cube;
+  const uniformInstanced = [];
+  const uploads = [];
+  const draws = [];
+  const fakeGL = {
+    ARRAY_BUFFER: 1, DYNAMIC_DRAW: 2, TRIANGLES: 3, UNSIGNED_SHORT: 4,
+    useProgram() {}, uniformMatrix4fv() {}, uniform3f() {},
+    uniform1f(location, value) { if (location === 'uInstanced') uniformInstanced.push(value); },
+    bindBuffer() {}, bufferData() {}, bufferSubData(target, offset, data) { uploads.push(Array.from(data)); },
+    bindVertexArray(vao) { H.eq(vao, 'animal-vao', 'batch should use its instance-enabled VAO'); },
+    drawElementsInstanced(...args) { draws.push(args); },
+  };
+  Game.gl = fakeGL;
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced' } };
+  Game.animalBatchVAO = 'animal-vao';
+  Game.animalBatchBuffer = 'animal-buffer';
+  Game.animalBatchCapacity = 4;
+  Game.animalBatchData = new Float32Array(36);
+  Game.cube = { count: 36 };
+  const boxes = [
+    { pos: [4, 2, -3], size: [1, 2, 3], tile: 7, yaw: 0 },
+    { pos: [-1, 5, 8], size: [0.5, 0.75, 1.25], tile: 11, yaw: Math.PI / 2 },
+  ];
+  try {
+    Game.drawAnimalBoxes(null, boxes);
+    H.eq(JSON.stringify(uniformInstanced), '[1]', 'batch shader should select per-instance transforms');
+    H.eq(draws.length, 1, 'all animal boxes should issue one GPU draw');
+    H.eq(JSON.stringify(draws[0]), JSON.stringify([fakeGL.TRIANGLES, 36, fakeGL.UNSIGNED_SHORT, 0, 2]),
+      'draw should instance the shared cube mesh');
+    H.eq(uploads.length, 1, 'instance data should upload in one contiguous buffer');
+    H.eq(uploads[0].length, 18, 'instance data should contain nine floats per box');
+    H.eq(JSON.stringify(uploads[0].slice(0, 15)), JSON.stringify([4, 2, -3, 1, 2, 3, 1, 0, 7, -1, 5, 8, 0.5, 0.75, 1.25]),
+      'instance data should preserve each box position, dimensions, and tile');
+    H.near(uploads[0][15], 0, 1e-6, 'quarter-turn cosine should be near zero');
+    H.near(uploads[0][16], 1, 1e-6, 'quarter-turn sine should be one');
+    H.eq(uploads[0][17], 11, 'second instance should keep its own material tile');
+  } finally {
+    Game.gl = originalGL;
+    Game.progBox = originalProgram;
+    Game.animalBatchVAO = originalVAO;
+    Game.animalBatchBuffer = originalBuffer;
+    Game.animalBatchCapacity = originalCapacity;
+    Game.animalBatchData = originalData;
+    Game.cube = originalCube;
+  }
+});
+
+H.test('animal instance lighting rotates face normals with the box yaw', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'js/main.js'), 'utf8');
+  const programStart = source.indexOf('this.progBox = createProgram(gl,');
+  H.assert(programStart >= 0, 'box shader should exist');
+  const vertexStart = source.indexOf('`', programStart);
+  const vertexEnd = source.indexOf('`', vertexStart + 1);
+  H.assert(vertexStart >= 0 && vertexEnd > vertexStart, 'box vertex shader source should be extractable');
+  const vertexShader = source.slice(vertexStart + 1, vertexEnd);
+  H.assert(/vec3 worldNormal = aNormal;/.test(vertexShader), 'ordinary cube faces should retain their original normals');
+  H.assert(/worldNormal = vec3\(\s*aBoxRotation\.x \* aNormal\.x \+ aBoxRotation\.y \* aNormal\.z,\s*aNormal\.y,\s*-aBoxRotation\.y \* aNormal\.x \+ aBoxRotation\.x \* aNormal\.z\);/s.test(vertexShader),
+    'instanced animal normals should use the same yaw rotation as their geometry');
+  H.assert(/vNormal = worldNormal;/.test(vertexShader), 'the shader should pass world-space face normals forward');
+  H.assert(/dot\(worldNormal, normalize\(vec3\(0\.4, 0\.9, 0\.35\)\)\)/.test(vertexShader),
+    'directional face lighting should follow the rotated normal');
 });
 H.test('every hotbar entry is a real, solid block', () => {
   H.eq(g.HOTBAR_BLOCKS.length, 9);
