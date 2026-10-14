@@ -55,7 +55,11 @@ assert.match(html, /<div class="cap-sub">Use <kbd>W A S D<\/kbd> to move · move
 assert.match(fs.readFileSync(path.join(root, 'js/main.js'), 'utf8'), /section\.hidden = section\.dataset\.captureMode !== this\.mode;/,
   'first-use desktop prompt shows only the active mode instructions');
 assert.match(css, /env\(safe-area-inset-bottom\)/, 'touch HUD honors the device home indicator inset');
-assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.slot \{ width: 44px; height: 44px; flex: 0 0 44px; scroll-snap-align: center; \}[\s\S]*?\.hotbar \{[^}]*scroll-snap-type: x proximity/s,
+const mobileMedia = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)^\}/m);
+assert(mobileMedia, 'the mobile media query exists');
+assert.match(mobileMedia[1], /\.slot \{ width: 44px; height: 44px; flex: 0 0 44px; scroll-snap-align: center; \}/,
+  'mobile hotbar slots remain thumb-sized and snap after a horizontal swipe');
+assert.match(mobileMedia[1], /\.hotbar \{[^}]*scroll-snap-type: x proximity/,
   'mobile hotbar slots remain thumb-sized and settle into place after a horizontal swipe');
 const hotbarRule = css.match(/(?:^|\n)\.hotbar\s*\{([^}]*)\}/);
 assert(hotbarRule, 'the shared hotbar rule exists');
