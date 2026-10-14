@@ -5,11 +5,13 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { spawnSync } = require('node:child_process');
 const terser = require('terser');
-const builder = require('../scripts/build-qa');
+const qaTestCheckout = require('./qa-test-checkout');
 
-const root = path.join(__dirname, '..');
+const root = process.env.BW_QA_TEST_ROOT || path.join(__dirname, '..');
 const output = path.join(root, '.qa-public');
+const builder = require(path.join(root, 'scripts', 'build-qa.js'));
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
 function rejects(fn, message) {
@@ -60,6 +62,13 @@ async function run() {
   rejects(() => builder.validateOutputPath(root), 'builder refuses repository root as output');
   builder.assertCleanCheckout('');
   rejects(() => builder.assertCleanCheckout(' M js/main.js'), 'builder refuses inputs that differ from recorded HEAD');
+
+  const dirtyGuard = qaTestCheckout.exerciseDirtyBuildGuard(root, path.join(__dirname, '..'));
+  assert.notEqual(dirtyGuard.exitCode, 0, 'builder rejects a dirty checkout');
+  assert.match(dirtyGuard.diagnostic, /clean Git checkout/);
+  assert.equal(dirtyGuard.statusAfter, dirtyGuard.statusBefore, 'dirty build leaves checkout changes untouched');
+  assert.deepEqual(dirtyGuard.outputAfter, dirtyGuard.outputBefore, 'dirty build leaves an existing .qa-public preview untouched');
+  assert.equal(dirtyGuard.statusCleanAfterRestore, '', 'dirty build regression restores the committed source');
 
   await builder.build();
   const first = Object.fromEntries(walk(output).map((file) => [file, digest(fs.readFileSync(path.join(output, file)))]));
@@ -113,7 +122,34 @@ async function run() {
   await builder.build();
   const second = Object.fromEntries(walk(output).map((file) => [file, digest(fs.readFileSync(path.join(output, file)))]));
   assert.deepEqual(second, first, 'repeated builds produce byte-identical output and provenance');
-  console.log('QA sanitizer tests passed (denylist, allowlist, output scan, manifest, reproducibility).');
+  console.log('QA sanitizer tests passed (denylist, allowlist, output scan, manifest, dirty-checkout protection, reproducibility).');
 }
 
-run().catch((error) => { console.error(error); process.exitCode = 1; });
+async function runWithoutTouchingDeveloperCheckout() {
+  const sourceRoot = path.join(__dirname, '..');
+  const developerState = qaTestCheckout.captureDeveloperState(sourceRoot);
+  const checkout = qaTestCheckout.createCommittedCheckout(sourceRoot);
+  try {
+    const result = spawnSync(process.execPath, [__filename], {
+      cwd: checkout.root,
+      encoding: 'utf8',
+      timeout: 180000,
+      env: qaTestCheckout.nodePathEnv(sourceRoot, {
+        ...process.env,
+        BW_QA_TEST_ROOT: checkout.root,
+      }),
+    });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.status !== 0) {
+      throw new Error('Isolated QA sanitizer test failed: ' + (result.stderr || result.stdout || result.error || 'unknown child-process failure'));
+    }
+  } finally {
+    checkout.dispose();
+  }
+  assert.deepEqual(qaTestCheckout.captureDeveloperState(sourceRoot), developerState,
+    'QA test preserves the live checkout and any existing .qa-public preview');
+  console.log('Live checkout and existing .qa-public preview preserved.');
+}
+
+if (process.env.BW_QA_TEST_ROOT) run().catch((error) => { console.error(error); process.exitCode = 1; });
+else runWithoutTouchingDeveloperCheckout().catch((error) => { console.error(error); process.exitCode = 1; });

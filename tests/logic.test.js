@@ -3769,6 +3769,11 @@ H.test('server save failure is not reported as confirmed progress', async () => 
 H.suite('QA bundle');
 H.test('sanitized QA output preserves offline play without network or persistent storage', () => {
   const path = require('node:path');
+  const qaTestCheckout = require('./qa-test-checkout');
+  const developerState = qaTestCheckout.captureDeveloperState(H.ROOT);
+  const checkout = qaTestCheckout.createCommittedCheckout(H.ROOT);
+  const qaRoot = checkout.root;
+  try {
   const builder = require(path.join(H.ROOT, 'scripts', 'build-qa.js'));
   H.eq(builder.validateOutputPath(path.join(H.ROOT, '.qa-public')), path.join(H.ROOT, '.qa-public'), 'the dedicated output path is accepted');
   for (const unsafe of [H.ROOT, path.dirname(H.ROOT)]) {
@@ -3810,16 +3815,23 @@ H.test('sanitized QA output preserves offline play without network or persistent
   }
   H.eq(builder.assertNoExternalResources('<script src="js/main.js"></script><link rel="icon" href="data:,"><img src="data:image/png;base64,AA==">'), undefined, 'sanitizer permits local and approved inline image resources');
   H.eq(builder.assertNoExternalResources('body { clip-path: url(#clip-shape); }'), undefined, 'sanitizer permits fragment-only CSS resources');
-  const build = spawnSync(process.execPath, [path.join(H.ROOT, 'scripts', 'build-qa.js')], {
-    encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, BW_QA_SOURCE_DIR: path.join(H.ROOT, 'missing-untrusted-source') },
+  const dirtyGuard = qaTestCheckout.exerciseDirtyBuildGuard(qaRoot, H.ROOT);
+  H.assert(dirtyGuard.exitCode !== 0, 'builder rejects a dirty disposable checkout');
+  H.eq(dirtyGuard.statusAfter, dirtyGuard.statusBefore, 'dirty-checkout rejection preserves the working-tree state');
+  H.eq(JSON.stringify(dirtyGuard.outputAfter), JSON.stringify(dirtyGuard.outputBefore), 'dirty-checkout rejection preserves an existing .qa-public preview');
+  H.assert(/clean Git checkout/.test(dirtyGuard.diagnostic), 'dirty-checkout rejection explains the clean-source requirement');
+  H.eq(dirtyGuard.statusCleanAfterRestore, '', 'dirty regression fixture restores its committed source');
+
+  const build = qaTestCheckout.spawnBuilder(qaRoot, H.ROOT, {
+    BW_QA_SOURCE_DIR: path.join(H.ROOT, 'missing-untrusted-source'),
   });
   H.eq(build.status, 0, 'QA bundle build succeeds from the repository source despite an untrusted override: ' + (build.stderr || build.stdout));
-  const generatedHtml = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'index.html'), 'utf8');
+  const qaOutput = path.join(qaRoot, '.qa-public');
+  const generatedHtml = fs.readFileSync(path.join(qaOutput, 'index.html'), 'utf8');
   H.assert(/<title>Blocky World QA<\/title>/i.test(generatedHtml), 'QA page uses a generic app title');
   H.assert(/apple-mobile-web-app-title" content="Blocky World QA/i.test(generatedHtml), 'mobile app metadata uses the generic title');
   H.assert(/<h1>Blocky World QA<\/h1>/i.test(generatedHtml), 'game heading uses the generic title');
-  const generatedCss = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'style.css'), 'utf8');
+  const generatedCss = fs.readFileSync(path.join(qaOutput, 'style.css'), 'utf8');
   builder.assertWorldPickerCss(generatedCss);
   H.assert(!/\.auth-screen|\.visit-lobby|\.visit-hud|\.visit-mode-dialog/.test(generatedCss), 'generated CSS omits auth and visit UI rules');
   const memoryCalls = { storage: 0, fetch: 0 };
@@ -3831,7 +3843,7 @@ H.test('sanitized QA output preserves offline play without network or persistent
     get length() { memoryCalls.storage++; throw new Error('persistent storage length'); },
   };
   const qa = H.load({
-    sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false,
+    sourceRoot: qaOutput, includeNetwork: false,
     boot: false, storage: nativeStorageTrap,
     missingElementIds: ['btn-fight-lobby-settings', 'btn-fight-lobby-exit'],
     fetch() { memoryCalls.fetch++; throw new Error('unexpected network request'); },
@@ -3883,8 +3895,13 @@ H.test('sanitized QA output preserves offline play without network or persistent
   H.assert(qa.BWStorage.length > 0, 'save stays in page-local memory');
   H.eq(memoryCalls.storage, 0, 'native persistent storage is untouched');
   H.eq(memoryCalls.fetch, 0, 'no fetch request is attempted');
-  const fresh = H.load({ sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false, boot: false });
+  const fresh = H.load({ sourceRoot: qaOutput, includeNetwork: false, boot: false });
   H.eq(fresh.BWStorage.length, 0, 'reload starts with a fresh in-memory world');
+  } finally {
+    checkout.dispose();
+  }
+  H.eq(qaTestCheckout.gitStatus(H.ROOT), developerState.gitStatus, 'QA integration leaves the live checkout status unchanged');
+  H.eq(JSON.stringify(qaTestCheckout.snapshotTree(path.join(H.ROOT, '.qa-public'))), JSON.stringify(developerState.qaOutput), 'QA integration leaves any live .qa-public preview unchanged');
 });
 
 
