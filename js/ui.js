@@ -107,10 +107,8 @@ const UI = {
     };
     $('btn-pause-character').onclick = () => { UI.showPlayerCharacterSelect('pause'); };
     $('btn-game-settings').onclick = () => Game.togglePause(true);
-    const fightLobbySettings = $('btn-fight-lobby-settings');
-    if (fightLobbySettings) fightLobbySettings.onclick = () => Game.togglePause(true);
-    const fightLobbyExit = $('btn-fight-lobby-exit');
-    if (fightLobbyExit) fightLobbyExit.onclick = () => Game.toMenu();
+    $('btn-fight-lobby-settings').onclick = () => Game.togglePause(true);
+    $('btn-fight-lobby-exit').onclick = () => Game.toMenu();
     const openPausePanel = (show) => {
       UI.show('pause-menu-content', false);
       UI.show('pause-extra', true);
