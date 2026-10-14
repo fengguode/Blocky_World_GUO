@@ -3809,7 +3809,7 @@ H.test('sanitized QA output preserves offline play without network or persistent
     H.eq(resourceRejected, true, 'sanitizer rejects remote resource reference ' + contaminated);
   }
   H.eq(builder.assertNoExternalResources('<script src="js/main.js"></script><link rel="icon" href="data:,"><img src="data:image/png;base64,AA==">'), undefined, 'sanitizer permits local and approved inline image resources');
-  H.eq(builder.assertNoExternalResources('body { background: url(assets/local.png); }'), undefined, 'sanitizer permits local CSS resources');
+  H.eq(builder.assertNoExternalResources('body { clip-path: url(#clip-shape); }'), undefined, 'sanitizer permits fragment-only CSS resources');
   const build = spawnSync(process.execPath, [path.join(H.ROOT, 'scripts', 'build-qa.js')], {
     encoding: 'utf8', timeout: 120000,
     env: { ...process.env, BW_QA_SOURCE_DIR: path.join(H.ROOT, 'missing-untrusted-source') },
