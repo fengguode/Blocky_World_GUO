@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "source": {
-    "commit": "fa7cffcfca524badd7046d9892692458bde2bffe",
-    "tree": "0b4f6cab2b4ef696da24ed8d7969f95aed45dbb3"
+    "commit": "a25aaabdd4a2a88c7b610262fa07ed9c4ac80e74",
+    "tree": "1339394232dbe2d0eb0c81c9b039d75ccee86805"
   },
   "tool": {
     "name": "blocky-world-sanitized-qa-builder",
@@ -36,7 +36,7 @@
     "js/fight.js": "a779441821e83b93adfe6cbbf70bdb5c22764ceae5b9e3ace8d68eadfa209fc5",
     "js/touch.js": "4a43ed1fc165b923fa8c43bcfe7945c46912d88aa1e44cdc7991ea99094254e3",
     "js/ui.js": "e3cfa12d79a5789b304efd84852084da925aacc547762b521394e3e44631a43e",
-    "js/main.js": "19af104df8fd581c1bfd4feb8c8a5fe25e4f70a6d7f1aee1faec5c24131f082f"
+    "js/main.js": "549fbbacb5de1adcc825e5eb20e10a86ee7b0c5ace9d87d93bc52d99bc9af474"
   },
   "inputGitBlobs": {
     "index.html": "bdaeff6d7f200f265b4ebdd2691aadeff3cb22d8",
@@ -53,7 +53,7 @@
     "js/fight.js": "22f4f23eb638167db97a47075dad1adf986cf9ab",
     "js/touch.js": "2c489c7c8208113415ded7fa81b2bd26eaaa9a0c",
     "js/ui.js": "08e358b81f2b3537ba3cf2569e3de318cb18a4b6",
-    "js/main.js": "073e639ce0a5ee536f79a4645311824c86e7e0fb"
+    "js/main.js": "a079f056b8b49d09f5ded8d1aeff50a44759e1b3"
   },
   "assets": {
     "index.html": {
@@ -93,8 +93,8 @@
       "bytes": 3169
     },
     "js/main.js": {
-      "sha256": "255dbdb8535eccda3dc496e83d763d647c8d20ee3f9facc1e577d8e0e8a52af7",
-      "bytes": 64094
+      "sha256": "78f0ccbaf83bcf770816fbf85cf6bd5c12d961662a5707a206374beb8cd687ad",
+      "bytes": 64370
     },
     "js/mesher.js": {
       "sha256": "fb6bbc01ddfb063c13fd0a52036c6a416217d509c9c2efbf63fa691f23d2c31d",
