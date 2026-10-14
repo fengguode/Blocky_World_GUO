@@ -57,8 +57,73 @@ assert.match(fs.readFileSync(path.join(root, 'js/main.js'), 'utf8'), /section\.h
 assert.match(css, /env\(safe-area-inset-bottom\)/, 'touch HUD honors the device home indicator inset');
 assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.slot \{ width: 44px; height: 44px; flex: 0 0 44px; scroll-snap-align: center; \}[\s\S]*?\.hotbar \{[^}]*scroll-snap-type: x proximity/s,
   'mobile hotbar slots remain thumb-sized and settle into place after a horizontal swipe');
-assert.match(css, /\.hotbar \{[^}]*overflow-x: auto;/s, 'hotbar keeps horizontal overflow for all 12 items');
-assert.match(css, /\.hotbar \{[^}]*-webkit-overflow-scrolling: touch;/s, 'hotbar retains iOS momentum scrolling');
+const hotbarRule = css.match(/(?:^|\n)\.hotbar\s*\{([^}]*)\}/);
+assert(hotbarRule, 'the shared hotbar rule exists');
+assert.match(hotbarRule[1], /(?:^|\n)\s*overflow-x:\s*auto\s*;/,
+  'the hotbar keeps horizontal overflow so all 12 items remain reachable on mobile');
+assert.match(hotbarRule[1], /(?:^|\n)\s*-webkit-overflow-scrolling:\s*touch\s*;/,
+  'the hotbar retains iOS momentum scrolling');
+
+// Render the real hotbar into a tiny deterministic DOM stub. This checks the
+// available items and the slots UI.buildHotbar actually appends, not only the
+// source array or a regex over its implementation.
+const hotbarBar = {
+  children: [],
+  listeners: {},
+  addEventListener(type, handler) { this.listeners[type] = handler; },
+  appendChild(node) { this.children.push(node); return node; },
+};
+Object.defineProperty(hotbarBar, 'innerHTML', {
+  set(value) { if (value === '') this.children.length = 0; },
+});
+function hotbarNode(tagName) {
+  const context = {
+    translate() {}, rotate() {}, fillRect() {}, strokeRect() {}, beginPath() {},
+    moveTo() {}, lineTo() {}, fill() {}, drawImage() {}, createLinearGradient() {
+      return { addColorStop() {} };
+    },
+  };
+  return {
+    tagName,
+    children: [],
+    dataset: {},
+    attributes: {},
+    addEventListener() {},
+    appendChild(node) { this.children.push(node); return node; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+    getContext(kind) { return kind === '2d' ? context : null; },
+  };
+}
+const hotbarSandbox = {
+  console,
+  document: {
+    getElementById(id) { return id === 'hotbar' ? hotbarBar : null; },
+    createElement: hotbarNode,
+  },
+  window: {},
+  Game: { selectedSlot: 0, selectSlot() {} },
+};
+vm.createContext(hotbarSandbox);
+vm.runInContext(fs.readFileSync(path.join(root, 'js/blocks.js'), 'utf8') +
+  '\n;globalThis.__hotbarData = { blockIds: HOTBAR_BLOCKS.slice(), items: HOTBAR_ITEMS.map(({ kind, id, name }) => ({ kind, id, name })) };',
+  hotbarSandbox);
+vm.runInContext('blockIconCanvas = () => document.createElement("canvas")', hotbarSandbox);
+vm.runInContext(ui, hotbarSandbox);
+vm.runInContext('UI.buildHotbar()', hotbarSandbox);
+const availableHotbarItems = Array.from(hotbarSandbox.__hotbarData.items,
+  ({ kind, id, name }) => ({ kind, id, name }));
+assert.strictEqual(hotbarSandbox.__hotbarData.blockIds.length, 9, 'the hotbar still offers nine blocks');
+assert.strictEqual(availableHotbarItems.length, 12, 'the available hotbar inventory still has 12 items');
+assert.deepStrictEqual(availableHotbarItems.slice(0, 9).map(({ kind }) => kind), Array(9).fill('block'),
+  'slots 0-8 remain blocks');
+assert.deepStrictEqual(availableHotbarItems.slice(9).map(({ id, name, kind }) => [id, name, kind]), [
+  ['shovel', 'Shovel', 'tool'], ['apple', 'Apple', 'food'], ['meat', 'Meat', 'food'],
+], 'slots 9-11 remain shovel, apple, and meat in that order');
+assert.strictEqual(hotbarBar.children.length, 12, 'UI.buildHotbar renders all 12 available slots');
+assert.deepStrictEqual(Array.from(hotbarBar.children, (slot) => Number(slot.dataset.slot)),
+  Array.from({ length: 12 }, (_, i) => i), 'rendered slot indices cover 0 through 11');
+assert.deepStrictEqual(hotbarBar.children.slice(9).map((slot) => slot.title), ['Shovel', 'Apple', 'Meat'],
+  'rendered slots 9-11 retain their tool and food labels');
 assert.match(css, /#menu\s*\{[^}]*touch-action:\s*none/s, 'the intro menu preserves its custom touch-scroll gesture');
 assert.match(css, /#btn-game-settings\s*\{[^}]*min-height:\s*44px/s, 'the in-game Settings action has a 44px minimum touch target');
 assert.match(fs.readFileSync(path.join(root, 'js/touch.js'), 'utf8'), /menu\.scrollTop\s*=\s*Math\.max/, 'the touch handler scrolls long menu content directly');
@@ -84,4 +149,4 @@ assert.strictEqual(selectedWorld, 'normal', 'normal world still uses its existin
 worldChooser.buttons['#choose-flat'].onclick();
 assert.strictEqual(selectedWorld, 'flat', 'flat world still uses its existing selection handler');
 
-console.log('Portrait rendering passed for 6 characters; 20 UI structure checks passed.');
+console.log('Portrait rendering passed for 6 characters; mobile overflow and all 12 rendered hotbar slots passed.');
