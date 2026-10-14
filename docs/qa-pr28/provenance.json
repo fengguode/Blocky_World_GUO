@@ -9,7 +9,7 @@
     "version": "1.0.0",
     "terserVersion": "5.43.1",
     "node": "v24.14.0",
-    "sanitizerSha256": "58579ed8a8175b8d0188201c62e28860777bc387e3732702b5df8f40deaaaee6",
+    "sanitizerSha256": "a7c6eb316d81ccdb70708b9d5c0ff1ac8f5c5e96381018878641fb01c5c9fc68",
     "packageSha256": "aa1bc3e39d4e3993a48491a245950cec30d865c7fb2e4cfdfcaee7e2574c4d78",
     "lockfileSha256": "2bd0bbfb3455c650041bb6f98d4a5f38388439865fca0381b73b5ec66f0fead5"
   },
@@ -17,6 +17,7 @@
     "remove family profile, PIN, setup, visit, and server UI from HTML and CSS",
     "omit network.js and whitelist only the required local game modules",
     "remove network-only game branches and compile Network references out",
+    "remove shared-fight lobby handlers whose dialog is omitted from offline QA HTML",
     "replace persistent browser storage with page-memory-only BWStorage",
     "minify JavaScript using the pinned Terser dependency"
   ],
@@ -108,8 +109,8 @@
       "bytes": 5941
     },
     "js/ui.js": {
-      "sha256": "1ecec7d200b0f2b72333b52178b1aa00f4d89a5195ad3585139730da55e77a66",
-      "bytes": 23792
+      "sha256": "185682bfbfb44a3b0840cf88a0edbe64e40a63bac15df6ade983d4ed5db2fa13",
+      "bytes": 23677
     },
     "js/world.js": {
       "sha256": "adf75cd76e2c1089e102006c9ccd3cb76de06afc97a2da29ce5fea9ab49972d9",
