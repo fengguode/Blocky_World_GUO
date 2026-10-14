@@ -259,16 +259,18 @@ H.test('pig, sheep, and chick silhouettes have distinct proportions', () => {
 });
 
 H.test('animal renderers draw visible faces, multiple colors, and silhouette details', () => {
-  const originalDrawBox = Game.drawBox;
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
   try {
     for (const id of ['pig', 'sheep', 'chick']) {
       const def = ANIMALS.find(a => a.id === id);
       const calls = [];
-      Game.drawBox = (prog, pos, size, tile, tint, yaw, alpha) => calls.push({ pos, size, tile, tint, yaw, alpha });
+      let batches = 0;
+      Game.drawAnimalBoxes = (prog, boxes) => { batches++; calls.push(...boxes); };
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
       const tiles = new Set(calls.map(c => c.tile));
       H.assert(calls.length >= (id === 'chick' ? 13 : 14), id + ' needs visible silhouette and face detail');
-      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' draw-call budget should stay explicit');
+      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' should retain all approved detail boxes');
+      H.eq(batches, 1, id + ' should submit all detail boxes in one instanced draw');
       H.assert(tiles.size >= 3, id + ' should use multiple colors/materials');
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
       if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
@@ -297,17 +299,19 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
       }
     }
   } finally {
-    Game.drawBox = originalDrawBox;
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
   }
 });
 
 H.test('animal stepped head tiers follow each animal scale vertically', () => {
-  const originalDrawBox = Game.drawBox;
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
   try {
     const captureHeadTiers = (def, scale, headY, headHeight) => {
       const headCalls = [];
-      Game.drawBox = (prog, pos, size, tile) => {
+      Game.drawAnimalBoxes = (prog, boxes) => {
+        for (const { pos, size, tile } of boxes) {
         if (tile === def.face && pos[1] > headY - headHeight * 0.16 * scale) headCalls.push({ pos, size });
+        }
       };
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale, yaw: 0, walkAnim: 0 }, 1);
       return headCalls;
@@ -335,7 +339,61 @@ H.test('animal stepped head tiers follow each animal scale vertically', () => {
       }
     }
   } finally {
-    Game.drawBox = originalDrawBox;
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+  }
+});
+
+H.test('animal instance batches upload per-box transforms and issue one instanced draw', () => {
+  const originalGL = Game.gl;
+  const originalProgram = Game.progBox;
+  const originalVAO = Game.animalBatchVAO;
+  const originalBuffer = Game.animalBatchBuffer;
+  const originalCapacity = Game.animalBatchCapacity;
+  const originalData = Game.animalBatchData;
+  const originalCube = Game.cube;
+  const uniformInstanced = [];
+  const uploads = [];
+  const draws = [];
+  const fakeGL = {
+    ARRAY_BUFFER: 1, DYNAMIC_DRAW: 2, TRIANGLES: 3, UNSIGNED_SHORT: 4,
+    useProgram() {}, uniformMatrix4fv() {}, uniform3f() {},
+    uniform1f(location, value) { if (location === 'uInstanced') uniformInstanced.push(value); },
+    bindBuffer() {}, bufferData() {}, bufferSubData(target, offset, data) { uploads.push(Array.from(data)); },
+    bindVertexArray(vao) { H.eq(vao, 'animal-vao', 'batch should use its instance-enabled VAO'); },
+    drawElementsInstanced(...args) { draws.push(args); },
+  };
+  Game.gl = fakeGL;
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced' } };
+  Game.animalBatchVAO = 'animal-vao';
+  Game.animalBatchBuffer = 'animal-buffer';
+  Game.animalBatchCapacity = 4;
+  Game.animalBatchData = new Float32Array(36);
+  Game.cube = { count: 36 };
+  const boxes = [
+    { pos: [4, 2, -3], size: [1, 2, 3], tile: 7, yaw: 0 },
+    { pos: [-1, 5, 8], size: [0.5, 0.75, 1.25], tile: 11, yaw: Math.PI / 2 },
+  ];
+  try {
+    Game.drawAnimalBoxes(null, boxes);
+    H.eq(JSON.stringify(uniformInstanced), '[1]', 'batch shader should select per-instance transforms');
+    H.eq(draws.length, 1, 'all animal boxes should issue one GPU draw');
+    H.eq(JSON.stringify(draws[0]), JSON.stringify([fakeGL.TRIANGLES, 36, fakeGL.UNSIGNED_SHORT, 0, 2]),
+      'draw should instance the shared cube mesh');
+    H.eq(uploads.length, 1, 'instance data should upload in one contiguous buffer');
+    H.eq(uploads[0].length, 18, 'instance data should contain nine floats per box');
+    H.eq(JSON.stringify(uploads[0].slice(0, 15)), JSON.stringify([4, 2, -3, 1, 2, 3, 1, 0, 7, -1, 5, 8, 0.5, 0.75, 1.25]),
+      'instance data should preserve each box position, dimensions, and tile');
+    H.near(uploads[0][15], 0, 1e-6, 'quarter-turn cosine should be near zero');
+    H.near(uploads[0][16], 1, 1e-6, 'quarter-turn sine should be one');
+    H.eq(uploads[0][17], 11, 'second instance should keep its own material tile');
+  } finally {
+    Game.gl = originalGL;
+    Game.progBox = originalProgram;
+    Game.animalBatchVAO = originalVAO;
+    Game.animalBatchBuffer = originalBuffer;
+    Game.animalBatchCapacity = originalCapacity;
+    Game.animalBatchData = originalData;
+    Game.cube = originalCube;
   }
 });
 H.test('every hotbar entry is a real, solid block', () => {
