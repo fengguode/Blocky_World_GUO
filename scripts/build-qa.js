@@ -11,6 +11,7 @@ const JS_FILES = [
   'camera.js', 'entity.js', 'bot.js', 'fight.js', 'touch.js', 'ui.js', 'main.js',
 ];
 const JS_ASSET_ALLOWLIST = new Set([...JS_FILES.map((file) => 'js/' + file), 'js/storage.js']);
+const REMOVED_SHARED_FIGHT_CONTROL_IDS = ['btn-fight-lobby-settings', 'btn-fight-lobby-exit'];
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -126,6 +127,17 @@ function removeHtmlElementById(html, id) {
   throw new Error('Unclosed network/auth UI element: ' + id);
 }
 
+function stripRemovedSharedFightBindings(source) {
+  for (const id of REMOVED_SHARED_FIGHT_CONTROL_IDS) {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const binding = new RegExp('^[\\t ]*\\$\\(["\\\']' + escaped + '["\\\']\\)\\.onclick\\s*=.*;[\\t ]*(?:\\r?\\n|$)', 'gm');
+    const matches = source.match(binding) || [];
+    if (matches.length !== 1) throw new Error('Expected one UI binding to removed QA control #' + id + '; found ' + matches.length);
+    source = source.replace(binding, '');
+  }
+  return source;
+}
+
 function stripNetworkOnlyMain(source) {
   source = source.replace(/\bconst animalHit = breakJustPressed && \(this\.tryHitAnimal\(p\) \|\| this\.tryHitVisitingPlayer\(p\)\);/, 'const animalHit = breakJustPressed && this.tryHitAnimal(p);');
   const networkOnlyMethods = [
@@ -205,6 +217,7 @@ async function build() {
   for (const file of JS_FILES) {
     let source = readSource('js/' + file);
     if (file === 'main.js') source = stripNetworkOnlyMain(source);
+    if (file === 'ui.js') source = stripRemovedSharedFightBindings(source);
     source = source.replace(/\.auth-screen,?\s*/g, '');
     const result = await terser.minify(source, {
       compress: { global_defs: { 'window.Network': false, 'window.BW_QA_MEMORY_ONLY': true, Network: false }, passes: 8 },
@@ -255,6 +268,7 @@ async function build() {
       'remove family profile, PIN, setup, visit, and server UI from HTML and CSS',
       'omit network.js and whitelist only the required local game modules',
       'remove network-only game branches and compile Network references out',
+      'remove event bindings for controls inside the removed shared fight dialog',
       'replace persistent browser storage with page-memory-only BWStorage',
       'minify JavaScript using the pinned Terser dependency',
     ],
@@ -415,4 +429,4 @@ function assertSanitizedOutput(root = OUT) {
 }
 
 if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, build };
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, stripRemovedSharedFightBindings, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, build };

@@ -81,8 +81,13 @@ async function run() {
   assert.deepEqual(Object.keys(manifest.assets).sort(), Object.keys(first).filter((file) => file !== 'provenance.json').sort());
   builder.assertSanitizedOutput(output);
   const html = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+  const qaUi = fs.readFileSync(path.join(output, 'js/ui.js'), 'utf8');
   assert.match(html, /<title>Blocky World QA<\/title>/i);
   assert(!/auth-screen|login-form|profile-setup|network\.js|Florenz|Marlene|Feng|PIN/i.test(html));
+  for (const id of ['btn-fight-lobby-settings', 'btn-fight-lobby-exit']) {
+    assert(!html.includes('id="' + id + '"'), 'sanitized HTML removes ' + id);
+    assert(!qaUi.includes(id), 'sanitized UI does not bind a control removed with shared-fight-dialog: ' + id);
+  }
   assert.deepEqual(walk(path.join(output, 'js')).map((file) => 'js/' + file).sort(), [...builder.JS_ASSET_ALLOWLIST].sort());
 
   let nativeStorageTouches = 0;
