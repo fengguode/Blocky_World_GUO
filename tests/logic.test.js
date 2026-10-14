@@ -268,15 +268,17 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
       const tiles = new Set(calls.map(c => c.tile));
       H.assert(calls.length >= (id === 'chick' ? 13 : 14), id + ' needs visible silhouette and face detail');
+      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' draw-call budget should stay explicit');
       H.assert(tiles.size >= 3, id + ' should use multiple colors/materials');
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
       if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
       if (id === 'sheep') {
-        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.3 && c.size[1] >= 0.24 && c.size[1] < 0.3 && c.size[2] >= 0.3).length,
-          6, 'sheep needs a six-puff wool outline');
+        H.eq(calls.filter(c => c.tile === def.body && c.size[0] >= 0.3 && c.size[1] > 0.2 && c.size[1] < 0.35 && c.size[2] >= 0.3).length,
+          7, 'sheep needs seven staggered fleece lobes');
+        H.eq(calls.filter(c => c.tile === def.body).length, 11, 'sheep body should keep its three core tiers, seven lobes, and forehead tuft');
       }
       if (id === 'pig') {
-        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.4 && c.size[1] < 0.5);
         H.assert(body && body.size[0] > body.size[2], 'pig should have a broad, low silhouette');
       }
       if (id === 'sheep') {
@@ -285,9 +287,51 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
       }
       if (id === 'chick') {
         H.assert(calls.some(c => c.tile === def.beak && c.size[0] >= 0.2), 'chick needs a prominent beak');
-        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5);
-        const head = calls.find(c => c.tile === def.face && c.size[1] > 0.5 && c !== body);
+        H.eq(calls.filter(c => c.tile === def.accent && c.pos[1] > 1.1).length, 3, 'chick should have three separate crest feathers');
+        H.eq(calls.filter(c => c.tile === def.accent && c.pos[1] < 1.1 && c.pos[2] > 0.2 && c.size[2] === 0.24).length,
+          3, 'chick should have a three-feather tail fan');
+        H.assert(def.w >= 0.8 && def.h >= 0.9, 'chick should stay small but large enough to read at play distance');
+        const body = calls.find(c => c.tile === def.body && c.size[1] > 0.5 && c.size[1] < 0.6);
+        const head = calls.find(c => c.tile === def.face && c.size[1] > 0.4);
         H.assert(body && head && head.size[0] >= body.size[0] * 0.8, 'chick should have a compact body and large readable head');
+      }
+    }
+  } finally {
+    Game.drawBox = originalDrawBox;
+  }
+});
+
+H.test('animal stepped head tiers follow each animal scale vertically', () => {
+  const originalDrawBox = Game.drawBox;
+  try {
+    const captureHeadTiers = (def, scale, headY, headHeight) => {
+      const headCalls = [];
+      Game.drawBox = (prog, pos, size, tile) => {
+        if (tile === def.face && pos[1] > headY - headHeight * 0.16 * scale) headCalls.push({ pos, size });
+      };
+      Game.drawAnimal(null, { def, pos: [0, 0, 0], scale, yaw: 0, walkAnim: 0 }, 1);
+      return headCalls;
+    };
+
+    for (const id of ['pig', 'sheep', 'chick']) {
+      const def = ANIMALS.find(a => a.id === id);
+      const headY = def.h * (0.42 + 0.8);
+      const headHeight = def.h * (id === 'chick' ? 0.72 : id === 'sheep' ? 0.48 : 0.5);
+      const unitTiers = captureHeadTiers(def, 1, headY, headHeight);
+      const scaledTiers = captureHeadTiers(def, 1.15, headY, headHeight);
+      H.eq(unitTiers.length, 4, id + ' should render four stepped head tiers');
+      H.eq(scaledTiers.length, unitTiers.length, id + ' should keep all head tiers when scaled');
+
+      for (let i = 0; i < unitTiers.length; i++) {
+        const unitTier = unitTiers[i];
+        const scaledTier = scaledTiers[i];
+        H.assert(unitTier.size[1] > 0, id + ' head tier ' + i + ' should have positive height');
+        for (const [axis, dimension] of [[0, 'width'], [1, 'height'], [2, 'depth']]) {
+          H.assert(Math.abs(scaledTier.size[axis] / unitTier.size[axis] - 1.15) < 1e-9,
+            id + ' head tier ' + i + ' ' + dimension + ' should follow entity scale');
+        }
+        H.assert(Math.abs(scaledTier.pos[1] - (headY + (unitTier.pos[1] - headY) * 1.15)) < 1e-9,
+          id + ' head tier ' + i + ' vertical offset should follow entity scale');
       }
     }
   } finally {
