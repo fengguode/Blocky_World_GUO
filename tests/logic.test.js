@@ -484,8 +484,8 @@ H.test('the fixed-seed welcome clearing is deterministic and saves only player e
   const x = WORLD_CENTRE, z = WORLD_CENTRE;
   const samples = [
     [0, 29, 0], [-22, 34, -12], [-25, 30, -12],
-    [12, 29, -18], [-9, 36, -22], [-9, 41, -22],
-    [-28, 30, -5], [-26, 30, -5], [-8, 25, 14], [0, 25, 16],
+    [12, 29, -18], [-9, 36, -24], [-9, 41, -24],
+    [-28, 30, -5], [-25, 30, -5], [-8, 24, -16], [0, 24, -16],
   ];
   for (const [dx, y, dz] of samples) {
     const a = first.getBlock(x + dx, y, z + dz);
@@ -494,11 +494,20 @@ H.test('the fixed-seed welcome clearing is deterministic and saves only player e
   H.eq(first.getBlock(x, 29, z), 1, 'the meadow is grassy');
   H.eq(first.getBlock(x - 22, 34, z - 12), 6, 'the first cottage has a stepped brick roof');
   H.eq(first.getBlock(x + 12, 29, z - 18), 8, 'the second cottage has a plank floor');
-  H.eq(first.getBlock(x - 9, 30, z - 22), 7, 'the treehouse trunk rises above the meadow');
+  H.eq(first.getBlock(x - 9, 30, z - 24), 7, 'the treehouse trunk rises above the meadow');
+  H.eq(first.getBlock(x - 9, 38, z - 24), 8, 'the raised treehouse has a broad plank platform');
+  H.eq(first.getBlock(x - 30, 39, z + 13), 9, 'a tall canopy frames the clearing');
   H.eq(first.getBlock(x - 28, 30, z - 5), 22, 'a rose patch grows by the clearing');
-  H.eq(first.getBlock(x - 15, 28, z + 14), 12, 'the upstream stream is raised to meadow level');
-  H.eq(first.getBlock(x - 8, 25, z + 14), 12, 'the stream continues below its short drop');
-  H.eq(first.getBlock(x, 25, z + 16), 12, 'the downstream water keeps flowing through the clearing');
+  H.eq(first.getBlock(x - 25, 30, z - 5), 22, 'flower patches have a wider, clustered footprint');
+  H.eq(first.getBlock(x - 5, 29, z - 9), 4, 'the village trail curves into the clearing');
+  H.eq(first.getBlock(x - 10, 29, z - 14), 8, 'a narrow plank deck crosses the foreground creek on the upper bank');
+  H.eq(first.getBlock(x - 10, 27, z - 14), 7, 'bridge piers visibly connect the creek bed to the deck');
+  H.eq(first.getBlock(x - 10, 30, z - 14), 7, 'the bridge has raised edge posts above its deck');
+  H.eq(first.getBlock(x - 12, 29, z - 16), 12, 'the upper stream remains open beside the bridge');
+  H.eq(first.getBlock(x - 8, 29, z - 14), 0, 'the bridge ends before the waterfall lip');
+  H.eq(first.getBlock(x - 15, 29, z - 16), 12, 'the upstream stream is raised to meadow level');
+  H.eq(first.getBlock(x - 8, 24, z - 16), 12, 'the wide stream falls five blocks at the cascade');
+  H.eq(first.getBlock(x, 24, z - 16), 12, 'the downstream water keeps flowing through the clearing');
   H.eq(first.edits.size, 0, 'generated storybook scenery is not recorded as a player edit');
 });
 
@@ -579,9 +588,9 @@ H.test('showcase column metadata packs ground, stream and clearing flags without
   const clearing = w.storybookColumn(x, z, 42);
   H.eq(clearing >>> 8, 29, 'clearing metadata keeps the meadow ground height');
   H.eq(clearing & 1, 1, 'clearing metadata keeps the forest suppression flag');
-  const creek = w.storybookColumn(x, z + 16, 42);
-  H.eq(creek >>> 8, 23, 'creek metadata keeps the raised stream bank height');
-  H.eq((creek >>> 1) & 0x7f, 26, 'creek metadata keeps its water level');
+  const creek = w.storybookColumn(x, z - 16, 42);
+  H.eq(creek >>> 8, 21, 'creek metadata keeps the lower waterfall channel');
+  H.eq((creek >>> 1) & 0x7f, 24, 'creek metadata keeps the downstream water level');
 });
 
 H.test('non-showcase random seeds keep their original terrain and sea-level water', () => {
@@ -3533,6 +3542,124 @@ H.test('server save failure is not reported as confirmed progress', async () => 
     Game.runtimeFailure = oldFailure;
   }
 });
+H.suite('QA bundle');
+H.test('sanitized QA output preserves offline play without network or persistent storage', () => {
+  const path = require('node:path');
+  const builder = require(path.join(H.ROOT, 'scripts', 'build-qa.js'));
+  H.eq(builder.validateOutputPath(path.join(H.ROOT, '.qa-public')), path.join(H.ROOT, '.qa-public'), 'the dedicated output path is accepted');
+  for (const unsafe of [H.ROOT, path.dirname(H.ROOT)]) {
+    let rejected = false;
+    try { builder.validateOutputPath(unsafe); } catch (_) { rejected = true; }
+    H.eq(rejected, true, 'unsafe output paths are rejected');
+  }
+  const symlinkFs = {
+    existsSync: () => true,
+    lstatSync: () => ({ isSymbolicLink: () => true }),
+  };
+  let symlinkRejected = false;
+  try { builder.validateOutputPath(path.join(H.ROOT, '.qa-public'), symlinkFs); } catch (_) { symlinkRejected = true; }
+  H.eq(symlinkRejected, true, 'a symlinked QA output is rejected before the build removes it');
+  for (const contaminated of ['Network', 'network.js', 'Marlene', 'Florenz', 'Feng', 'PIN', 'auth-profile', 'Choose your profile']) {
+    let contaminationRejected = false;
+    try { builder.assertNoForbiddenReferences('window.' + contaminated); } catch (_) { contaminationRejected = true; }
+    H.eq(contaminationRejected, true, 'sanitizer rejects forbidden token ' + contaminated);
+  }
+  for (const contaminated of [
+    '<img src="https://tracker.example/pixel">',
+    '<img alt=">" src="https://tracker.example/pixel">',
+    '<iframe srcdoc="<img src=https://tracker.example/pixel>"></iframe>',
+    '<meta http-equiv="refresh" content="0;url=https://tracker.example/">',
+    '<script src="//cdn.example/game.js"></script>',
+    '<link rel="stylesheet" href="https&#58;//cdn.example/game.css">',
+    '<link rel="stylesheet" href="data:text/css,%40import%20url(https://tracker.example/x.css)">',
+    '<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">',
+    '<img srcset="https://tracker.example/a 1x">',
+    '@import "https://cdn.example/style.css";',
+    'background-image: url(https://tracker.example/pixel);',
+    'background-image: url(https\\3a //tracker.example/pixel);',
+    'background-image: image-set("https://tracker.example/pixel.png" 1x);',
+    'background-image: -webkit-image-set("https://tracker.example/pixel.png" 1x);',
+  ]) {
+    let resourceRejected = false;
+    try { builder.assertNoForbiddenReferences(contaminated); } catch (_) { resourceRejected = true; }
+    H.eq(resourceRejected, true, 'sanitizer rejects remote resource reference ' + contaminated);
+  }
+  H.eq(builder.assertNoExternalResources('<script src="js/main.js"></script><link rel="icon" href="data:,"><img src="data:image/png;base64,AA==">'), undefined, 'sanitizer permits local and approved inline image resources');
+  H.eq(builder.assertNoExternalResources('body { background: url(assets/local.png); }'), undefined, 'sanitizer permits local CSS resources');
+  const build = spawnSync(process.execPath, [path.join(H.ROOT, 'scripts', 'build-qa.js')], {
+    encoding: 'utf8', timeout: 120000,
+    env: { ...process.env, BW_QA_SOURCE_DIR: path.join(H.ROOT, 'missing-untrusted-source') },
+  });
+  H.eq(build.status, 0, 'QA bundle build succeeds from the repository source despite an untrusted override: ' + (build.stderr || build.stdout));
+  const generatedHtml = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'index.html'), 'utf8');
+  H.assert(/<title>Blocky World QA<\/title>/i.test(generatedHtml), 'QA page uses a generic app title');
+  H.assert(/apple-mobile-web-app-title" content="Blocky World QA/i.test(generatedHtml), 'mobile app metadata uses the generic title');
+  H.assert(/<h1>Blocky World QA<\/h1>/i.test(generatedHtml), 'game heading uses the generic title');
+  const generatedCss = fs.readFileSync(path.join(H.ROOT, '.qa-public', 'style.css'), 'utf8');
+  builder.assertWorldPickerCss(generatedCss);
+  H.assert(!/\.auth-screen|\.visit-lobby|\.visit-hud|\.visit-mode-dialog/.test(generatedCss), 'generated CSS omits auth and visit UI rules');
+  const memoryCalls = { storage: 0, fetch: 0 };
+  const nativeStorageTrap = {
+    getItem() { memoryCalls.storage++; throw new Error('persistent storage read'); },
+    setItem() { memoryCalls.storage++; throw new Error('persistent storage write'); },
+    removeItem() { memoryCalls.storage++; throw new Error('persistent storage remove'); },
+    key() { memoryCalls.storage++; throw new Error('persistent storage key'); },
+    get length() { memoryCalls.storage++; throw new Error('persistent storage length'); },
+  };
+  const qa = H.load({
+    sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false,
+    boot: false, storage: nativeStorageTrap,
+    fetch() { memoryCalls.fetch++; throw new Error('unexpected network request'); },
+  });
+  H.eq(qa.Network, undefined, 'network module is absent');
+  H.eq(qa.windowStub.Network, undefined, 'no page network API is installed');
+  H.assert(typeof qa.Game.render === 'function', 'game renderer is present');
+  H.assert(typeof qa.Game.startObserve === 'function' && typeof qa.Observer.update === 'function', 'observer view is present');
+
+  const world = new qa.World(1337);
+  const chunk = world.getChunk(qa.CENTRE_CHUNK, qa.CENTRE_CHUNK, true);
+  world.generateChunk(chunk);
+  H.assert(chunk.generated, 'fixed-seed terrain generated');
+  const glRecord = { vaos: [], buffers: [] };
+  H.assert(qa.buildChunkMesh(H.stubGL(glRecord), world, chunk), 'generated terrain renders through the real mesher');
+  const repeat = new qa.World(1337);
+  H.eq(world.heightAt(qa.WORLD_CENTRE, qa.WORLD_CENTRE), repeat.heightAt(qa.WORLD_CENTRE, qa.WORLD_CENTRE), 'fixed seed reproduces terrain');
+
+  world.generateRadius(qa.CENTRE_CHUNK, qa.CENTRE_CHUNK, 1, null);
+  qa.Game.world = qa.World.world = world;
+  qa.Game.canvas = { requestPointerLock() {} };
+  const spawn = world.findSpawn();
+  const p1 = new qa.Player(world, qa.characterById(qa.Game.pick.p1), false);
+  p1.pos = spawn.slice(); p1.spawn = spawn.slice();
+  const p2 = new qa.Player(world, qa.characterById(qa.Game.pick.p2), true);
+  p2.pos = [spawn[0] + 2, spawn[1], spawn[2]]; p2.spawn = p2.pos.slice();
+  qa.Game.players = [p1, p2];
+  qa.Game.startFight();
+  H.eq(qa.Game.state, 'fight', 'local Fight mode starts');
+  H.assert(qa.Game.bot, 'offline computer opponent remains available');
+  qa.Game.canvas = { width: 1280, height: 720, clientWidth: 1280, clientHeight: 720 };
+  qa.Game.gl = H.stubGL({ vaos: [], buffers: [] });
+  qa.Game.gl.getProgramParameter = () => 1;
+  qa.Game.setupGL();
+  qa.Game.render(1 / 60);
+  H.assert(qa.Game.gl, 'the real renderer initialized with the stub WebGL context');
+  qa.Game.handleFightInput(p1, p2, { attack: true });
+  H.assert(p1.swing, 'local attack input enters the real attack path');
+  qa.Fight.update(1 / 60, p1, p2);
+  H.assert(Number.isFinite(p1.hp) && Number.isFinite(p2.hp), 'local fight update keeps fighter state valid');
+  qa.Observer.pos = [qa.WORLD_CENTRE + 20, 100, qa.WORLD_CENTRE - 20];
+  qa.Observer.update(1 / 60, 1.5);
+  H.assert(qa.Observer.pos.every(Number.isFinite), 'observer camera updates');
+
+  qa.Game.save();
+  H.assert(qa.BWStorage.length > 0, 'save stays in page-local memory');
+  H.eq(memoryCalls.storage, 0, 'native persistent storage is untouched');
+  H.eq(memoryCalls.fetch, 0, 'no fetch request is attempted');
+  const fresh = H.load({ sourceRoot: path.join(H.ROOT, '.qa-public'), includeNetwork: false, boot: false });
+  H.eq(fresh.BWStorage.length, 0, 'reload starts with a fresh in-memory world');
+});
+
+
 if (require.main === module) {
   process.exit(H.main(process.argv.slice(2)));
 }
