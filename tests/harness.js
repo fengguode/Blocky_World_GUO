@@ -288,7 +288,7 @@ function load(options) {
   if (options.includeNetwork !== false) FILES.push('js/network.js');
 
   const sources = FILES.map((f) => {
-    const p = path.join(ROOT, f);
+    const p = path.join(options.sourceRoot || ROOT, f);
     return '/* ==== ' + f + ' ==== */\n' + fs.readFileSync(p, 'utf8');
   });
 

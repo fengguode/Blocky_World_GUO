@@ -17,34 +17,58 @@ const CENTRE_CHUNK = Math.floor(CHUNKS_PER_SIDE / 2);           // 6250
 const WORLD_CENTRE = CENTRE_CHUNK * CHUNK + CHUNK / 2;          // 100008
 
 const STORYBOOK_SEED = 1337;
-const STORYBOOK_CLEAR_RADIUS = 34;
+const STORYBOOK_CLEAR_RADIUS = 40;
 const STORYBOOK_BLEND_RADIUS = 82;
 const STORYBOOK_GROUND = 29;
 const STORYBOOK_FLOWER_PATCHES = [
-  [-28, -5, 22], [-24, 2, 23], [-19, 18, 24], [-3, 23, 22],
-  [10, 20, 23], [26, 12, 24], [24, -26, 22], [1, -25, 23],
+  [-28, -5, 22, 4], [-24, 2, 23, 3], [-19, 18, 24, 3], [-3, 23, 22, 4],
+  [10, 20, 23, 3], [26, 12, 24, 4], [24, -26, 22, 4], [1, -25, 23, 3],
+  [-24, -29, 23, 3], [15, -31, 22, 4],
 ];
 const STORYBOOK_TREES = [
-  [-24, -3, 6], [-22, 19, 5], [25, 6, 5],
+  [-28, -7, 9, 1], [-30, 13, 8, 0], [-18, 28, 9, 2],
+  [4, 32, 8, 1], [26, 21, 10, 2], [31, -5, 8, 0],
+  [23, -25, 9, 1], [-25, -24, 10, 2], [7, -29, 8, 0],
 ];
 const STORYBOOK_HOUSES = [
-  { x: -22, z: -12, halfWidth: 2, halfDepth: 2, wallHeight: 2, roof: 6 },
-  { x: 12, z: -18, halfWidth: 2, halfDepth: 2, wallHeight: 2, roof: 8 },
+  { x: -22, z: -12, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 6 },
+  { x: 12, z: -18, halfWidth: 4, halfDepth: 3, wallHeight: 3, roof: 8 },
 ];
-const STORYBOOK_TREEHOUSE = { x: -9, z: -22, halfWidth: 2, halfDepth: 2, wallHeight: 2, roof: 6 };
+const STORYBOOK_TREEHOUSE = { x: -9, z: -24, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 6 };
+const STORYBOOK_TREEHOUSE_TRUNK = 9;
+const STORYBOOK_CANOPIES = [
+  [3, 4, 3, 2, 1],
+  [3, 5, 4, 3, 2],
+  [4, 5, 4, 3, 1],
+];
+const STORYBOOK_TREEHOUSE_CANOPY = [4, 5, 4, 3, 2];
+const STORYBOOK_PATHS = [
+  [[0, -3], [-1, -5], [-5, -9], [-12, -11], [-19, -11], [-22, -12]],
+  [[-12, -11], [-6, -13], [1, -15], [7, -18], [12, -18]],
+  [[-9, -12], [-11, -17], [-10, -21], [-9, -24]],
+];
+const STORYBOOK_BRIDGE = { minX: -11, maxX: -10, minZ: -20, maxZ: -9, deckY: STORYBOOK_GROUND };
 const STORYBOOK_FEATURE_COLUMNS = new Set();
 function markStorybookRect(cx, cz, rx, rz) {
-  for (let z = cz - rz; z <= cz + rz; z++) {
-    for (let x = cx - rx; x <= cx + rx; x++) STORYBOOK_FEATURE_COLUMNS.add(x * 256 + z);
+  for (let z = Math.floor(cz - rz); z <= Math.ceil(cz + rz); z++) {
+    for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) STORYBOOK_FEATURE_COLUMNS.add(x * 256 + z);
   }
 }
 for (const house of STORYBOOK_HOUSES) markStorybookRect(house.x, house.z, house.halfWidth + 1, house.halfDepth + 1);
-markStorybookRect(STORYBOOK_TREEHOUSE.x, STORYBOOK_TREEHOUSE.z, 4, 4);
-for (const [x, z] of STORYBOOK_TREES) markStorybookRect(x, z, 3, 3);
-for (let z = -10; z <= -1; z++) markStorybookRect(0, z, 1, 0);
-markStorybookRect(-11, -10, 11, 0);
-markStorybookRect(6, -16, 6, 0);
-for (const [x, z] of STORYBOOK_FLOWER_PATCHES) markStorybookRect(x, z, 2, 2);
+markStorybookRect(STORYBOOK_TREEHOUSE.x, STORYBOOK_TREEHOUSE.z, 7, 7);
+for (const [x, z] of STORYBOOK_TREES) markStorybookRect(x, z, 6, 6);
+markStorybookRect((STORYBOOK_BRIDGE.minX + STORYBOOK_BRIDGE.maxX) / 2,
+  (STORYBOOK_BRIDGE.minZ + STORYBOOK_BRIDGE.maxZ) / 2,
+  (STORYBOOK_BRIDGE.maxX - STORYBOOK_BRIDGE.minX) / 2,
+  (STORYBOOK_BRIDGE.maxZ - STORYBOOK_BRIDGE.minZ) / 2);
+for (const path of STORYBOOK_PATHS) {
+  for (let i = 1; i < path.length; i++) {
+    const [x0, z0] = path[i - 1], [x1, z1] = path[i];
+    markStorybookRect((x0 + x1) / 2, (z0 + z1) / 2,
+      Math.ceil(Math.abs(x1 - x0) / 2) + 2, Math.ceil(Math.abs(z1 - z0) / 2) + 2);
+  }
+}
+for (const [x, z, , size] of STORYBOOK_FLOWER_PATCHES) markStorybookRect(x, z, size + 1, size + 1);
 const MIN_EDGE = 0;
 const MAX_EDGE = CHUNKS_PER_SIDE * CHUNK;                      // 200000
 
@@ -71,7 +95,7 @@ for (let r2 = STORYBOOK_CLEAR_RADIUS_SQ + 1; r2 <= STORYBOOK_BLEND_RADIUS_SQ; r2
     (STORYBOOK_BLEND_RADIUS - STORYBOOK_CLEAR_RADIUS));
 }
 const STORYBOOK_STREAM_Z = new Int8Array(63);
-for (let dx = -31; dx <= 31; dx++) STORYBOOK_STREAM_Z[dx + 31] = 16 + Math.round(Math.sin(dx * 0.12) * 2);
+for (let dx = -31; dx <= 31; dx++) STORYBOOK_STREAM_Z[dx + 31] = -14 + Math.round(Math.sin(dx * 0.12) * 2);
 
 // The clearing shape depends only on block offsets. Precompute it once so streamed
 // chunks do not redo radius, creek and pond calculations for every terrain column.
@@ -87,10 +111,10 @@ for (let dx = -STORYBOOK_BLEND_RADIUS; dx <= STORYBOOK_BLEND_RADIUS; dx++) {
     const radiusSquared = dx * dx + dz * dz;
     if (radiusSquared > STORYBOOK_BLEND_RADIUS_SQ) continue;
     const streamZ = Math.abs(dx) <= 31 ? STORYBOOK_STREAM_Z[dx + 31] : 0;
-    const pond = dx > 21 && dx < 31 && (dx - 24) * (dx - 24) + (dz - streamZ) * (dz - streamZ) < 25;
+    const pond = dx > 20 && dx < 32 && (dx - 25) * (dx - 25) + (dz - streamZ) * (dz - streamZ) < 49;
     let streamLevel = 0;
-    if (Math.abs(dx) <= 31 && (Math.abs(dz - streamZ) <= 2 || pond)) {
-      streamLevel = dx < -8 ? STORYBOOK_GROUND : STORYBOOK_GROUND - 3;
+    if (Math.abs(dx) <= 31 && (Math.abs(dz - streamZ) <= 3 || pond)) {
+      streamLevel = dx < -8 ? STORYBOOK_GROUND : STORYBOOK_GROUND - 5;
     }
     const index = (dx + STORYBOOK_BLEND_RADIUS) * STORYBOOK_PROFILE_SIZE + dz + STORYBOOK_BLEND_RADIUS;
     STORYBOOK_PROFILE_VALID[index] = 1;
@@ -589,37 +613,58 @@ class World {
 
     const { x: tx, z: tz } = STORYBOOK_TREEHOUSE, base = STORYBOOK_GROUND;
     const treeX = dx - tx, treeZ = dz - tz;
-    if (treeX === 0 && treeZ === 0 && y >= base && y < base + 7) return 7;
-    if (y === base + 7 && Math.abs(treeX) <= 3 && Math.abs(treeZ) <= 3) return 8;
-    const elevated = this.storybookHouseBlock(dx, dz, y - 7, STORYBOOK_TREEHOUSE);
+    const treehouseTrunk = (treeX === 0 && treeZ === 0) ||
+      (Math.abs(treeX) === 3 && Math.abs(treeZ) === 3);
+    if (treehouseTrunk && y >= base && y < base + STORYBOOK_TREEHOUSE_TRUNK) return 7;
+    if (y === base + STORYBOOK_TREEHOUSE_TRUNK && Math.abs(treeX) <= 4 && Math.abs(treeZ) <= 4) return 8;
+    const elevated = this.storybookHouseBlock(dx, dz, y - STORYBOOK_TREEHOUSE_TRUNK, STORYBOOK_TREEHOUSE);
     if (elevated !== null) return elevated;
-    for (let layer = 0; layer < 4; layer++) {
-      const leafY = base + 7 + layer, spread = layer < 2 ? 4 : 3;
+    for (let layer = 0; layer < 5; layer++) {
+      const leafY = base + STORYBOOK_TREEHOUSE_TRUNK + 1 + layer;
+      const spread = STORYBOOK_TREEHOUSE_CANOPY[layer];
       if (y === leafY && Math.max(Math.abs(treeX), Math.abs(treeZ)) <= spread &&
-          !(Math.abs(treeX) <= 2 && Math.abs(treeZ) <= 2 && y <= base + 10)) return 9;
+          !(Math.abs(treeX) <= 2 && Math.abs(treeZ) <= 2 && layer < 3)) return 9;
     }
 
-    for (const [cx, cz, height] of STORYBOOK_TREES) {
+    for (const [cx, cz, height, canopyId] of STORYBOOK_TREES) {
       const ox = dx - cx, oz = dz - cz;
       if (ox === 0 && oz === 0 && y >= base && y < base + height) return 7;
-      const layer = y - (base + height - 1);
-      const spread = layer === 0 ? 3 : layer === 1 ? 2 : layer === 2 ? 1 : 0;
-      if (layer >= 0 && layer <= 3 && Math.abs(ox) <= spread && Math.abs(oz) <= spread &&
-          !(Math.abs(ox) === spread && Math.abs(oz) === spread && spread > 1)) return 9;
+      const layer = y - (base + height);
+      const canopy = STORYBOOK_CANOPIES[canopyId];
+      const spread = canopy[layer];
+      if (spread !== undefined && Math.abs(ox) <= spread && Math.abs(oz) <= spread &&
+          !(Math.abs(ox) === spread && Math.abs(oz) === spread && spread > 2)) return 9;
     }
 
-    if (y === surfaceY && (
-      (Math.abs(dx) <= 1 && dz >= -10 && dz <= -1) ||
-      (dz === -10 && dx >= -22 && dx <= -1) ||
-      (dz === -16 && dx >= 1 && dx <= 12)
-    )) return 4;
+    const inBridge = dx >= STORYBOOK_BRIDGE.minX && dx <= STORYBOOK_BRIDGE.maxX &&
+      dz >= STORYBOOK_BRIDGE.minZ && dz <= STORYBOOK_BRIDGE.maxZ;
+    if (inBridge) {
+      const bridgeEdge = dx === STORYBOOK_BRIDGE.minX || dx === STORYBOOK_BRIDGE.maxX;
+      const bridgePier = bridgeEdge && (dz === STORYBOOK_BRIDGE.minZ || dz === STORYBOOK_BRIDGE.maxZ ||
+        (dz - STORYBOOK_BRIDGE.minZ) % 3 === 0);
+      if (y === STORYBOOK_BRIDGE.deckY) return 8;
+      if (bridgePier && y > surfaceY && y < STORYBOOK_BRIDGE.deckY) return 7;
+      if (bridgePier && y === STORYBOOK_BRIDGE.deckY + 1) return 7;
+    }
+
+    if (y === surfaceY && !inBridge) {
+      for (const path of STORYBOOK_PATHS) {
+        for (let i = 1; i < path.length; i++) {
+          const [x0, z0] = path[i - 1], [x1, z1] = path[i];
+          const vx = x1 - x0, vz = z1 - z0;
+          const lengthSquared = vx * vx + vz * vz || 1;
+          const t = Math.max(0, Math.min(1, ((dx - x0) * vx + (dz - z0) * vz) / lengthSquared));
+          const nearestX = x0 + vx * t, nearestZ = z0 + vz * t;
+          if ((dx - nearestX) ** 2 + (dz - nearestZ) ** 2 <= 1.7) return 4;
+        }
+      }
+    }
 
     for (let i = 0; i < STORYBOOK_FLOWER_PATCHES.length; i++) {
-      const [px, pz, id] = STORYBOOK_FLOWER_PATCHES[i];
-      const fx = dx - px, fz = dz - pz, spread = 2;
+      const [px, pz, id, spread] = STORYBOOK_FLOWER_PATCHES[i];
+      const fx = dx - px, fz = dz - pz;
       if (y === surfaceY + 1 && Math.abs(fx) <= spread && Math.abs(fz) <= spread &&
-          Math.abs(fx) + Math.abs(fz) <= spread + 1 &&
-          !(Math.abs(dx) <= 1 && dz >= -10 && dz <= -1)) return id;
+          Math.abs(fx) + Math.abs(fz) <= spread + 2) return id;
     }
     return null;
   }
@@ -628,7 +673,7 @@ class World {
     const dx = wx - WORLD_CENTRE, dz = wz - WORLD_CENTRE;
     if (!STORYBOOK_FEATURE_COLUMNS.has(dx * 256 + dz)) return;
     const lx = wx - c.cx * CHUNK, lz = wz - c.cz * CHUNK;
-    for (let y = STORYBOOK_GROUND - 3; y <= STORYBOOK_GROUND + 14; y++) {
+    for (let y = STORYBOOK_GROUND - 3; y <= STORYBOOK_GROUND + 18; y++) {
       const block = this.storybookFeatureAt(dx, dz, y, surfaceY);
       if (block !== null) c.set(lx, y, lz, block);
     }

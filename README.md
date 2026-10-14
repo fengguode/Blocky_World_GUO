@@ -10,6 +10,8 @@ Use the user-provided screenshot in [Issue #3](https://github.com/fengguode/Bloc
 
 Public staging is approved only for a separate, sanitized QA preview. Any public QA build must exclude family-server access, sign-in and profile data, PINs, saved family worlds, and game network paths. It must use page-memory-only saves, so reloading starts a fresh world, and stay isolated from the family server and its data. This approval does not authorize exposing the family server. See [PR #32](https://github.com/fengguode/Blocky_World_GUO/pull/32) for implementation details and verification evidence. This section records the approved boundary, not release status.
 
+The local QA source generator uses `npm ci` and `npm run build:qa`; it writes only to `.qa-public/` and does not publish or deploy. The generated preview keeps save data in page memory, removes server/network and profile UI paths, and starts fresh after reload. The ordinary game's persistent offline save path remains enabled.
+
 
 ## Offline single-player
 
