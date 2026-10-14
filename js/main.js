@@ -877,6 +877,9 @@ const Game = {
     Touch.setVisible(true);
     Touch.relabel('play');
     Input.requestLock(this.canvas);
+    // A denied pointer-lock request does not always dispatch pointerlockchange.
+    // Show the first-use hint from the current state while the request settles.
+    this.onPointerLockChange(Input.pointerLocked);
     this.players[0].creative = true;
     this.players[0].selectedSlot = this.selectedSlot;
     this.players[0].buildUseTime = 0;
@@ -929,6 +932,7 @@ const Game = {
     Cam.yaw = Math.PI / 2;
     Cam.pitch = -0.12;
     Input.requestLock(this.canvas);
+    this.onPointerLockChange(Input.pointerLocked);
     Audio.play('select');
   },
 
@@ -1143,6 +1147,7 @@ const Game = {
     Observer.orbitHeight = this.isTouch ? 7 : 9;
     Cam.pitch = -0.3;
     Input.releaseLock();
+    this.onPointerLockChange(Input.pointerLocked);
     Audio.play('view');
     UI.toast(this.isTouch
       ? 'Drag to look · ▲▼ height · JUMP changes view · FLY takes a photo'
@@ -1177,6 +1182,7 @@ const Game = {
     this._menuRenderChunks = null;
     this.paused = false;
     Input.releaseLock();
+    this.onPointerLockChange(Input.pointerLocked);
     Touch.setVisible(false);
     document.body.classList.remove('playing');
     document.getElementById('pause').classList.remove('show');
@@ -1225,6 +1231,7 @@ const Game = {
       Touch.reset(); Touch.setVisible(false);
       document.getElementById('menu-extra').innerHTML = '';
       Input.releaseLock();
+      this.onPointerLockChange(Input.pointerLocked);
     } else {
       this.runtimeFailure = false;
       document.getElementById('runtime-error-message').classList.add('hidden');
@@ -1238,6 +1245,7 @@ const Game = {
       document.getElementById('pause').classList.remove('show');
       Touch.reset(); Touch.setVisible(true);
       Input.requestLock(this.canvas);
+      this.onPointerLockChange(Input.pointerLocked);
     }
   },
 
@@ -1245,6 +1253,10 @@ const Game = {
     // Show a prompt when the mouse is free, so the camera never looks broken.
     const hint = document.getElementById('capture-hint');
     if (!hint) return;
+    hint.dataset.mode = this.mode;
+    hint.querySelectorAll('[data-capture-mode]').forEach((section) => {
+      section.hidden = section.dataset.captureMode !== this.mode;
+    });
     const playing = (this.state === 'play' || this.state === 'fight') && !this.paused;
     const needsPrompt = playing && !this.isTouch && !locked;
     hint.classList.toggle('show', needsPrompt);

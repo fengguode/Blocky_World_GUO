@@ -50,6 +50,10 @@ const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 const ui = fs.readFileSync(path.join(root, 'js/ui.js'), 'utf8');
 assert.match(html, /id="menu-character-preview"/, 'main menu includes the selected character preview');
 assert.match(html, /id="touch-view"/, 'touch HUD keeps a dedicated camera control');
+assert.match(html, /<div class="cap-sub">Use <kbd>W A S D<\/kbd> to move · move the mouse to look · <kbd>Space<\/kbd> to jump<br><span data-capture-mode="play">Play &amp; Build: <kbd>Left click<\/kbd> mines blocks or attacks animals or visitors · <kbd>Right click<\/kbd> places a block or uses the selected item · click a hotbar slot to select an item or press <kbd>1–9<\/kbd> for a block · <kbd>V<\/kbd> changes view<\/span><span data-capture-mode="fight">Fight: <kbd>Left click<\/kbd> attacks · <kbd>Right click<\/kbd> uses a special move<\/span><\/div>/,
+  'first-use desktop prompt separates the Play & Build and Fight instructions');
+assert.match(fs.readFileSync(path.join(root, 'js/main.js'), 'utf8'), /section\.hidden = section\.dataset\.captureMode !== this\.mode;/,
+  'first-use desktop prompt shows only the active mode instructions');
 assert.match(css, /env\(safe-area-inset-bottom\)/, 'touch HUD honors the device home indicator inset');
 assert.match(css, /#menu\s*\{[^}]*touch-action:\s*none/s, 'the intro menu preserves its custom touch-scroll gesture');
 assert.match(css, /#btn-game-settings\s*\{[^}]*min-height:\s*44px/s, 'the in-game Settings action has a 44px minimum touch target');
@@ -76,4 +80,4 @@ assert.strictEqual(selectedWorld, 'normal', 'normal world still uses its existin
 worldChooser.buttons['#choose-flat'].onclick();
 assert.strictEqual(selectedWorld, 'flat', 'flat world still uses its existing selection handler');
 
-console.log('Portrait rendering passed for 6 characters; 15 UI structure checks passed.');
+console.log('Portrait rendering passed for 6 characters; 17 UI structure checks passed.');

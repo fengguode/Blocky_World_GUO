@@ -3329,21 +3329,30 @@ H.test('meshing a chunk with no neighbours does not crash', () => {
 
 H.test('state transitions cover every mode', () => {
   const t = H.load({ seed: 4242 });
+  const captureHint = t.document.getElementById('capture-hint');
   t.Game.startPlay();
   H.eq(t.Game.state, 'play');
+  H.assert(captureHint.classList.contains('show'), 'Play & Build shows its hint when pointer-lock state has no event');
+  H.eq(captureHint.dataset.mode, 'play');
   t.Game.toMenu();
   H.eq(t.Game.state, 'menu');
+  H.assert(captureHint.classList.contains('hidden'), 'leaving gameplay hides the capture hint');
   t.Game.startObserve();
   H.eq(t.Game.state, 'observe');
+  H.assert(captureHint.classList.contains('hidden'), 'Observe keeps the capture hint hidden');
   t.Game.toMenu();
   t.Game.pick.p2bot = true;
   t.Game.startFight();
   H.eq(t.Game.state, 'fight');
+  H.assert(captureHint.classList.contains('show'), 'Fight shows its hint when pointer-lock state has no event');
+  H.eq(captureHint.dataset.mode, 'fight');
   H.assert(t.Game.bot, 'a computer opponent should be created');
   t.Game.togglePause(true);
   H.eq(t.Game.state, 'paused');
+  H.assert(captureHint.classList.contains('hidden'), 'pausing hides the capture hint');
   t.Game.togglePause(false);
   H.eq(t.Game.state, 'fight');
+  H.assert(captureHint.classList.contains('show'), 'resuming restores the active mode hint without a pointer-lock event');
   t.Game.toMenu();
   H.eq(t.Game.state, 'menu');
 });
