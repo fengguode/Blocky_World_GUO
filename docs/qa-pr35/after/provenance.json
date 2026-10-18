@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "commit": "5e2ad566b26ae002007750a819b9e0cd0c9501e7",
+    "tree": "e24b00d7b820dceb04fa52fa10eb6c686c380ca7"
+  },
+  "tool": {
+    "name": "blocky-world-sanitized-qa-builder",
+    "version": "1.0.0",
+    "terserVersion": "5.43.1",
+    "node": "v24.14.0",
+    "sanitizerSha256": "de4c927dc9eaede6c9af4cc512f44453bbd304c3e5ab3b5815d9f272bc7fa5eb",
+    "packageSha256": "2a74565d31fdbc71757808c521dce95c87d42a97f47f1d90b01deeedc953605d",
+    "lockfileSha256": "30f0fc319625b981bb3da59b8680ed5da7c32dae0b2c8aaf8a375f13c2556f8b"
+  },
+  "transforms": [
+    "remove family profile, PIN, setup, visit, and server UI from HTML and CSS",
+    "omit network.js and whitelist only the required local game modules",
+    "remove network-only game branches and compile Network references out",
+    "remove event bindings for controls inside the removed shared fight dialog",
+    "replace persistent browser storage with page-memory-only BWStorage",
+    "minify JavaScript using the pinned Terser dependency"
+  ],
+  "inputSha256": {
+    "index.html": "3299d0cae4b29497a844e5ce657f4d691cf8141dfee00ff0f88f3806276ce4ab",
+    "style.css": "9a1b5959962d60750f6fee2a37f1a471fa2cdb9c2770a33a20afbb4b5eace62d",
+    "js/blocks.js": "7f10018267abc12f248c8482a76a2cfbeec8bf6582cf7a70a882b7391bb478b7",
+    "js/gl.js": "0bbf961f9dd95a12062f264a3923d5b3e9718f35adc3dbe4c07362d7f016adfa",
+    "js/world.js": "cc383ace43b10bd96995f643962f6797f07ffb7e75b47788d755784ef7801891",
+    "js/mesher.js": "9972bce1c46a64e3ba97e4dff8ecfa2f00baff360534eba5ed8990a9edcd6f9c",
+    "js/chars.js": "e7bcda55692eadeaf559baf75e65932b7384b0af1742a8f42f0bed73c8b36ca5",
+    "js/input.js": "ef02fe5e71ac435b44d88bfc511ed7ea345efee91780a0b295c78b6e09dbd5ed",
+    "js/camera.js": "75e860d2831471d9e684e2065e80a8cf5567ed8fe164ae286f8a3f3d236d7ad9",
+    "js/entity.js": "5a455f4bddfa7a7a0987ba57a0e2609d79306e826061b11bed2eda71e437d0c7",
+    "js/bot.js": "9261a8a7d2bdcd780a050cccc2a95d5c00d0fe7bb289e821ebaa3a218fe8258f",
+    "js/fight.js": "a779441821e83b93adfe6cbbf70bdb5c22764ceae5b9e3ace8d68eadfa209fc5",
+    "js/touch.js": "4a43ed1fc165b923fa8c43bcfe7945c46912d88aa1e44cdc7991ea99094254e3",
+    "js/ui.js": "e3cfa12d79a5789b304efd84852084da925aacc547762b521394e3e44631a43e",
+    "js/main.js": "74b8852a88d0ab805aa3f89b48c24a1ad06ff1449cd01151067c69aa297b0234"
+  },
+  "inputGitBlobs": {
+    "index.html": "bdaeff6d7f200f265b4ebdd2691aadeff3cb22d8",
+    "style.css": "208f4b31eabe366520110efeb8548aef117c7fe8",
+    "js/blocks.js": "c26b7fe902a7661e2253dd59a01db1ed3582e1aa",
+    "js/gl.js": "085776a064fa13f4e95eeac1047ab556e4d9d141",
+    "js/world.js": "f7951923e59702929675543154713ebd81af7494",
+    "js/mesher.js": "80313c8327361ace898824dbdf055e00080c30ad",
+    "js/chars.js": "e74b759a275291e0a17a78364e10158504a23dc8",
+    "js/input.js": "eb9a9a402eb8f5da4359122a0a60371d5375037d",
+    "js/camera.js": "712c2b7cb2bcc8dcc88c09910cfd0c1403b03f17",
+    "js/entity.js": "018a1b0a60e615e5db9afa479a2a4c4d0d6bf0fe",
+    "js/bot.js": "775c27428964f48b68fa2ba090a5145263e75b83",
+    "js/fight.js": "22f4f23eb638167db97a47075dad1adf986cf9ab",
+    "js/touch.js": "2c489c7c8208113415ded7fa81b2bd26eaaa9a0c",
+    "js/ui.js": "08e358b81f2b3537ba3cf2569e3de318cb18a4b6",
+    "js/main.js": "dc3126447617146f2d5265d0a102e31827437a1b"
+  },
+  "assets": {
+    "index.html": {
+      "sha256": "6d42c1931b38a3b2df0c9735ac68df3104e56246ec885843d20d699c1a1985c1",
+      "bytes": 6427
+    },
+    "js/blocks.js": {
+      "sha256": "c0792323b54dbae24273ad98dc9fcb7a137431d937fac93a3a7c1d70a4eeb14c",
+      "bytes": 25014
+    },
+    "js/bot.js": {
+      "sha256": "cf2b09a492771110cbe42489275a124849b63557a793d9f445fa7696b095da9d",
+      "bytes": 2094
+    },
+    "js/camera.js": {
+      "sha256": "7eca0f1bed299c7981b20e4bbeaab7dd1b7b06ff3a37c5418ed048945c3e32b0",
+      "bytes": 5644
+    },
+    "js/chars.js": {
+      "sha256": "e86289f76439515e6b4f6f65d8558644abcefadd4cbed2aeb44795efe7e57bff",
+      "bytes": 5050
+    },
+    "js/entity.js": {
+      "sha256": "64cacc3596cbef09fa6c3a1cf4168c4fbf784d786c4a5a038d22db8645e22ee7",
+      "bytes": 10639
+    },
+    "js/fight.js": {
+      "sha256": "dfcb6aad3528d28e08048163a6a7722da4877d253867092d60bc2fa8b46edfb3",
+      "bytes": 7579
+    },
+    "js/gl.js": {
+      "sha256": "3565cbfef7ad3485b164b4ef8718df6552027dc238e98ca4af9e2bced0a7c804",
+      "bytes": 5320
+    },
+    "js/input.js": {
+      "sha256": "903b62e07175d9b4f1a0b23690a416c621bbd17cb27276cf5e17223bf3a0bf37",
+      "bytes": 3169
+    },
+    "js/main.js": {
+      "sha256": "634004ee9e84ce5b5c01a9197a5af918262b3ed8da39aef77f1e2ac63d50c75b",
+      "bytes": 64569
+    },
+    "js/mesher.js": {
+      "sha256": "fb6bbc01ddfb063c13fd0a52036c6a416217d509c9c2efbf63fa691f23d2c31d",
+      "bytes": 6802
+    },
+    "js/storage.js": {
+      "sha256": "81a291f035b12cbc556d38d9cdaa410ba7620382c75cbbf586fbf644ce1e35fc",
+      "bytes": 493
+    },
+    "js/touch.js": {
+      "sha256": "80dd902ff97b79449dfc1bdea47849c15b1ae2efc026cc74515c0569fe81ea17",
+      "bytes": 5941
+    },
+    "js/ui.js": {
+      "sha256": "e7daf7d694d12ba326cbdc7cf2cd2a29cca50a931622260c327bd9d1e7a68b00",
+      "bytes": 23700
+    },
+    "js/world.js": {
+      "sha256": "8ac497c5f6fd0c833b6b62b3a094ecee000345d785852b6f0204eb995fbb3488",
+      "bytes": 23344
+    },
+    "style.css": {
+      "sha256": "e79679c464aaa7b4205bacbb524025c37f3fb8f52a8cdb67566c093edbc5b49e",
+      "bytes": 41202
+    }
+  }
+}
