@@ -200,6 +200,8 @@ T.grass_top = pushTile('grass_top', pixelArtTile(PAL.grassTop, [
   { x: 8, y: 0, rows: ['d   d', 'ddddl', 'dllld', '  lll', '  ll '], colors: { d: grassDark, l: grassLight } },
   { x: 2, y: 9, rows: ['  d ', ' ddl', 'ddll', ' lll', '  l '], colors: { d: grassDark, l: grassLight } },
   { x: 10, y: 10, rows: ['  l  ', ' lll ', 'llgll', ' lgl ', '  l  '], colors: { l: grassLight, g: PAL.sand } },
+  // One broad, stepped tuft gives the top a readable grass silhouette at distance.
+  { x: 1, y: 1, rows: ['    dddddd  ', '   dddddddd ', '  ddddllllll', ' ddddlllllll', 'ddddllllllll', '  lllllllll ', '   llllllll  '], colors: { d: grassDark, l: grassLight } },
 ]));
 // A stepped turf edge with connected roots and layered earth instead of confetti.
 T.grass_side = pushTile('grass_side', function (d) {
@@ -219,12 +221,16 @@ T.dirt = pushTile('dirt', pixelArtTile(PAL.dirt, [
   { x: 8, y: 5, rows: [' dddddd', 'ddlllld', 'dllllhd', ' dddddd'], colors: { d: dirtDark, l: dirtLight, h: PAL.dirt } },
   { x: 2, y: 11, rows: [' ddddd ', 'ddlllld', ' dddddd'], colors: { d: dirtDark, l: dirtLight } },
   { x: 11, y: 12, rows: ['ddd ', 'dllld', ' ddd'], colors: { d: dirtDark, l: dirtLight } },
+  // A broad, irregular sediment seam reads as a single crafted earth layer.
+  { x: 0, y: 4, rows: ['  lllllllll   ', ' llllllllllll ', 'llllllllllllll', 'dddddddddddddd', ' ddddddddddd  ', '  lllllllll   '], colors: { d: dirtDark, l: dirtLight } },
 ]));
 T.stone = pushTile('stone', pixelArtTile(PAL.stone, [
   { x: 0, y: 0, rows: ['  llll d', ' lllldd ', 'llll d  ', ' dd     '], colors: { l: stoneLight, d: stoneDark } },
   { x: 8, y: 4, rows: ['dd     ', ' dllll ', '  dllll', '   dd  '], colors: { l: stoneLight, d: stoneDark } },
   { x: 1, y: 10, rows: ['   ddd ', ' ddllld', 'dlllld ', '  dd   '], colors: { l: stoneLight, d: stoneDark } },
   { x: 11, y: 12, rows: ['llldd', ' dd  ', '  d  '], colors: { l: stoneLight, d: stoneDark } },
+  // A stepped seam with a bright upper lip makes the stone strata legible.
+  { x: 0, y: 5, rows: ['   dddddddddd  ', ' dddddddddddddd', 'dddddddddddddd ', '  ddddddddddd  ', '    lllllllll '], colors: { d: stoneDark, l: stoneLight } },
 ]));
 T.cobble = pushTile('cobble', pixelArtTile(shadeColor(PAL.cobble, -38), [
   { x: 0, y: 0, rows: ['  ffffff ', ' ffllllf ', 'fflllllf ', ' ffffff  '], colors: { f: PAL.cobble, l: shadeColor(PAL.cobble, 22) } },
@@ -238,6 +244,8 @@ T.sand = pushTile('sand', pixelArtTile(PAL.sand, [
   { x: 8, y: 4, rows: ['  hhhhhh', 'hhhhh   ', '   lllll', '  llll  '], colors: { h: shadeColor(PAL.sand, 20), l: shadeColor(PAL.sand, -22) } },
   { x: 0, y: 9, rows: ['   hhhh ', ' hhhhhh ', 'llll    ', '  lllll '], colors: { h: shadeColor(PAL.sand, 20), l: shadeColor(PAL.sand, -22) } },
   { x: 10, y: 12, rows: ['  lll ', ' hhhh ', '  llll'], colors: { h: shadeColor(PAL.sand, 20), l: shadeColor(PAL.sand, -22) } },
+  // A continuous stepped dune catches the light across most of the tile.
+  { x: 0, y: 6, rows: ['hhhhhhhhhhhhhhh ', ' hhhhhhhhhhhhhhh', '  lllllllllllll ', ' lllllllllllllll'], colors: { h: shadeColor(PAL.sand, 20), l: shadeColor(PAL.sand, -22) } },
 ]));
 // Offset courses, recessed mortar, and broad chipped brick faces.
 T.brick = pushTile('brick', function (d) {
@@ -303,6 +311,9 @@ T.planks = pushTile('planks', function (d) {
   stampTile(d, 1, 2, ['lllll ', 'llbbll', '  bbbb', '  bll '], { l: plankHighlight, b: plankShadow });
   stampTile(d, 9, 3, ['  lllll', 'llbb  ', '  bbbb ', '   ll  '], { l: plankHighlight, b: plankShadow });
   stampTile(d, 3, 10, ['llll  ', 'llbbll', '  bbbb'], { l: plankHighlight, b: plankShadow });
+  // Wider oval knots interrupt the long board grain without adding noisy colors.
+  stampTile(d, 0, 1, ['  lllll ', ' llbblll', 'llbbbbbb', ' llbblll', '  lllll '], { l: plankHighlight, b: plankShadow });
+  stampTile(d, 9, 9, ['  lllll ', ' llbblll', 'llbbbbbb', ' llbblll', '  lllll '], { l: plankHighlight, b: plankShadow });
 });
 // A ragged canopy silhouette with chunky leaf masses and visible gaps.
 T.leaves = pushTile('leaves', function (d) {
@@ -335,6 +346,9 @@ T.leaves = pushTile('leaves', function (d) {
   stampTile(d, 8, 6, ['  ggggg ', ' ggmmllg', 'gmmllllg', '  gggg  '], shade);
   stampTile(d, 1, 10, [' ggggg ', 'ggmmllg', ' ggggg '], shade);
   stampTile(d, 11, 11, [' gggg ', 'ggmllg', ' gggg '], shade);
+  // Larger connected leaf bunches make the canopy read as foliage, not flecks.
+  stampTile(d, 1, 4, ['  ggggggg ', ' gggmmllg ', 'gggmmlllg ', ' ggggggg  '], shade);
+  stampTile(d, 8, 8, [' ggggggg ', 'gggmmllg ', ' ggggggg  '], shade);
   // Restore transparent canopy gaps after the color clusters are stamped.
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
     if (canopy[y][x] !== '0') d[(y * TILE + x) * 4 + 3] = 0;
@@ -359,6 +373,9 @@ T.glowstone = pushTile('glowstone', function (d) {
   stampTile(d, 0, 1, ['   eee   ', '  eccce  ', ' eecccee ', 'eeccgccce', ' eecccee ', '  eccce  ', '   eee   '],
     { e: edge, c: core, g: PAL.gold });
   stampTile(d, 10, 9, ['  eee ', ' eccce', 'eccgce', ' eccce', '  eee '],
+    { e: edge, c: core, g: PAL.gold });
+  // A large crystal face and stepped rim make the emissive center read clearly.
+  stampTile(d, 3, 1, ['    eeee   ', '   ecccce  ', '  ecccccc e', ' eeccccccce', 'eecccgcccee', ' eecccccc e', '  eccccc   ', '   eccc    '],
     { e: edge, c: core, g: PAL.gold });
 });
 // Broad stepped caustics form two continuous pixel-wave ribbons.
@@ -388,6 +405,8 @@ T.bedrock = pushTile('bedrock', pixelArtTile(PAL.bedrock, [
   { x: 7, y: 2, rows: ['   llll', ' lll   ', 'll     ', '  llll '], colors: { l: shadeColor(PAL.bedrock, -16) } },
   { x: 2, y: 8, rows: ['  dddd ', ' dd  ddd', 'ddd  dd ', ' dddd  '], colors: { d: shadeColor(PAL.bedrock, 22) } },
   { x: 10, y: 12, rows: ['lllll ', '   lll', 'llll  '], colors: { l: shadeColor(PAL.bedrock, -16) } },
+  // A broad fault line anchors the smaller mineral facets.
+  { x: 0, y: 5, rows: ['dddddddddddd', 'dddddddddddd', '  dddddddddd  '], colors: { d: shadeColor(PAL.bedrock, -16) } },
 ]));
 T.pumpkin = pushTile('pumpkin', function (d) {
   fillTile(d, PAL.pumpkin);
@@ -407,14 +426,16 @@ T.ice = pushTile('ice', pixelArtTile(PAL.ice, [
   { x: 8, y: 2, rows: ['   llll', '  lllld', ' lll dd', 'ddddd  '], colors: { l: shadeColor(PAL.ice, 28), d: shadeColor(PAL.ice, -32) } },
   { x: 1, y: 9, rows: ['dd  ', '  lll', ' lll ', '  dd '], colors: { l: shadeColor(PAL.ice, 28), d: shadeColor(PAL.ice, -32) } },
   { x: 11, y: 12, rows: ['ll ', 'lll d', ' dd '], colors: { l: shadeColor(PAL.ice, 28), d: shadeColor(PAL.ice, -32) } },
+  // A wide diagonal facet reads as a single cut crystal at gameplay scale.
+  { x: 0, y: 1, rows: ['lll             ', ' lllll          ', '   llllll       ', '     lllllllll  ', '       lllllllll', '         lllll  ', '           lll  '], colors: { l: shadeColor(PAL.ice, 28) } },
 ]));
 function flowerTile(name, petals, center) {
   return pushTile(name, function (d) {
     fillTile(d, [0, 0, 0], 0);
     const stem = [62, 156, 105], leaf = [84, 190, 126];
-    stampTile(d, 6, 3, ['  ppp  ', ' ppppp ', 'pppcppp', ' ppppp ', '  ppp  '],
+    stampTile(d, 4, 2, ['   ppppp   ', '  ppppppp  ', ' ppppppppp ', 'pppppcppppp', ' ppppppppp ', '  ppppppp  ', '   ppppp   '],
       { p: petals, c: center });
-    stampTile(d, 7, 8, [' s ', ' s ', ' s ', 'sls', ' ss', '  s'],
+    stampTile(d, 7, 9, [' s ', ' s ', ' s ', 'sls', ' ss', '  s'],
       { s: stem, l: leaf });
   });
 }
@@ -427,6 +448,9 @@ T.gold = pushTile('gold', pixelArtTile(PAL.gold, [
   { x: 8, y: 0, rows: ['  vv  ', ' vvllv', 'vllvv ', ' vv   '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
   { x: 1, y: 8, rows: ['  vvv ', ' vvllv', 'vlllv ', ' vv   '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
   { x: 10, y: 10, rows: [' vvv ', 'vvllv', ' vvv '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
+  // Veins join into two generous stepped lodes instead of isolated nuggets.
+  { x: 1, y: 1, rows: ['   vvvvv   ', '  vvvvvvv  ', ' vvvvvvvvv ', 'vvvvvllvvvv', ' vvvvllllvv', '  vvvvllvv ', '   vvvvv   '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
+  { x: 9, y: 9, rows: ['  vvvvv ', ' vvvvvvv', 'vvvvllll', ' vvvvll ', '  vvvvv '], colors: { v: shadeColor(PAL.gold, -42), l: shadeColor(PAL.gold, 18) } },
 ]));
 T.steel = pushTile('steel', pixelArtTile(PAL.steel, [
   { x: 0, y: 3, rows: ['hhhhhhhhhhhhhhhh'], colors: { h: shadeColor(PAL.steel, 22) } },
