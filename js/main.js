@@ -297,12 +297,12 @@ const Game = {
         if (c.a < uAlphaCut) discard;
         vec3 col = c.rgb * vLight;
         col *= vec3(uTintR, uTintG, uTintB);
-        if (uStorybookActive > 0.5) {
+        if (uStorybookActive > 0.5 && uIsLiquid < 0.5) {
           float sceneWarmth = 1.0 - smoothstep(28.0, 68.0, distance(vWorld.xz, uStorybookCenter));
           float sceneLuma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-          vec3 storybookColor = mix(vec3(sceneLuma), col, 0.62);
-          col = mix(col, storybookColor, sceneWarmth * 0.82);
-          col *= mix(vec3(1.0), vec3(1.16, 1.08, 0.84), sceneWarmth * 0.70);
+          vec3 storybookColor = mix(vec3(sceneLuma), col, 0.55);
+          col = mix(col, storybookColor, sceneWarmth * 0.92);
+          col *= mix(vec3(1.0), vec3(1.35, 1.10, 0.64), sceneWarmth * 0.95);
         }
         if (uIsLiquid > 0.5) {
           // Two moving light bands mimic travelling ripples and soft caustics.
