@@ -109,3 +109,10 @@ js/main.js      state machine, saves, rendering, and frame loop
 js/network.js   profile sign-in and server-save bridge
 ```
 
+
+
+## Approved public access and release rollback
+
+The founder separately approved exposing the existing family server through its configured Tailscale Funnel endpoint: [Open the family game](https://win-dlf0f69f65u.tail68f4a2.ts.net:8443/). This is a distinct decision from approval to publish sanitized QA previews above. The endpoint serves the family profile sign-in; profiles, PIN hashes, and saved worlds stay on the family PC in `.blocky-world-data/`. The existing profile PINs are short and are not designed to resist sustained internet guessing. Treat this as limited family access, do not store sensitive data in the game, and review the access model before offering persistent worlds to the general public.
+
+For a code regression, stop the running server with **Ctrl+C** in its server window, restore the last known-good application source through a reviewed rollback pull request, run the release checks, then restart with `start.bat`. Do not force-push or reset `main`. Keep `.blocky-world-data/` separate from code rollback and never delete or replace it during a code rollback. Back up the family data separately before any future save-format migration.
