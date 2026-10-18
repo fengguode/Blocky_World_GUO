@@ -666,6 +666,30 @@ H.test('fixed showcase ground skips natural terrain noise for its spawn chunk', 
   H.eq(calls, 0, 'natural terrain height is irrelevant under the deterministic flat clearing surface');
 });
 
+H.test('fresh Storybook worlds frame the clearing from the south while other worlds keep normal spawn', () => {
+  const storybook = new World(1337);
+  storybook.generateRadius(CENTRE_CHUNK, CENTRE_CHUNK, 2, null);
+  const welcome = storybook.findWelcomeSpawn();
+  H.assert(welcome, 'the fixed clearing has a safe welcome vantage');
+  H.eq(welcome[0], WORLD_CENTRE + 0.5, 'the welcome spawn stays on the clearing centreline');
+  H.eq(welcome[2], WORLD_CENTRE + 22.5, 'the welcome spawn sits south of the stream and village');
+
+  H.eq(new World(42).findWelcomeSpawn(), null, 'random worlds keep ordinary spawn behavior');
+  H.eq(new World(1337, null, 'flat').findWelcomeSpawn(), null, 'flat worlds keep ordinary spawn behavior');
+
+  const t = H.load({ boot: false });
+  t.Game._storybookOpeningViewPending = true;
+  t.Cam.yaw = 1.3;
+  t.Cam.pitch = 0.1;
+  t.Cam.orbit = 0;
+  H.eq(t.Game.applyStorybookOpeningView(), true, 'a fresh Storybook entry applies its composed view');
+  H.eq(t.Cam.yaw, 0, 'the camera faces north across the clearing');
+  H.eq(t.Cam.pitch, -0.22, 'the view tilts down enough to include the stream and flowers');
+  H.eq(t.Cam.orbit, t.Cam.thirdPersonDist, 'third-person framing begins at its intended distance');
+  H.eq(t.Game._storybookOpeningViewPending, false, 'the framing applies only once');
+  H.eq(t.Game.applyStorybookOpeningView(), false, 'later menu returns preserve the player camera');
+});
+
 H.test('non-showcase and flat chunk generation skips Storybook metadata work', () => {
   for (const world of [new World(42), new World(1337, null, 'flat')]) {
     let calls = 0;

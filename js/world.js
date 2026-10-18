@@ -922,6 +922,17 @@ class World {
   }
 
   // A flat, solid platform in the middle of the loaded area — safe spawn.
+  // Place a new Storybook player just south of the clearing so the first
+  // third-person view takes in the stream, bridge, treehouse and village.
+  // Saved worlds and every other seed keep the ordinary spawn search.
+  findWelcomeSpawn() {
+    if (this.worldType === 'flat' || this.seed !== STORYBOOK_SEED) return null;
+    const x = Math.floor(WORLD_CENTRE);
+    const z = Math.floor(WORLD_CENTRE + 22);
+    if (!this.isStandable(x, z)) return null;
+    return [x + 0.5, this.findSurfaceY(x, z) + 1, z + 0.5];
+  }
+
   findSpawn() {
     const ox = this.originX, oz = this.originZ;
     for (let r = 0; r < 30; r++) {

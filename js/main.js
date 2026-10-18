@@ -63,6 +63,7 @@ const Game = {
   _boxMvp: M4.create(),
   time: 0,                // world time, seconds
   dayPhase: 0.32,         // 0 = midnight, 0.5 = noon
+  _storybookOpeningViewPending: false,
   selectedSlot: 0,
   pick: { p1: 'steve', p2: 'golem', p2bot: true, botLevel: 1 },
   settings: {
@@ -630,6 +631,7 @@ const Game = {
     const initialRadius = Math.ceil((28 + this.renderDist * CHUNK * 0.8 + CHUNK) / CHUNK);
     const savedPos = this.saved && Array.isArray(this.saved.player1) && this.saved.player1.length === 3 &&
       this.saved.player1.every(Number.isFinite) ? this.saved.player1 : null;
+    this._storybookOpeningViewPending = !savedPos && isStorybookWorld(this.world);
     const savedX = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[0])) : WORLD_CENTRE;
     const savedZ = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[2])) : WORLD_CENTRE;
     const startCX = Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(savedX / CHUNK)));
@@ -676,7 +678,8 @@ const Game = {
     this._generationQueue = [];
 
     // players
-    const spawn = this.world.findSpawn();
+    const spawn = (!savedPos && this.world.findWelcomeSpawn && this.world.findWelcomeSpawn()) ||
+      this.world.findSpawn();
     const c1 = characterById(this.pick.p1);
     const c2 = characterById(this.pick.p2);
 
@@ -950,6 +953,7 @@ const Game = {
     this.players[0].ko = this.players[0].blocked = false;
     this.players[0].hp = this.players[0].maxHp;
     this.recoverPlayerPosition(this.players[0], false);
+    this.applyStorybookOpeningView();
     Touch.reset();
     this._breakHeld = this._useHeld = this._flyHeld = this._camToggleHeld = false;
     this.players[0].flying = true;
@@ -961,6 +965,15 @@ const Game = {
     Cam.thirdPerson = true;
     Audio.play('select');
     UI.toast('PLACE uses your selected block or shovel. BREAK mines. V changes the view.');
+  },
+
+  applyStorybookOpeningView() {
+    if (!this._storybookOpeningViewPending) return false;
+    Cam.yaw = 0;
+    Cam.pitch = -0.22;
+    Cam.orbit = Cam.thirdPersonDist;
+    this._storybookOpeningViewPending = false;
+    return true;
   },
 
   startFight() {
