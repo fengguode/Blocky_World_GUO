@@ -616,7 +616,7 @@ H.test('the fixed-seed welcome clearing is deterministic and saves only player e
   H.eq(first.getBlock(x - 9, 38, z - 24), 8, 'the raised treehouse has a broad plank platform');
   H.eq(first.getBlock(x - 30, 39, z + 13), 9, 'a tall canopy frames the clearing');
   H.eq(first.getBlock(x - 28, 30, z - 5), 22, 'a rose patch grows by the clearing');
-  H.eq(first.getBlock(x - 25, 30, z - 5), 22, 'flower patches have a wider, clustered footprint');
+  H.eq(first.getBlock(x - 25, 30, z - 5), 22, 'flower patches have a clustered footprint');
   H.eq(first.getBlock(x - 5, 29, z - 9), 4, 'the village trail curves into the clearing');
   H.eq(first.getBlock(x - 10, 29, z - 14), 8, 'a narrow plank deck crosses the foreground creek on the upper bank');
   H.eq(first.getBlock(x - 10, 27, z - 14), 7, 'bridge piers visibly connect the creek bed to the deck');
@@ -626,6 +626,8 @@ H.test('the fixed-seed welcome clearing is deterministic and saves only player e
   H.eq(first.getBlock(x - 15, 29, z - 16), 12, 'the upstream stream is raised to meadow level');
   H.eq(first.getBlock(x - 8, 24, z - 16), 12, 'the wide stream falls five blocks at the cascade');
   H.eq(first.getBlock(x, 24, z - 16), 12, 'the downstream water keeps flowing through the clearing');
+  H.eq(first.getBlock(x, 24, z - 19), 12, 'the wider creek has a readable near bank');
+  H.eq(first.getBlock(x, 24, z - 9), 12, 'the wider creek has a readable far bank');
   H.eq(first.edits.size, 0, 'generated storybook scenery is not recorded as a player edit');
 });
 
@@ -672,7 +674,9 @@ H.test('fresh Storybook worlds frame the clearing from the south while other wor
   const welcome = storybook.findWelcomeSpawn();
   H.assert(welcome, 'the fixed clearing has a safe welcome vantage');
   H.eq(welcome[0], WORLD_CENTRE + 0.5, 'the welcome spawn stays on the clearing centreline');
-  H.eq(welcome[2], WORLD_CENTRE + 22.5, 'the welcome spawn sits south of the stream and village');
+  H.eq(welcome[2], WORLD_CENTRE + 10.5, 'the welcome spawn sits close enough to feature the stream and village');
+  H.eq(storybook.getBlock(Math.floor(welcome[0]), 29, Math.floor(welcome[2])), 4,
+    'the path leads from the village right to the welcome viewpoint');
 
   H.eq(new World(42).findWelcomeSpawn(), null, 'random worlds keep ordinary spawn behavior');
   H.eq(new World(1337, null, 'flat').findWelcomeSpawn(), null, 'flat worlds keep ordinary spawn behavior');

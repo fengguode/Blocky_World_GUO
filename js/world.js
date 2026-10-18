@@ -21,12 +21,12 @@ const STORYBOOK_CLEAR_RADIUS = 40;
 const STORYBOOK_BLEND_RADIUS = 82;
 const STORYBOOK_GROUND = 29;
 const STORYBOOK_FLOWER_PATCHES = [
-  [-28, -5, 22, 4], [-24, 2, 23, 3], [-19, 18, 24, 3], [-3, 23, 22, 4],
-  [10, 20, 23, 3], [26, 12, 24, 4], [24, -26, 22, 4], [1, -25, 23, 3],
-  [-24, -29, 23, 3], [15, -31, 22, 4],
+  [-28, -5, 22, 3], [-24, 2, 23, 2], [-19, 18, 24, 2], [-31, 7, 23, 2],
+  [29, 8, 24, 2], [26, 12, 24, 3], [24, -26, 22, 3], [1, -25, 23, 2],
+  [-24, -29, 23, 3], [15, -31, 22, 3], [-27, -18, 24, 2], [22, -1, 23, 2],
 ];
 const STORYBOOK_TREES = [
-  [-28, -7, 9, 1], [-30, 13, 8, 0], [-18, 28, 9, 2],
+  [-28, -7, 9, 1], [-30, 13, 8, 0], [-18, 28, 9, 2], [30, 15, 9, 1],
   [4, 32, 8, 1], [26, 21, 10, 2], [31, -5, 8, 0],
   [23, -25, 9, 1], [-25, -24, 10, 2], [7, -29, 8, 0],
 ];
@@ -43,7 +43,7 @@ const STORYBOOK_CANOPIES = [
 ];
 const STORYBOOK_TREEHOUSE_CANOPY = [4, 5, 4, 3, 2];
 const STORYBOOK_PATHS = [
-  [[0, -3], [-1, -5], [-5, -9], [-12, -11], [-19, -11], [-22, -12]],
+  [[0, 10], [0, 4], [2, 2], [4, -1], [0, -3], [-1, -5], [-5, -9], [-12, -11], [-19, -11], [-22, -12]],
   [[-12, -11], [-6, -13], [1, -15], [7, -18], [12, -18]],
   [[-9, -12], [-11, -17], [-10, -21], [-9, -24]],
 ];
@@ -113,7 +113,7 @@ for (let dx = -STORYBOOK_BLEND_RADIUS; dx <= STORYBOOK_BLEND_RADIUS; dx++) {
     const streamZ = Math.abs(dx) <= 31 ? STORYBOOK_STREAM_Z[dx + 31] : 0;
     const pond = dx > 20 && dx < 32 && (dx - 25) * (dx - 25) + (dz - streamZ) * (dz - streamZ) < 49;
     let streamLevel = 0;
-    if (Math.abs(dx) <= 31 && (Math.abs(dz - streamZ) <= 3 || pond)) {
+    if (Math.abs(dx) <= 31 && (Math.abs(dz - streamZ) <= 5 || pond)) {
       streamLevel = dx < -8 ? STORYBOOK_GROUND : STORYBOOK_GROUND - 5;
     }
     const index = (dx + STORYBOOK_BLEND_RADIUS) * STORYBOOK_PROFILE_SIZE + dz + STORYBOOK_BLEND_RADIUS;
@@ -928,7 +928,7 @@ class World {
   findWelcomeSpawn() {
     if (this.worldType === 'flat' || this.seed !== STORYBOOK_SEED) return null;
     const x = Math.floor(WORLD_CENTRE);
-    const z = Math.floor(WORLD_CENTRE + 22);
+    const z = Math.floor(WORLD_CENTRE + 10);
     if (!this.isStandable(x, z)) return null;
     return [x + 0.5, this.findSurfaceY(x, z) + 1, z + 0.5];
   }
