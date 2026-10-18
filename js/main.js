@@ -631,7 +631,8 @@ const Game = {
     const initialRadius = Math.ceil((28 + this.renderDist * CHUNK * 0.8 + CHUNK) / CHUNK);
     const savedPos = this.saved && Array.isArray(this.saved.player1) && this.saved.player1.length === 3 &&
       this.saved.player1.every(Number.isFinite) ? this.saved.player1 : null;
-    this._storybookOpeningViewPending = !savedPos && isStorybookWorld(this.world);
+    const freshStorybookStart = this.isFreshStorybookStart();
+    this._storybookOpeningViewPending = freshStorybookStart;
     const savedX = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[0])) : WORLD_CENTRE;
     const savedZ = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[2])) : WORLD_CENTRE;
     const startCX = Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(savedX / CHUNK)));
@@ -678,7 +679,7 @@ const Game = {
     this._generationQueue = [];
 
     // players
-    const spawn = (!savedPos && this.world.findWelcomeSpawn && this.world.findWelcomeSpawn()) ||
+    const spawn = (freshStorybookStart && this.world.findWelcomeSpawn && this.world.findWelcomeSpawn()) ||
       this.world.findSpawn();
     const c1 = characterById(this.pick.p1);
     const c2 = characterById(this.pick.p2);
@@ -974,6 +975,10 @@ const Game = {
     Cam.orbit = Cam.thirdPersonDist;
     this._storybookOpeningViewPending = false;
     return true;
+  },
+
+  isFreshStorybookStart() {
+    return !this.saved && isStorybookWorld(this.world);
   },
 
   startFight() {

@@ -678,6 +678,16 @@ H.test('fresh Storybook worlds frame the clearing from the south while other wor
   H.eq(new World(1337, null, 'flat').findWelcomeSpawn(), null, 'flat worlds keep ordinary spawn behavior');
 
   const t = H.load({ boot: false });
+  t.Game.world = new t.World(1337);
+  t.Game.saved = null;
+  H.eq(t.Game.isFreshStorybookStart(), true, 'only a fresh Storybook world requests the welcome frame');
+  t.Game.saved = { seed: 1337, player1: null };
+  H.eq(t.Game.isFreshStorybookStart(), false, 'a saved or shared Storybook world keeps its saved-world entry behavior');
+  t.Game.saved = null;
+  t.Game.world = new t.World(1337, null, 'flat');
+  H.eq(t.Game.isFreshStorybookStart(), false, 'a fresh Flat world does not get the Storybook view');
+
+  t.Game.world = new t.World(1337);
   t.Game._storybookOpeningViewPending = true;
   t.Cam.yaw = 1.3;
   t.Cam.pitch = 0.1;
