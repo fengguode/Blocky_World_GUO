@@ -76,6 +76,7 @@ const Game = {
     renderDistAuto: true,
   },
   isTouch: false,
+  _touchUltReady: null,
   quality: 'auto',         // auto | high | low
   bot: null,
 
@@ -972,7 +973,7 @@ const Game = {
     document.getElementById('observe-hud').classList.remove('show');
     document.getElementById('pause').classList.remove('show');
     Touch.setVisible(true);
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
 
     this.players[0].char = characterById(this.pick.p1);
     this.players[1].char = characterById(this.pick.p2);
@@ -994,6 +995,24 @@ const Game = {
     Input.requestLock(this.canvas);
     this.onPointerLockChange(Input.pointerLocked);
     Audio.play('select');
+  },
+
+  setFightTouchUltReady(ready, force) {
+    const next = ready === true;
+    if (!force && this._touchUltReady === next) return;
+    this._touchUltReady = next;
+    if (this.isTouch) {
+      if (!next && Touch.btn.fly) {
+        // The button becomes disabled after an ultimate consumes the meter.
+        // Clear the held state now because a disabled button may not receive
+        // the finger's later touchend event.
+        Touch.btn.fly = false;
+        this._flyHeld = false;
+        const fly = document.getElementById('touch-fly');
+        if (fly) fly.classList.remove('pressed');
+      }
+      Touch.relabel('fight', next);
+    }
   },
 
   ensureFightArena() {
@@ -1088,7 +1107,7 @@ const Game = {
     UI.show('hud', true);
     Touch.reset(); Touch.setVisible(false);
     Input.releaseLock();
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
     UI.updateHUD(this.players[0], 'fight', 'Fight Arena — waiting for the shared match');
     if (window.Network) Network.updateFightLobby();
   },
@@ -1114,7 +1133,7 @@ const Game = {
     document.getElementById('pause').classList.remove('show');
     UI.show('hud', true);
     Touch.setVisible(true);
-    Touch.relabel('fight');
+    this.setFightTouchUltReady(false, true);
     this.ensureFightArena();
 
     const local = this.players[0], remote = this.players[1];
@@ -1210,7 +1229,7 @@ const Game = {
     this.onPointerLockChange(Input.pointerLocked);
     Audio.play('view');
     UI.toast(this.isTouch
-      ? 'Drag to look · ▲▼ height · JUMP changes view · FLY takes a photo'
+      ? 'Drag to look · ▲▼ height · JUMP changes view · PHOTO saves a picture'
       : 'F5 changes view · P takes a photo');
   },
 
@@ -1885,8 +1904,9 @@ const Game = {
       UI.updateHUD(p1, 'fight',
         matchup + '<br>' +
         (this.isTouch
-          ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap FLY!' : Math.round(p1.ultMeter) + '%') + '</b>'
+          ? p1.char.ultName + ': <b>' + (ultReady ? 'READY — tap ULT!' : Math.round(p1.ultMeter) + '%') + '</b>'
           : p1.char.ultName + ': <b>' + (ultReady ? 'READY! press L' : Math.round(p1.ultMeter) + '%') + '</b>'));
+      this.setFightTouchUltReady(ultReady);
 
     } else if (this.state === 'observe') {
       // touch: the stick flies, the ▲▼ buttons raise and lower the camera,
@@ -1919,7 +1939,7 @@ const Game = {
       document.getElementById('obs-coords').textContent =
         'x ' + Observer.pos[0].toFixed(1) + '   y ' + Observer.pos[1].toFixed(1) + '   z ' + Observer.pos[2].toFixed(1);
       document.getElementById('obs-hint').textContent =
-        this.isTouch ? '▲▼ height · tap JUMP to change view · FLY to photo' : v.hint + ' · P photo · F10 menu';
+        this.isTouch ? '▲▼ height · tap JUMP to change view · PHOTO saves a picture' : v.hint + ' · P photo · F10 menu';
       // keep the world alive so animals still move while being observed
       this.updateAnimals(dt, null);
       Particles.update(dt, this.world);
@@ -2256,7 +2276,8 @@ const Game = {
       Math.floor(camPos[2] / CHUNK) !== Math.floor(this._streamAt[2] / CHUNK);
     const worldChanged = this._streamWorld !== this.world;
     const distanceChanged = this._streamKeep !== keep;
-    const refresh = moved || worldChanged || distanceChanged || !Array.isArray(this._streamQueue);
+    const refresh = moved || worldChanged || distanceChanged || !Array.isArray(this._streamQueue) ||
+      !Array.isArray(this._generationQueue) || !Array.isArray(this._renderChunks);
     if (refresh) {
       // Generate and mesh nearest chunks first; never scan the full world.
       const wanted = [];
