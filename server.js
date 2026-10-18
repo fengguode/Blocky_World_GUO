@@ -987,6 +987,6 @@ async function start() {
 if (require.main === module) {
   start().catch(err => { console.error('Could not start Blocky World:', err.message); process.exitCode = 1; });
 } else {
-  module.exports = { createVisitPlayerMoveBudget, plausibleVisitPlayerMove, visitPlayAttackAllowed };
+  module.exports = { start, createVisitPlayerMoveBudget, plausibleVisitPlayerMove, visitPlayAttackAllowed };
 }
 
