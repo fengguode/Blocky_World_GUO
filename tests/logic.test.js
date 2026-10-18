@@ -675,7 +675,7 @@ H.test('fresh Storybook worlds frame the clearing from the south while other wor
   const welcome = storybook.findWelcomeSpawn();
   H.assert(welcome, 'the fixed clearing has a safe welcome vantage');
   H.eq(welcome[0], WORLD_CENTRE + 0.5, 'the welcome spawn stays on the clearing centreline');
-  H.eq(welcome[2], WORLD_CENTRE + 10.5, 'the welcome spawn sits close enough to feature the stream and village');
+  H.eq(welcome[2], WORLD_CENTRE + 4.5, 'the welcome spawn sits on the southern trail near the stream and village');
   H.eq(storybook.getBlock(Math.floor(welcome[0]), 29, Math.floor(welcome[2])), 4,
     'the path leads from the village right to the welcome viewpoint');
 
@@ -699,7 +699,7 @@ H.test('fresh Storybook worlds frame the clearing from the south while other wor
   t.Cam.orbit = 0;
   H.eq(t.Game.applyStorybookOpeningView(), true, 'a fresh Storybook entry applies its composed view');
   H.eq(t.Cam.yaw, 0, 'the camera faces north across the clearing');
-  H.eq(t.Cam.pitch, -0.22, 'the view tilts down enough to include the stream and flowers');
+  H.eq(t.Cam.pitch, -0.32, 'the view tilts down enough to include the nearby cascade and flowers');
   H.eq(t.Cam.orbit, t.Cam.thirdPersonDist, 'third-person framing begins at its intended distance');
   H.eq(t.Game._storybookOpeningViewPending, false, 'the framing applies only once');
   H.eq(t.Game.applyStorybookOpeningView(), false, 'later menu returns preserve the player camera');

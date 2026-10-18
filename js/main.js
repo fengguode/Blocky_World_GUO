@@ -62,7 +62,7 @@ const Game = {
   _boxModel: M4.create(),
   _boxMvp: M4.create(),
   time: 0,                // world time, seconds
-  dayPhase: 0.32,         // 0 = midnight, 0.5 = noon
+  dayPhase: 0.25,         // 0 = midnight, 0.5 = noon
   _storybookOpeningViewPending: false,
   selectedSlot: 0,
   pick: { p1: 'steve', p2: 'golem', p2bot: true, botLevel: 1 },
@@ -971,7 +971,7 @@ const Game = {
   applyStorybookOpeningView() {
     if (!this._storybookOpeningViewPending) return false;
     Cam.yaw = 0;
-    Cam.pitch = -0.22;
+    Cam.pitch = -0.32;
     Cam.orbit = Cam.thirdPersonDist;
     this._storybookOpeningViewPending = false;
     return true;
