@@ -1002,6 +1002,12 @@ body.touch:not(.playing) #touch-stick { opacity: 0; }
   letter-spacing: 0.6px;
   pointer-events: auto;
 }
+#touch-buttons .tbtn-fly.touch-action-fight.pressed:not(:disabled) {
+  filter: brightness(1.45) drop-shadow(0 4px 0 #744c53);
+}
+#touch-buttons .tbtn-fly.touch-action-observe.pressed {
+  filter: brightness(1.45) drop-shadow(0 4px 0 #56735f);
+}
 #touch-view.hidden { display: none !important; }
 
 /* the primary button sits in the lower-right, under the thumb */
