@@ -2859,9 +2859,20 @@ H.test('a user touch fires a ready Fight ultimate once and is ignored while disa
   action.dispatchUserEvent({ type: 'touchstart', cancelable: true, preventDefault() { this.defaultPrevented = true; } });
   t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
   H.eq(activations, 1, 'a ready ULT touch dispatches the ultimate');
+  H.eq(t.Touch.btn.fly, false, 'consuming the ultimate releases the held touch before disabling the button');
+  H.assert(!action.classList.contains('pressed'), 'the consumed action loses its pressed feedback');
 
   t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
   H.eq(activations, 1, 'holding the action cannot dispatch a second ultimate');
+
+  action.dispatchUserEvent({ type: 'touchend', cancelable: true, preventDefault() { this.defaultPrevented = true; } });
+  H.eq(t.Touch.btn.fly, false, 'lifting the finger releases the ULT action');
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  player.ultMeter = player.maxUlt;
+  t.Game.setFightTouchUltReady(true, true);
+  action.dispatchUserEvent({ type: 'touchstart', cancelable: true, preventDefault() { this.defaultPrevented = true; } });
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(activations, 2, 'a fresh touch after release can use a recharged ultimate');
 });
 
 H.test('touch controls help uses the visible Fight and Observe action labels', () => {

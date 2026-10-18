@@ -1001,7 +1001,18 @@ const Game = {
     const next = ready === true;
     if (!force && this._touchUltReady === next) return;
     this._touchUltReady = next;
-    if (this.isTouch) Touch.relabel('fight', next);
+    if (this.isTouch) {
+      if (!next && Touch.btn.fly) {
+        // The button becomes disabled after an ultimate consumes the meter.
+        // Clear the held state now because a disabled button may not receive
+        // the finger's later touchend event.
+        Touch.btn.fly = false;
+        this._flyHeld = false;
+        const fly = document.getElementById('touch-fly');
+        if (fly) fly.classList.remove('pressed');
+      }
+      Touch.relabel('fight', next);
+    }
   },
 
   ensureFightArena() {
