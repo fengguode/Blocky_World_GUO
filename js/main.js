@@ -63,6 +63,7 @@ const Game = {
   _boxMvp: M4.create(),
   time: 0,                // world time, seconds
   dayPhase: 0.32,         // 0 = midnight, 0.5 = noon
+  _storybookOpeningViewPending: false,
   selectedSlot: 0,
   pick: { p1: 'steve', p2: 'golem', p2bot: true, botLevel: 1 },
   settings: {
@@ -296,9 +297,12 @@ const Game = {
         if (c.a < uAlphaCut) discard;
         vec3 col = c.rgb * vLight;
         col *= vec3(uTintR, uTintG, uTintB);
-        if (uStorybookActive > 0.5) {
-          float sceneWarmth = 1.0 - smoothstep(24.0, 60.0, distance(vWorld.xz, uStorybookCenter));
-          col *= mix(vec3(1.0), vec3(1.2, 1.08, 0.72), sceneWarmth * 0.66);
+        if (uStorybookActive > 0.5 && uIsLiquid < 0.5) {
+          float sceneWarmth = 1.0 - smoothstep(28.0, 68.0, distance(vWorld.xz, uStorybookCenter));
+          float sceneLuma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          vec3 storybookColor = mix(vec3(sceneLuma), col, 0.55);
+          col = mix(col, storybookColor, sceneWarmth * 0.92);
+          col *= mix(vec3(1.0), vec3(1.35, 1.10, 0.64), sceneWarmth * 0.95);
         }
         if (uIsLiquid > 0.5) {
           // Two moving light bands mimic travelling ripples and soft caustics.
@@ -309,8 +313,8 @@ const Game = {
           col *= 1.0 + waveA * 0.045 + waveB * 0.025;
           if (uStorybookActive > 0.5) {
             float clearingGlow = 1.0 - smoothstep(7.0, 42.0, distance(vWorld.xz, uStorybookCenter));
-            vec3 rippleColor = mix(vec3(0.68, 0.88, 0.98), vec3(1.0, 0.78, 0.48), clearingGlow * 0.86);
-            col = mix(col, rippleColor, clearingGlow * 0.09 + crest * 0.3);
+            vec3 rippleColor = mix(vec3(0.68, 0.88, 0.98), vec3(1.0, 0.72, 0.40), clearingGlow * 0.95);
+            col = mix(col, rippleColor, clearingGlow * 0.14 + crest * 0.36);
           } else {
             col = mix(col, vec3(0.68, 0.88, 0.98), crest * 0.16);
           }
@@ -627,6 +631,8 @@ const Game = {
     const initialRadius = Math.ceil((28 + this.renderDist * CHUNK * 0.8 + CHUNK) / CHUNK);
     const savedPos = this.saved && Array.isArray(this.saved.player1) && this.saved.player1.length === 3 &&
       this.saved.player1.every(Number.isFinite) ? this.saved.player1 : null;
+    const freshStorybookStart = this.isFreshStorybookStart();
+    this._storybookOpeningViewPending = freshStorybookStart;
     const savedX = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[0])) : WORLD_CENTRE;
     const savedZ = savedPos ? Math.max(1, Math.min(WORLD_SIZE - 1, savedPos[2])) : WORLD_CENTRE;
     const startCX = Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(savedX / CHUNK)));
@@ -673,7 +679,8 @@ const Game = {
     this._generationQueue = [];
 
     // players
-    const spawn = this.world.findSpawn();
+    const spawn = (freshStorybookStart && this.world.findWelcomeSpawn && this.world.findWelcomeSpawn()) ||
+      this.world.findSpawn();
     const c1 = characterById(this.pick.p1);
     const c2 = characterById(this.pick.p2);
 
@@ -947,6 +954,7 @@ const Game = {
     this.players[0].ko = this.players[0].blocked = false;
     this.players[0].hp = this.players[0].maxHp;
     this.recoverPlayerPosition(this.players[0], false);
+    this.applyStorybookOpeningView();
     Touch.reset();
     this._breakHeld = this._useHeld = this._flyHeld = this._camToggleHeld = false;
     this.players[0].flying = true;
@@ -958,6 +966,20 @@ const Game = {
     Cam.thirdPerson = true;
     Audio.play('select');
     UI.toast('PLACE uses your selected block or shovel. BREAK mines. V changes the view.');
+  },
+
+  applyStorybookOpeningView() {
+    if (!this._storybookOpeningViewPending) return false;
+    this.dayPhase = 0.25;
+    Cam.yaw = 0;
+    Cam.pitch = -0.32;
+    Cam.orbit = Cam.thirdPersonDist;
+    this._storybookOpeningViewPending = false;
+    return true;
+  },
+
+  isFreshStorybookStart() {
+    return !this.saved && isStorybookWorld(this.world);
   },
 
   startFight() {
@@ -2009,11 +2031,11 @@ const Game = {
     const welcomeWarmth = isStorybookWorld(this.world) && player &&
       Math.hypot(player.pos[0] - WORLD_CENTRE, player.pos[2] - WORLD_CENTRE) < 56;
     if (welcomeWarmth) {
-      const warmTop = [0.48, 0.26, 0.39];
-      const warmBottom = [1.0, 0.56, 0.34];
+      const warmTop = [0.54, 0.31, 0.24];
+      const warmBottom = [1.0, 0.64, 0.36];
       for (let i = 0; i < 3; i++) {
-        top[i] += (warmTop[i] - top[i]) * 0.32;
-        bottom[i] += (warmBottom[i] - bottom[i]) * 0.42;
+        top[i] += (warmTop[i] - top[i]) * 0.58;
+        bottom[i] += (warmBottom[i] - bottom[i]) * 0.70;
       }
     }
     return { top, bottom, star: Math.max(0, 1 - t * 2), night: 1 - t };
