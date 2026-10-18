@@ -610,15 +610,16 @@ H.test('the fixed-seed welcome clearing is deterministic and saves only player e
     H.eq(second.getBlock(x + dx, y, z + dz), a, 'same seed / coordinates must regenerate the same clearing');
   }
   H.eq(first.getBlock(x, 29, z), 1, 'the meadow is grassy');
-  H.eq(first.getBlock(x - 22, 34, z - 12), 6, 'the first cottage has a stepped brick roof');
-  H.eq(first.getBlock(x + 12, 29, z - 18), 8, 'the second cottage has a plank floor');
+  H.eq(first.getBlock(x - 22, 34, z - 12), 5, 'the first cottage has a warm sand roof');
+  H.eq(first.getBlock(x + 12, 29, z - 18), 7, 'the second cottage has a log floor');
+  H.eq(first.getBlock(x + 15, 31, z - 18), 11, 'the cottage windows are backed by warm glowstone');
   H.eq(first.getBlock(x - 9, 30, z - 24), 7, 'the treehouse trunk rises above the meadow');
-  H.eq(first.getBlock(x - 9, 38, z - 24), 8, 'the raised treehouse has a broad plank platform');
+  H.eq(first.getBlock(x - 9, 38, z - 24), 7, 'the raised treehouse has a broad log platform');
   H.eq(first.getBlock(x - 30, 39, z + 13), 9, 'a tall canopy frames the clearing');
   H.eq(first.getBlock(x - 28, 30, z - 5), 22, 'a rose patch grows by the clearing');
   H.eq(first.getBlock(x - 25, 30, z - 5), 22, 'flower patches have a clustered footprint');
   H.eq(first.getBlock(x - 5, 29, z - 9), 4, 'the village trail curves into the clearing');
-  H.eq(first.getBlock(x - 10, 29, z - 14), 8, 'a narrow plank deck crosses the foreground creek on the upper bank');
+  H.eq(first.getBlock(x - 10, 29, z - 14), 7, 'a warm log deck crosses the foreground creek on the upper bank');
   H.eq(first.getBlock(x - 10, 27, z - 14), 7, 'bridge piers visibly connect the creek bed to the deck');
   H.eq(first.getBlock(x - 10, 30, z - 14), 7, 'the bridge has raised edge posts above its deck');
   H.eq(first.getBlock(x - 12, 29, z - 16), 12, 'the upper stream remains open beside the bridge');

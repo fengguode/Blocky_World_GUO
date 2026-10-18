@@ -31,10 +31,10 @@ const STORYBOOK_TREES = [
   [23, -25, 9, 1], [-25, -24, 10, 2], [7, -29, 8, 0],
 ];
 const STORYBOOK_HOUSES = [
-  { x: -22, z: -12, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 6 },
-  { x: 12, z: -18, halfWidth: 4, halfDepth: 3, wallHeight: 3, roof: 8 },
+  { x: -22, z: -12, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 5 },
+  { x: 12, z: -18, halfWidth: 4, halfDepth: 3, wallHeight: 3, roof: 5 },
 ];
-const STORYBOOK_TREEHOUSE = { x: -9, z: -24, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 6 };
+const STORYBOOK_TREEHOUSE = { x: -9, z: -24, halfWidth: 3, halfDepth: 3, wallHeight: 3, roof: 5 };
 const STORYBOOK_TREEHOUSE_TRUNK = 9;
 const STORYBOOK_CANOPIES = [
   [3, 4, 3, 2, 1],
@@ -589,15 +589,16 @@ class World {
     const localX = dx - house.x, localZ = dz - house.z;
     if (Math.abs(localX) > house.halfWidth || Math.abs(localZ) > house.halfDepth) return null;
     const base = STORYBOOK_GROUND;
-    if (y === base) return 8;
+    if (y === base) return 7;
     const level = y - base;
     const edge = Math.abs(localX) === house.halfWidth || Math.abs(localZ) === house.halfDepth;
     if (level >= 1 && level <= house.wallHeight && edge) {
       if (localX === 0 && localZ === house.halfDepth && level <= 2) return 0;
       if (level === 2 && Math.abs(localX) === house.halfWidth && localZ === 0) return 10;
       if (Math.abs(localX) === house.halfWidth && Math.abs(localZ) === house.halfDepth) return 7;
-      return 8;
+      return 7;
     }
+    if (level === 2 && Math.abs(localX) === house.halfWidth - 1 && localZ === 0) return 11;
     const roofLevel = level - house.wallHeight;
     if (roofLevel >= 1 && roofLevel <= house.halfWidth + 1 &&
         Math.abs(localX) <= house.halfWidth + 1 - roofLevel &&
@@ -616,7 +617,7 @@ class World {
     const treehouseTrunk = (treeX === 0 && treeZ === 0) ||
       (Math.abs(treeX) === 3 && Math.abs(treeZ) === 3);
     if (treehouseTrunk && y >= base && y < base + STORYBOOK_TREEHOUSE_TRUNK) return 7;
-    if (y === base + STORYBOOK_TREEHOUSE_TRUNK && Math.abs(treeX) <= 4 && Math.abs(treeZ) <= 4) return 8;
+    if (y === base + STORYBOOK_TREEHOUSE_TRUNK && Math.abs(treeX) <= 4 && Math.abs(treeZ) <= 4) return 7;
     const elevated = this.storybookHouseBlock(dx, dz, y - STORYBOOK_TREEHOUSE_TRUNK, STORYBOOK_TREEHOUSE);
     if (elevated !== null) return elevated;
     for (let layer = 0; layer < 5; layer++) {
@@ -642,7 +643,7 @@ class World {
       const bridgeEdge = dx === STORYBOOK_BRIDGE.minX || dx === STORYBOOK_BRIDGE.maxX;
       const bridgePier = bridgeEdge && (dz === STORYBOOK_BRIDGE.minZ || dz === STORYBOOK_BRIDGE.maxZ ||
         (dz - STORYBOOK_BRIDGE.minZ) % 3 === 0);
-      if (y === STORYBOOK_BRIDGE.deckY) return 8;
+      if (y === STORYBOOK_BRIDGE.deckY) return 7;
       if (bridgePier && y > surfaceY && y < STORYBOOK_BRIDGE.deckY) return 7;
       if (bridgePier && y === STORYBOOK_BRIDGE.deckY + 1) return 7;
     }
