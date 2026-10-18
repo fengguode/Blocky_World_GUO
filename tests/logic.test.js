@@ -698,11 +698,16 @@ H.test('fresh Storybook worlds frame the clearing from the south while other wor
   t.Cam.pitch = 0.1;
   t.Cam.orbit = 0;
   H.eq(t.Game.applyStorybookOpeningView(), true, 'a fresh Storybook entry applies its composed view');
+  H.eq(t.Game.dayPhase, 0.25, 'the warm opening phase applies only to a fresh Storybook entry');
   H.eq(t.Cam.yaw, 0, 'the camera faces north across the clearing');
   H.eq(t.Cam.pitch, -0.32, 'the view tilts down enough to include the nearby cascade and flowers');
   H.eq(t.Cam.orbit, t.Cam.thirdPersonDist, 'third-person framing begins at its intended distance');
   H.eq(t.Game._storybookOpeningViewPending, false, 'the framing applies only once');
   H.eq(t.Game.applyStorybookOpeningView(), false, 'later menu returns preserve the player camera');
+  const other = H.load({ boot: false });
+  other.Game.world = new other.World(42);
+  H.eq(other.Game.applyStorybookOpeningView(), false, 'other world types keep ordinary startup lighting');
+  H.eq(other.Game.dayPhase, 0.32, 'the warm opening phase does not change the global day phase');
 });
 
 H.test('non-showcase and flat chunk generation skips Storybook metadata work', () => {
