@@ -2827,11 +2827,17 @@ H.test('the touch layer knows when it is needed', () => {
 H.test('showing touch controls removes the hidden state', () => {
   const t = H.load({ touch: true, boot: false });
   const layer = t.document.getElementById('touch-ui');
+  const view = t.document.getElementById('touch-view');
   H.assert(layer.classList.contains('hidden'), 'touch controls start hidden in the menu');
   t.Touch.setVisible(true);
   H.assert(!layer.classList.contains('hidden'), 'the game must remove hidden when play starts');
+  H.assert(view.classList.contains('hidden'), 'the view toggle stays hidden outside a playable mode');
+  t.Game.state = 'fight';
+  t.Touch.setVisible(true);
+  H.assert(!view.classList.contains('hidden'), 'Fight Arena must expose the view toggle on touch');
   t.Touch.setVisible(false);
   H.assert(layer.classList.contains('hidden'), 'the game must hide controls when returning to menu');
+  H.assert(view.classList.contains('hidden'), 'hiding gameplay controls also hides the view toggle');
 });
 
 H.test('mobile action and view buttons release when a finger lifts', () => {
@@ -2992,6 +2998,24 @@ H.test('Fight Arena toggles between first- and third-person using keyboard and t
   H.eq(view.textContent, '3RD', 'the touch label reflects third-person');
   t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
   H.eq(t.Cam.thirdPerson, true, 'holding touch VIEW does not toggle repeatedly');
+});
+
+H.test('first-person hides only the local player in Play & Build and Fight Arena', () => {
+  const t = H.load({ boot: false });
+  const local = {};
+  const remote = {};
+  t.Game.players = [local, remote];
+  t.Cam.thirdPerson = false;
+
+  t.Game.state = 'play';
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), true, 'Play & Build hides the local player in first-person');
+  H.eq(t.Game.isFirstPersonLocalPlayer(remote), false, 'Play & Build still draws the other player');
+
+  t.Game.state = 'fight';
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), true, 'Fight Arena hides the local player in first-person');
+  H.eq(t.Game.isFirstPersonLocalPlayer(remote), false, 'Fight Arena still draws the opponent');
+  t.Cam.thirdPerson = true;
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), false, 'third-person draws the local player');
 });
 
 H.test('touch can select a hotbar slot after UI builds the slots', () => {

@@ -1799,6 +1799,11 @@ const Game = {
     Audio.play('view');
   },
 
+  isFirstPersonLocalPlayer(player) {
+    return (this.state === 'play' || this.state === 'fight') &&
+      player === this.players[0] && !Cam.thirdPerson;
+  },
+
   /* ============================================================
      update
      ============================================================ */
@@ -2474,9 +2479,9 @@ const Game = {
     // players
     for (const p of this.players) {
       if (p.networkRemote && !p.networkRemoteVisible) continue;
-      // The camera is inside the local character's head in first-person play;
+      // The camera is inside the local character's head in first-person play or fight;
       // drawing that enclosing mesh would obstruct the view.
-      if (this.state === 'play' && p === this.players[0] && !Cam.thirdPerson) continue;
+      if (this.isFirstPersonLocalPlayer(p)) continue;
       this.drawCharacter(prog, p, dayF);
     }
 
