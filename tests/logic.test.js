@@ -2827,11 +2827,17 @@ H.test('the touch layer knows when it is needed', () => {
 H.test('showing touch controls removes the hidden state', () => {
   const t = H.load({ touch: true, boot: false });
   const layer = t.document.getElementById('touch-ui');
+  const view = t.document.getElementById('touch-view');
   H.assert(layer.classList.contains('hidden'), 'touch controls start hidden in the menu');
   t.Touch.setVisible(true);
   H.assert(!layer.classList.contains('hidden'), 'the game must remove hidden when play starts');
+  H.assert(view.classList.contains('hidden'), 'the view toggle stays hidden outside a playable mode');
+  t.Game.state = 'fight';
+  t.Touch.setVisible(true);
+  H.assert(!view.classList.contains('hidden'), 'Fight Arena must expose the view toggle on touch');
   t.Touch.setVisible(false);
   H.assert(layer.classList.contains('hidden'), 'the game must hide controls when returning to menu');
+  H.assert(view.classList.contains('hidden'), 'hiding gameplay controls also hides the view toggle');
 });
 
 H.test('mobile action and view buttons release when a finger lifts', () => {
@@ -2953,6 +2959,93 @@ H.test('BREAK never toggles camera view and touch VIEW toggles once per press', 
   H.eq(t.Game.cameraViewToggleRequested(), false, 'releasing VIEW does not toggle');
   t.Touch.btn.view = true;
   H.eq(t.Game.cameraViewToggleRequested(), true, 'a later VIEW press changes perspective again');
+});
+
+H.test('V and F5 toggle perspective immediately in Play & Build and Fight Arena', () => {
+  const t = H.load({ boot: false });
+  t.Cam.thirdPerson = true;
+  t.UI.toast = () => {};
+  t.Audio.play = () => {};
+  t.Game.bindGlobalKeys();
+  const keydown = t.listeners.keydown[t.listeners.keydown.length - 1];
+
+  for (const mode of ['play', 'fight']) {
+    t.Game.state = mode;
+    t.Cam.thirdPerson = true;
+    let prevented = false;
+    keydown({ code: 'KeyV', repeat: false, preventDefault: () => { prevented = true; } });
+    H.eq(prevented, true, `${mode}: V is handled by the game`);
+    H.eq(t.Cam.thirdPerson, false, `${mode}: V immediately switches to first-person`);
+    keydown({ code: 'KeyV', repeat: true, preventDefault: () => { prevented = true; } });
+    H.eq(t.Cam.thirdPerson, false, `${mode}: key repeat does not toggle repeatedly`);
+    keydown({ code: 'F5', repeat: false, preventDefault: () => { prevented = true; } });
+    H.eq(t.Cam.thirdPerson, true, `${mode}: F5 switches back to third-person`);
+    H.eq(prevented, true, `${mode}: F5 cannot trigger browser reload`);
+  }
+
+  t.Game.state = 'observe';
+  let observerChanges = 0;
+  t.Observer.cycle = () => { observerChanges++; return { name: 'Orbit' }; };
+  keydown({ code: 'F5', repeat: false, preventDefault: () => {} });
+  H.eq(observerChanges, 1, 'F5 keeps its Observe camera-cycle behavior');
+  H.eq(t.Cam.thirdPerson, true, 'Observe camera cycling does not toggle player perspective');
+});
+
+H.test('Fight Arena touch VIEW toggles between first- and third-person', () => {
+  const t = H.load({ touch: true, boot: false });
+  const player = {
+    char: { name: 'Steve', ultName: 'Block Bonanza', speed: 4, jump: 8 },
+    yaw: 0, pitch: 0, ko: false, ultMeter: 0, maxUlt: 100,
+    update() {},
+  };
+  const opponent = {
+    char: { name: 'Alex', ultName: 'Triple Cyclone', speed: 4, jump: 8 },
+    yaw: 0, pitch: 0, ko: false, ultMeter: 0, maxUlt: 100,
+    update() {},
+  };
+  t.Game.state = 'fight';
+  t.Game.players = [player, opponent];
+  t.Game.clampToWorld = () => {};
+  t.Game.handleFightInput = () => {};
+  t.Game.setFightTouchUltReady = () => {};
+  t.Fight.update = () => {};
+  t.UI.updateHUD = () => {};
+  t.Cam.look = () => {};
+  t.Touch.enabled = true;
+  t.Cam.thirdPerson = true;
+
+  const view = t.document.getElementById('touch-view');
+  t.Touch.btn.view = true;
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, false, 'touch VIEW switches Fight Arena to first-person');
+  H.eq(view.textContent, '1ST', 'the touch label reflects first-person');
+  H.eq(view.attributes['aria-label'], 'Switch to third-person view', 'the accessible label offers the reverse switch');
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, false, 'holding touch VIEW does not toggle repeatedly');
+  t.Touch.btn.view = false;
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  t.Touch.btn.view = true;
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, true, 'a later touch VIEW press returns to third-person');
+  H.eq(view.textContent, '3RD', 'the touch label reflects third-person');
+});
+
+H.test('first-person hides only the local player in Play & Build and Fight Arena', () => {
+  const t = H.load({ boot: false });
+  const local = {};
+  const remote = {};
+  t.Game.players = [local, remote];
+  t.Cam.thirdPerson = false;
+
+  t.Game.state = 'play';
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), true, 'Play & Build hides the local player in first-person');
+  H.eq(t.Game.isFirstPersonLocalPlayer(remote), false, 'Play & Build still draws the other player');
+
+  t.Game.state = 'fight';
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), true, 'Fight Arena hides the local player in first-person');
+  H.eq(t.Game.isFirstPersonLocalPlayer(remote), false, 'Fight Arena still draws the opponent');
+  t.Cam.thirdPerson = true;
+  H.eq(t.Game.isFirstPersonLocalPlayer(local), false, 'third-person draws the local player');
 });
 
 H.test('touch can select a hotbar slot after UI builds the slots', () => {

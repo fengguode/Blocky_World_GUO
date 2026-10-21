@@ -567,6 +567,11 @@ const Game = {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'F3') { this.showDebug = !this.showDebug; e.preventDefault(); }
       if (e.code === 'F10') { e.preventDefault(); this.togglePause(this.state !== 'paused'); }
+      if ((e.code === 'KeyV' || e.code === 'F5') &&
+          (this.state === 'play' || this.state === 'fight')) {
+        e.preventDefault();
+        if (!e.repeat) this.toggleCameraView();
+      }
       // Pointer lock sends every mouse click to the canvas, including clicks
       // aimed at the live-visit controls. Let the host open the mode picker
       // from the keyboard; releasing the lock makes the overlay clickable.
@@ -965,7 +970,7 @@ const Game = {
     }
     Cam.thirdPerson = true;
     Audio.play('select');
-    UI.toast('PLACE uses your selected block or shovel. BREAK mines. V changes the view.');
+    UI.toast('PLACE uses your selected block or shovel. BREAK mines. V or F5 changes the view.');
   },
 
   applyStorybookOpeningView() {
@@ -1783,9 +1788,25 @@ const Game = {
 
   cameraViewToggleRequested() {
     const touchView = Touch.enabled && Touch.btn.view;
-    const requested = Input.hit('KeyV') || (touchView && !this._camToggleHeld);
+    const requested = touchView && !this._camToggleHeld;
     this._camToggleHeld = touchView;
     return requested;
+  },
+
+  toggleCameraView() {
+    Cam.thirdPerson = !Cam.thirdPerson;
+    const viewButton = document.getElementById('touch-view');
+    if (viewButton) {
+      viewButton.textContent = Cam.thirdPerson ? '3RD' : '1ST';
+      viewButton.setAttribute('aria-label', Cam.thirdPerson ? 'Switch to first-person view' : 'Switch to third-person view');
+    }
+    UI.toast(Cam.thirdPerson ? 'Third person' : 'First person');
+    Audio.play('view');
+  },
+
+  isFirstPersonLocalPlayer(player) {
+    return (this.state === 'play' || this.state === 'fight') &&
+      player === this.players[0] && !Cam.thirdPerson;
   },
 
   /* ============================================================
@@ -1802,26 +1823,17 @@ const Game = {
       this.dayPhase = (this.dayPhase + dt / 300) % 1;
     }
 
-    if (this.state === 'play') {
-      // camera follows player 1
+    // Both playable modes share the same camera input and perspective toggle.
+    // Keeping it outside the mode-specific gameplay branches prevents Fight
+    // Arena from silently ignoring the existing V key and touch VIEW button.
+    if (this.state === 'play' || this.state === 'fight') {
       Cam.look(inp.ldx, inp.ldy);
       p1.yaw = Cam.yaw;
       p1.pitch = Cam.pitch;
+      if (this.cameraViewToggleRequested()) this.toggleCameraView();
+    }
 
-      // Camera view toggle: third person shows your character, first person
-      // puts the camera in their eyes. Default is third person because you can
-      // see who you are and where you are going.
-      if (this.cameraViewToggleRequested()) {
-        Cam.thirdPerson = !Cam.thirdPerson;
-        const viewButton = document.getElementById('touch-view');
-        if (viewButton) {
-          viewButton.textContent = Cam.thirdPerson ? '3RD' : '1ST';
-          viewButton.setAttribute('aria-label', Cam.thirdPerson ? 'Switch to first-person view' : 'Switch to third-person view');
-        }
-        UI.toast(Cam.thirdPerson ? 'Third person' : 'First person');
-        Audio.play('view');
-      }
-
+    if (this.state === 'play') {
       // flight toggle — the FLY button on touch, the F key on desktop
       const flyToggle = Input.hit('KeyF') || (Touch.btn.fly && !this._flyHeld);
       if (flyToggle && p1.creative) {
@@ -1859,9 +1871,6 @@ const Game = {
         '</b><br>Fly: <b>' + (p1.flying ? 'on' : 'off') + '</b>');
 
     } else if (this.state === 'fight') {
-      Cam.look(inp.ldx, inp.ldy);
-      p1.yaw = Cam.yaw;
-      p1.pitch = Cam.pitch;
       const pad = inp.pad || {};
       const p1Attack = Input.mouse.leftPressed || Input.mouse.left || pad.attack || (Touch.btn.hit && !this._hitHeld);
       const p1Special = Input.mouse.rightPressed || pad.special || (Touch.btn.use && !this._useHeld);
@@ -2475,9 +2484,9 @@ const Game = {
     // players
     for (const p of this.players) {
       if (p.networkRemote && !p.networkRemoteVisible) continue;
-      // The camera is inside the local character's head in first-person play;
+      // The camera is inside the local character's head in first-person play or fight;
       // drawing that enclosing mesh would obstruct the view.
-      if (this.state === 'play' && p === this.players[0] && !Cam.thirdPerson) continue;
+      if (this.isFirstPersonLocalPlayer(p)) continue;
       this.drawCharacter(prog, p, dayF);
     }
 

@@ -252,7 +252,7 @@ const Touch = {
       el.style.display = '';
     }
     const view = document.getElementById('touch-view');
-    if (view) view.classList.toggle('hidden', !on || !Game || Game.state !== 'play');
+    if (view) view.classList.toggle('hidden', !on || !Game || !['play', 'fight'].includes(Game.state));
   },
 
   relabel(mode, actionReady) {
