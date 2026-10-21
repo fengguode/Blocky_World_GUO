@@ -47,6 +47,16 @@ const Game = {
   activeWorldType: 'normal',
   players: [],
   animals: [],
+  animalActiveCap: 28,
+  animalPackTarget: 3,
+  animalPreyTarget: 19,
+  animalGroupSpacing: 15,
+  animalRegionRadius: 48,
+  animalRecenterDistance: 42,
+  animalRefreshSeconds: 18,
+  _animalRefreshTimer: 0,
+  _animalRegionCenter: null,
+  _animalGroupSequence: 0,
   mode: 'play',
   paused: false,
   showDebug: false,
@@ -711,8 +721,6 @@ const Game = {
     p2.flying = true;
     this.players.push(p2);
 
-    this.spawnAnimals(16);
-
     // restore saved position if we reloaded
     if (this.saved && this.saved.player1) {
       const s = this.saved.player1;
@@ -725,6 +733,10 @@ const Game = {
       }
       if (this.saved.pick) { this.pick = this.saved.pick; }
     }
+
+    // Wildlife starts around the saved player location so returning players
+    // do not have to travel back to the world origin to find animals.
+    this.spawnAnimals(this.animalPreyTarget, p1.pos);
 
     if (this.pendingWorldMigration) {
       if (!window.Network || !Network.serverMode || (Network.visitRole !== 'visitor' && Network.visitRole !== 'pending')) this.save(true);
@@ -756,56 +768,170 @@ const Game = {
     }
   },
 
-  spawnAnimals(count) {
-    this.animals = [];
-    const defs = ANIMALS.filter(def => !def.predator);
-    const ox = this.world.originX, oz = this.world.originZ;
-    const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
-    for (let i = 0; i < count; i++) {
-      const def = defs[(Math.random() * defs.length) | 0];
-      let placed = false;
-      for (let tries = 0; tries < 60 && !placed; tries++) {
-        const a = Math.random() * Math.PI * 2;
-        const r = 5 + Math.random() * reach;
-        const x = Math.floor(ox + Math.cos(a) * r);
-        const z = Math.floor(oz + Math.sin(a) * r);
-        if (this.world.isStandable(x, z)) {
-          this.animals.push(new Animal(def, x + 0.5, this.world.findSurfaceY(x, z) + 1, z + 0.5));
-          placed = true;
+  wildlifeHabitatAt(x, z, surfaceY) {
+    const y = surfaceY === undefined ? this.world.findSurfaceY(x, z) : surfaceY;
+    if (y < 0) return null;
+    const ground = this.world.getBlock(x, y, z);
+    // Beach sand is intentionally left quiet; forest, meadow and high ground
+    // are the three wildlife regions described by the current terrain.
+    if (ground === 5) return null;
+    let foliageNear = false;
+    for (let dy = 2; dy <= 7 && !foliageNear; dy += 2) {
+      for (let dx = -3; dx <= 3 && !foliageNear; dx += 3) {
+        for (let dz = -3; dz <= 3; dz += 3) {
+          if (this.world.getBlock(x + dx, y + dy, z + dz) === 9) {
+            foliageNear = true;
+            break;
+          }
         }
       }
     }
+    const type = ground === 13 || y >= SEA_LEVEL + 22
+      ? 'highland' : foliageNear ? 'woodland' : 'meadow';
+    return { type, surfaceY: y, ground, foliageNear };
+  },
 
-    // Three compact packs keep the wolves visibly social without filling the
-    // whole map with extra entities on lower-memory phones and tablets.
-    let packNumber = 0;
-    for (let pack = 0; pack < 3; pack++) {
-      let anchor = null;
-      for (let tries = 0; tries < 60 && !anchor; tries++) {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = 8 + Math.random() * reach;
-        const x = Math.floor(ox + Math.cos(angle) * radius);
-        const z = Math.floor(oz + Math.sin(angle) * radius);
-        if (this.world.isStandable(x, z)) anchor = [x, z];
+  animalGroupAnchors() {
+    const groups = new Map();
+    let solo = 0;
+    for (const animal of this.animals) {
+      if (animal.dead) continue;
+      const key = animal.packId ? 'pack:' + animal.packId
+        : animal.herdId ? 'herd:' + animal.herdId : 'solo:' + (++solo);
+      let group = groups.get(key);
+      if (!group) { group = { x: 0, z: 0, count: 0, anchor: animal.groupAnchor || null }; groups.set(key, group); }
+      if (!group.anchor) {
+        group.x += animal.pos[0];
+        group.z += animal.pos[2];
       }
-      if (!anchor) continue;
-      const packId = 'wolf-pack-' + (++packNumber) + '-' + Math.floor(Math.random() * 1000000);
-      for (let member = 0; member < 3; member++) {
-        let placed = false;
-        for (let tries = 0; tries < 40 && !placed; tries++) {
-          const angle = Math.random() * Math.PI * 2;
-          const radius = member === 0 ? 0 : 1 + Math.random() * 3.5;
-          const x = Math.floor(anchor[0] + Math.cos(angle) * radius);
-          const z = Math.floor(anchor[1] + Math.sin(angle) * radius);
-          if (!this.world.isStandable(x, z)) continue;
-          const wolf = new Animal(animalById('wolf'), x + 0.5, this.world.findSurfaceY(x, z) + 1, z + 0.5);
-          wolf.packId = packId;
-          wolf.packLeader = this.animals.find(a => a.packId === packId) || wolf;
-          this.animals.push(wolf);
-          placed = true;
-        }
-      }
+      group.count++;
     }
+    return Array.from(groups.values(), group => ({
+      x: group.anchor ? group.anchor[0] : group.x / group.count,
+      z: group.anchor ? group.anchor[1] : group.z / group.count,
+    }));
+  },
+
+  findWildlifeSpawnPoint(center, minRadius, maxRadius, def, anchors, minSpacing, attemptLimit) {
+    const groups = anchors || [];
+    const spacingSq = (minSpacing || 0) ** 2;
+    for (let tries = 0; tries < (attemptLimit || 60); tries++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minRadius + Math.random() * Math.max(0, maxRadius - minRadius);
+      const x = Math.floor(center[0] + Math.cos(angle) * radius);
+      const z = Math.floor(center[1] + Math.sin(angle) * radius);
+      const surfaceY = this.world.findSurfaceY(x, z);
+      if (surfaceY < 0 || surfaceY + 2 >= WORLD_H ||
+          this.world.getBlock(x, surfaceY + 1, z) !== 0 || this.world.getBlock(x, surfaceY + 2, z) !== 0) continue;
+      const habitat = this.wildlifeHabitatAt(x, z, surfaceY);
+      if (!habitat || (def && !def.habitats.includes(habitat.type))) continue;
+      if (groups.some(group => (group.x - (x + 0.5)) ** 2 + (group.z - (z + 0.5)) ** 2 < spacingSq)) continue;
+      if (!def && !ANIMALS.some(candidate => !candidate.predator && candidate.habitats.includes(habitat.type))) continue;
+      return { x, z, y: habitat.surfaceY + 1, habitat: habitat.type };
+    }
+    return null;
+  },
+
+  spawnAnimalGroup(def, anchor, memberCount, groupId) {
+    const members = [];
+    const points = [anchor];
+    for (let i = 0; i < memberCount; i++) {
+      const point = i === 0 ? anchor : this.findWildlifeSpawnPoint([anchor.x, anchor.z], 1.2, 4.5, def,
+          points.map(p => ({ x: p.x + 0.5, z: p.z + 0.5 })), 1.1, 16);
+      if (!point) break;
+      if (i > 0) points.push(point);
+      const animal = new Animal(def, point.x + 0.5, point.y, point.z + 0.5);
+      animal.groupAnchor = [anchor.x + 0.5, anchor.z + 0.5];
+      if (def.predator) animal.packId = groupId;
+      else animal.herdId = groupId;
+      members.push(animal);
+    }
+    if (def.predator && members.length) {
+      const leader = members[0];
+      for (const member of members) member.packLeader = leader;
+    }
+    this.animals.push(...members);
+    return members.length;
+  },
+
+  spawnWolfPacks(center, targetPacks, reach) {
+    const wolf = animalById('wolf');
+    const packIds = new Set(this.animals.filter(a => a.def.predator && a.packId && !a.dead).map(a => a.packId));
+    let packNumber = packIds.size;
+    let anchors = this.animalGroupAnchors();
+    while (packNumber < targetPacks && this.animals.length + 3 <= this.animalActiveCap) {
+      const point = this.findWildlifeSpawnPoint(center, 8, reach, wolf, anchors, this.animalGroupSpacing);
+      if (!point) break;
+      const packId = 'wolf-pack-' + (++this._animalGroupSequence);
+      const added = this.spawnAnimalGroup(wolf, point, 3, packId);
+      if (!added) break;
+      packNumber++;
+      anchors = this.animalGroupAnchors();
+    }
+  },
+
+  spawnWildlifeGroups(targetPrey, center, reach, maxNewGroups) {
+    let preyCount = this.animals.filter(a => !a.def.predator && !a.dead).length;
+    let groupsAdded = 0, attempts = 0, previousSpecies = '';
+    while (preyCount < targetPrey && this.animals.length < this.animalActiveCap && attempts++ < 180) {
+      if (maxNewGroups !== undefined && groupsAdded >= maxNewGroups) break;
+      const remaining = Math.min(targetPrey - preyCount, this.animalActiveCap - this.animals.length);
+      if (remaining < 2) break;
+      const anchors = this.animalGroupAnchors();
+      const point = this.findWildlifeSpawnPoint(center, 8, reach, null, anchors, this.animalGroupSpacing);
+      if (!point) break;
+      let candidates = ANIMALS.filter(def => !def.predator && def.habitats.includes(point.habitat));
+      if (!candidates.length) continue;
+      if (candidates.length > 1 && candidates.some(def => def.id !== previousSpecies)) {
+        candidates = candidates.filter(def => def.id !== previousSpecies);
+      }
+      const def = candidates[(Math.random() * candidates.length) | 0];
+      const min = Math.min(def.groupMin, remaining);
+      const max = Math.min(def.groupMax, remaining);
+      const memberCount = min + ((Math.random() * (max - min + 1)) | 0);
+      const herdId = 'herd-' + (++this._animalGroupSequence);
+      const added = this.spawnAnimalGroup(def, point, memberCount, herdId);
+      if (!added) continue;
+      preyCount += added;
+      previousSpecies = def.id;
+      groupsAdded++;
+    }
+    return preyCount;
+  },
+
+  spawnAnimals(count, playerPosition) {
+    this.animals = [];
+    this._animalRefreshTimer = 0;
+    this._animalGroupSequence = 0;
+    const player = playerPosition || (this.players[0] && this.players[0].pos);
+    const center = player ? [player[0], player[2]]
+      : [this.world.originX || WORLD_CENTRE, this.world.originZ || WORLD_CENTRE];
+    this._animalRegionCenter = center.slice();
+    const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
+    const preyTarget = Math.max(0, Math.min(Math.floor(count) || 0, this.animalActiveCap - this.animalPackTarget * 3));
+    this.spawnWolfPacks(center, this.animalPackTarget, reach);
+    this.spawnWildlifeGroups(preyTarget, center, reach);
+  },
+
+  pruneDistantAnimalGroups(player, radius) {
+    const radiusSq = radius * radius;
+    const groups = new Map();
+    for (const animal of this.animals) {
+      if (animal.dead) continue;
+      const key = animal.packId ? 'pack:' + animal.packId
+        : animal.herdId ? 'herd:' + animal.herdId : 'solo:' + animal.pos.join(',');
+      let group = groups.get(key);
+      if (!group) { group = { members: [], x: 0, z: 0 }; groups.set(key, group); }
+      group.members.push(animal);
+      group.x += animal.pos[0]; group.z += animal.pos[2];
+    }
+    const keep = new Set();
+    for (const group of groups.values()) {
+      const x = group.x / group.members.length - player[0];
+      const z = group.z / group.members.length - player[2];
+      if (x * x + z * z <= radiusSq) for (const member of group.members) keep.add(member);
+    }
+    this.animals = this.animals.filter(animal => keep.has(animal));
   },
 
   provokeWolfPack(wolf) {
@@ -931,6 +1057,22 @@ const Game = {
     }
     for (const animal of this.animals) animal.update(dt, this.world, player);
     this.animals = this.animals.filter(animal => !animal.dead);
+
+    if (player && !player.ko) {
+      this._animalRefreshTimer += dt;
+      const center = this._animalRegionCenter || [player.pos[0], player.pos[2]];
+      const dx = player.pos[0] - center[0], dz = player.pos[2] - center[1];
+      const regionChanged = dx * dx + dz * dz >= this.animalRecenterDistance * this.animalRecenterDistance;
+      if (regionChanged || this._animalRefreshTimer >= this.animalRefreshSeconds) {
+        this._animalRefreshTimer = 0;
+        if (regionChanged) this.pruneDistantAnimalGroups(player.pos, this.animalRegionRadius);
+        this._animalRegionCenter = [player.pos[0], player.pos[2]];
+        const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
+        this.spawnWolfPacks([player.pos[0], player.pos[2]], this.animalPackTarget, reach);
+        this.spawnWildlifeGroups(this.animalPreyTarget, [player.pos[0], player.pos[2]], reach,
+          regionChanged ? undefined : 1);
+      }
+    }
   },
 
   /* ============================================================
@@ -2712,7 +2854,7 @@ const Game = {
     const base = a.pos;
     const boxes = [];
     const drawBox = (prog, pos, size, tile, tint, rotY) => boxes.push({ pos, size, tile, yaw: rotY || 0 });
-    const legH = d.h * 0.42;
+    const legH = d.h * (d.id === 'deer' ? 0.5 : d.id === 'rabbit' ? 0.37 : 0.42);
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const point = (forward, side, y) => [
@@ -2729,10 +2871,10 @@ const Game = {
     };
     const bodyY = base[1] + legH + d.h * 0.32;
     const headY = base[1] + legH + d.h * 0.8;
-    const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
-    const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : 0.72);
-    const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : 0.52);
-    const headDepth = d.w * (d.id === 'chick' ? 0.8 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.72 : 0.62);
+    const headForward = d.d * (d.id === 'chick' ? 0.34 : d.id === 'rabbit' ? 0.3 : d.id === 'deer' ? 0.34 : 0.4);
+    const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : d.id === 'rabbit' ? 0.68 : d.id === 'fox' ? 0.7 : d.id === 'deer' ? 0.48 : 0.72);
+    const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : d.id === 'rabbit' ? 0.42 : d.id === 'fox' ? 0.38 : d.id === 'deer' ? 0.32 : 0.52);
+    const headDepth = d.w * (d.id === 'chick' ? 0.8 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.72 : d.id === 'rabbit' ? 0.62 : d.id === 'fox' ? 0.55 : d.id === 'deer' ? 0.5 : 0.62);
 
     // Four short legs make a stable, readable stance; proportions differ by species.
     for (const [forward, side] of [
@@ -2747,9 +2889,15 @@ const Game = {
       ? [d.w * 1.08 * s, d.h * 0.48, d.d * 0.72 * s]
       : d.id === 'sheep'
         ? [d.w * 0.7 * s, d.h * 0.52, d.d * 0.62 * s]
-        : d.id === 'chick'
+          : d.id === 'chick'
           ? [d.w * 0.82 * s, d.h * 0.6, d.d * 0.84 * s]
-          : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
+          : d.id === 'rabbit'
+            ? [d.w * 1.02 * s, d.h * 0.46, d.d * 0.68 * s]
+            : d.id === 'fox'
+              ? [d.w * 0.86 * s, d.h * 0.44, d.d * 0.78 * s]
+              : d.id === 'deer'
+                ? [d.w * 0.76 * s, d.h * 0.34, d.d * 0.62 * s]
+                : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
 
     if (d.id === 'pig') {
       // A low barrel, soft belly, back ridge, and forward shoulder form one
@@ -2773,6 +2921,21 @@ const Game = {
         [0, 0, 0, d.w * 0.82, d.h * 0.6, d.d * 0.84],
         [0, 0, -d.h * 0.18, d.w * 0.7, d.h * 0.2, d.d * 0.74],
         [-d.d * 0.03, 0, d.h * 0.23, d.w * 0.7, d.h * 0.18, d.d * 0.68],
+      ], d.body);
+    } else if (d.id === 'rabbit') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 1.02, d.h * 0.46, d.d * 0.68],
+        [d.d * 0.2, 0, d.h * 0.12, d.w * 0.76, d.h * 0.32, d.d * 0.48],
+      ], d.body);
+    } else if (d.id === 'fox') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 0.86, d.h * 0.44, d.d * 0.78],
+        [d.d * 0.22, 0, d.h * 0.08, d.w * 0.68, d.h * 0.28, d.d * 0.4],
+      ], d.body);
+    } else if (d.id === 'deer') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.05, 0, 0, d.w * 0.76, d.h * 0.34, d.d * 0.62],
+        [d.d * 0.18, 0, d.h * 0.06, d.w * 0.62, d.h * 0.28, d.d * 0.4],
       ], d.body);
     } else {
       drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
@@ -2811,6 +2974,25 @@ const Game = {
         drawBox(prog, point(-d.d * 0.48, side * d.w * 0.12, bodyY + d.h * (side === 0 ? 0.12 : 0.08)),
           [0.13 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
       }
+    } else if (d.id === 'rabbit') {
+      drawBox(prog, point(-d.d * 0.48, 0, bodyY + d.h * 0.12),
+        [0.23 * s, 0.23 * s, 0.23 * s], d.face, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(d.d * 0.13, 0, bodyY + d.h * 0.02),
+        [d.w * 0.44 * s, d.h * 0.25, 0.035 * s], d.face, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'fox') {
+      drawBox(prog, point(d.d * 0.2, 0, bodyY - d.h * 0.01),
+        [d.w * 0.42 * s, d.h * 0.31, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(-d.d * 0.55, 0, bodyY + d.h * 0.1),
+        [0.22 * s, 0.24 * s, 0.78 * s], d.body, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(-d.d * 0.81, 0, bodyY + d.h * 0.1),
+        [0.2 * s, 0.22 * s, 0.28 * s], d.accent, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'deer') {
+      drawBox(prog, point(d.d * 0.24, 0, bodyY + d.h * 0.38),
+        [d.w * 0.36 * s, d.h * 0.58, d.d * 0.28 * s], d.body, [1, 1, 1], yaw, 1);
+      for (const side of [-1, 1]) {
+        drawBox(prog, point(-d.d * 0.03, side * d.w * 0.26, bodyY + d.h * 0.12),
+          [0.13 * s, 0.12 * s, 0.16 * s], d.face, [1, 1, 1], yaw, 1);
+      }
     }
 
     if (d.id === 'pig') {
@@ -2844,7 +3026,7 @@ const Game = {
     const eyeY = headY + headHeight * 0.06 * s;
     const eyeSide = headWidth * 0.27;
     const eyeTile = d.id === 'wolf' ? T.wolf_eye : T.eye;
-    const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : 0.145;
+    const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : d.id === 'deer' ? 0.12 : 0.145;
     for (const side of [-1, 1]) {
       drawBox(prog, point(headFront, side * eyeSide, eyeY),
         [eyeSize * s, eyeSize * 1.08 * s, 0.045 * s], eyeTile, [1, 1, 1], yaw, 1);
@@ -2896,6 +3078,42 @@ const Game = {
       }
       drawBox(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
         [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'rabbit') {
+      const earY = headY + headHeight * 0.72 * s;
+      for (const side of [-1, 1]) {
+        const earSide = side * headWidth * 0.28;
+        drawBox(prog, point(headForward - 0.015, earSide, earY),
+          [0.15 * s, 0.48 * s, 0.13 * s], d.body, [1, 1, 1], yaw, 1);
+        drawBox(prog, point(headFront + 0.012, earSide, earY),
+          [0.065 * s, 0.34 * s, 0.035 * s], d.ear, [1, 1, 1], yaw, 1);
+      }
+      const muzzleY = headY - headHeight * 0.16 * s;
+      drawBox(prog, point(headFront + 0.04, 0, muzzleY),
+        [0.24 * s, 0.17 * s, 0.09 * s], d.face, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(headFront + 0.095, 0, muzzleY + 0.01),
+        [0.075 * s, 0.06 * s, 0.045 * s], d.ear, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'fox') {
+      for (const side of [-1, 1]) {
+        drawBox(prog, point(headForward - 0.025, side * headWidth * 0.38, headY + headHeight * 0.55 * s),
+          [0.16 * s, 0.25 * s, 0.16 * s], d.body, [1, 1, 1], yaw, 1);
+      }
+      drawBox(prog, point(headFront + 0.08, 0, headY - headHeight * 0.18 * s),
+        [0.3 * s, 0.2 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+      drawBox(prog, point(headFront + 0.16, 0, headY - headHeight * 0.17 * s),
+        [0.09 * s, 0.075 * s, 0.05 * s], T.eye, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'deer') {
+      const antlerBaseY = headY + headHeight * 0.56 * s;
+      for (const side of [-1, 1]) {
+        const antlerSide = side * headWidth * 0.4;
+        drawBox(prog, point(headForward - 0.02, antlerSide, antlerBaseY + 0.18 * s),
+          [0.11 * s, 0.44 * s, 0.11 * s], d.antler, [1, 1, 1], yaw, 1);
+        drawBox(prog, point(headForward - 0.02, antlerSide + side * 0.17, antlerBaseY + 0.25 * s),
+          [0.1 * s, 0.28 * s, 0.1 * s], d.antler, [1, 1, 1], yaw, 1);
+        drawBox(prog, point(headForward - 0.02, antlerSide - side * 0.12, antlerBaseY + 0.32 * s),
+          [0.1 * s, 0.2 * s, 0.1 * s], d.antler, [1, 1, 1], yaw, 1);
+      }
+      drawBox(prog, point(headFront + 0.025, 0, headY - headHeight * 0.18 * s),
+        [0.16 * s, 0.12 * s, 0.075 * s], d.accent, [1, 1, 1], yaw, 1);
     }
     this.drawAnimalBoxes(prog, boxes);
   },

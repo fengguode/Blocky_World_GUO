@@ -319,6 +319,33 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
   }
 });
 
+H.test('rabbit, fox, and deer have species-specific readable silhouettes', () => {
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  try {
+    for (const id of ['rabbit', 'fox', 'deer']) {
+      const def = ANIMALS.find(a => a.id === id);
+      const calls = [];
+      Game.drawAnimalBoxes = (prog, boxes) => calls.push(...boxes);
+      Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
+      H.assert(calls.length >= 15, id + ' needs a multi-part model');
+      H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs visible eyes');
+      if (id === 'rabbit') {
+        H.eq(calls.filter(c => c.tile === def.ear && c.size[1] >= 0.34).length, 2, 'rabbit needs two long inner ears');
+        H.assert(calls.some(c => c.tile === def.face && c.size[0] >= 0.2 && c.size[2] > 0.08), 'rabbit needs a projecting muzzle and tail puff');
+      } else if (id === 'fox') {
+        H.assert(calls.some(c => c.tile === def.accent && c.size[1] > 0.25), 'fox needs a pale chest and tail tip');
+        H.assert(calls.some(c => c.tile === def.body && c.size[2] >= 0.7), 'fox needs a long bushy tail');
+      } else {
+        H.eq(calls.filter(c => c.tile === def.antler).length, 6, 'deer needs branched antlers on both sides');
+        H.assert(calls.some(c => c.tile === def.body && c.size[1] > 0.7), 'deer needs a long raised neck');
+        H.assert(def.h > ANIMALS.find(a => a.id === 'pig').h * 1.5, 'deer should have a distinct tall silhouette');
+      }
+    }
+  } finally {
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+  }
+});
+
 H.test('animal stepped head tiers follow each animal scale vertically', () => {
   const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
   try {
@@ -2144,10 +2171,16 @@ H.test('every animal definition is usable', () => {
     H.assert(a.id && a.name && a.tame, a.id + ' is incomplete');
     H.assert(a.w > 0 && a.h > 0 && a.d > 0, a.id + ' needs a positive size');
     H.assert(a.speed > 0, a.id + ' needs a speed');
+    H.assert(Array.isArray(a.habitats) && a.habitats.length > 0, a.id + ' needs habitat preferences');
+    H.assert(a.groupMin > 0 && a.groupMax >= a.groupMin, a.id + ' needs valid group sizes');
     for (const k of ['body', 'face', 'leg']) {
       H.assert(typeof a[k] === 'number', a.id + '.' + k + ' must be a texture index');
     }
+    for (const k of ['ear', 'antler']) if (a[k] !== undefined) {
+      H.assert(typeof a[k] === 'number', a.id + '.' + k + ' must be a texture index');
+    }
   }
+  for (const id of ['rabbit', 'fox', 'deer']) H.assert(ANIMALS.some(a => a.id === id), id + ' should be a new original species');
 });
 
 /* ============================================================
@@ -2630,6 +2663,9 @@ H.test('world animal spawning creates compact wolf packs', () => {
   const w = arenaWorld();
   const previousWorld = Game.world;
   const previousDist = Game.renderDist;
+  const previousAnimals = Game.animals;
+  const previousRegionCenter = Game._animalRegionCenter;
+  const previousSequence = Game._animalGroupSequence;
   Game.world = w;
   Game.renderDist = 3;
   w.originX = CX;
@@ -2640,6 +2676,89 @@ H.test('world animal spawning creates compact wolf packs', () => {
   H.eq(new Set(wolves.map(a => a.packId)).size, 3, 'wolves are split into packs');
   Game.world = previousWorld;
   Game.renderDist = previousDist;
+  Game.animals = previousAnimals;
+  Game._animalRegionCenter = previousRegionCenter;
+  Game._animalGroupSequence = previousSequence;
+});
+
+H.test('wildlife prefers compatible terrain and stays in spaced, capped groups', () => {
+  const originalRandom = Math.random;
+  const previousWorld = Game.world;
+  const previousDist = Game.renderDist;
+  const previousAnimals = Game.animals;
+  const previousRegionCenter = Game._animalRegionCenter;
+  const previousRefreshTimer = Game._animalRefreshTimer;
+  const previousSequence = Game._animalGroupSequence;
+  let state = 11235813;
+  Math.random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  const surfaceY = x => x < CX - 18 ? SEA_LEVEL + 26 : SEA_LEVEL;
+  const world = {
+    findSurfaceY(x) { return surfaceY(x); },
+    getBlock(x, y) {
+      const groundY = surfaceY(x);
+      if (y === groundY) return groundY >= SEA_LEVEL + 22 ? 13 : 1;
+      if (groundY === SEA_LEVEL && x >= CX + 18 && y >= groundY + 2 && y <= groundY + 7) return 9;
+      return 0;
+    },
+  };
+  try {
+    Game.world = world;
+    Game.renderDist = 5;
+    H.eq(Game.wildlifeHabitatAt(CX, CX).type, 'meadow', 'open grass is classified as meadow');
+    H.eq(Game.wildlifeHabitatAt(CX + 24, CX).type, 'woodland', 'nearby leaves classify a woodland');
+    H.eq(Game.wildlifeHabitatAt(CX - 28, CX).type, 'highland', 'snowy high ground is classified as highland');
+
+    Game.spawnAnimals(19, [CX, SEA_LEVEL + 1, CX]);
+    H.assert(Game.animals.length <= Game.animalActiveCap, 'initial population must honor the active cap');
+    const wolves = Game.animals.filter(a => a.def.predator);
+    H.eq(wolves.length, 9, 'the initial population contains three compact wolf packs');
+    const prey = Game.animals.filter(a => !a.def.predator);
+    H.assert(prey.length >= 18, 'the initial population has varied prey groups near the target');
+    H.assert(new Set(prey.map(a => a.def.id)).size >= 3, 'the region should contain several species');
+    const groups = new Map();
+    for (const animal of Game.animals) {
+      const key = animal.packId || animal.herdId;
+      H.assert(key, animal.def.id + ' belongs to an explicit pack or herd');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(animal);
+      const habitat = Game.wildlifeHabitatAt(Math.floor(animal.pos[0]), Math.floor(animal.pos[2]));
+      H.assert(habitat && animal.def.habitats.includes(habitat.type), animal.def.id + ' spawns only in a preferred habitat');
+    }
+    const anchors = new Map();
+    for (const animal of Game.animals) if (!anchors.has(animal.packId || animal.herdId)) anchors.set(animal.packId || animal.herdId, animal.groupAnchor);
+    const centres = Array.from(anchors.values());
+    for (let i = 0; i < centres.length; i++) for (let j = i + 1; j < centres.length; j++) {
+      H.assert(Math.hypot(centres[i][0] - centres[j][0], centres[i][1] - centres[j][1]) >= Game.animalGroupSpacing,
+        'distinct packs and herds should leave quiet space between groups');
+    }
+    for (const members of groups.values()) {
+      if (members[0].def.predator) H.eq(members.length, 3, 'wolf packs have three members');
+      else H.assert(members.length <= members[0].def.groupMax, 'herds stay within species group sizes');
+    }
+
+    const player = { pos: [CX + 60, SEA_LEVEL + 1, CX], ko: false };
+    Game.updateAnimals(1 / 60, player);
+    H.eq(Game._animalRegionCenter[0], player.pos[0], 'population recenters when the player explores a new region');
+    H.assert(Game.animals.length <= Game.animalActiveCap, 'regional refresh still respects the active cap');
+
+    Game.animals = Game.animals.filter(a => a.def.predator);
+    Game._animalRefreshTimer = Game.animalRefreshSeconds - 0.01;
+    Game.updateAnimals(0.02, player);
+    const replenished = Game.animals.filter(a => !a.def.predator);
+    H.assert(replenished.length >= 2 && replenished.length <= 4,
+      'a quiet interval replenishes one natural prey group instead of flooding the region');
+  } finally {
+    Math.random = originalRandom;
+    Game.world = previousWorld;
+    Game.renderDist = previousDist;
+    Game.animals = previousAnimals;
+    Game._animalRegionCenter = previousRegionCenter;
+    Game._animalRefreshTimer = previousRefreshTimer;
+    Game._animalGroupSequence = previousSequence;
+  }
 });
 
 H.test('a wolf attack makes its whole pack aggressive toward the player', () => {

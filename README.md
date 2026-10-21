@@ -38,6 +38,8 @@ Live visits support Play & Build, Fight Arena, and Observe World for Florenz, Ma
 
 **Play & Build** — Explore, break blocks, and place blocks. Flying starts enabled; use **FLY** to toggle and **▲▼** to move vertically. Each character uses their Fight Arena maximum health. Left-click or tap **BREAK** to attack animals or a visiting player; fist, wood, stone, and gold attacks deal 8, 12, 16, and 20 damage. Select a wood, stone, or gold block to use that material's attack strength; other selections use a fist. Animals have 30 health, retaliate for 5 damage no more than once per second after being hit, and each defeated animal gives one meat. Breaking leaves has a 15% chance to give one apple. Select food and use right-click or **PLACE** to eat it; an apple restores 20 health and meat restores 30. At zero health, the player respawns at their spawn after 2.4 seconds at full health; world edits and food inventory remain.
 
+Wildlife includes pigs, sheep, chicks, rabbits, foxes, deer, and wolves. Herbivores appear in small spaced groups, with species favored by meadow, woodland, or highland terrain. The local simulation is capped at 28 active animals, including three wolf packs; it recenters and replenishes as the player explores. Wildlife positions are temporary and do not change the saved-world format.
+
 **Fight Arena** — Choose characters and fight in a generated arena. On a phone, the second fighter is computer-controlled; a connected controller can take over.
 
 **Observe World** — See the world from different camera views and take a photo.

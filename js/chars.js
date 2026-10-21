@@ -120,10 +120,13 @@ function characterById(id) {
 
 /* ---------- friendly animals ---------- */
 const ANIMALS = [
-  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 1.08, h: 0.94, d: 1.42, speed: 1.1, tame: 'Oink!' },
-  { id: 'sheep',  name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 1.16, h: 1.1, d: 1.36, speed: 1.0, tame: 'Baa!' },
-  { id: 'chick',  name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.82, h: 0.9, d: 0.86, speed: 1.4, tame: 'Peep!' },
-  { id: 'wolf',   name: 'Wolf', body: T.wolf, face: T.wolf_face, accent: T.wolf_dark, leg: T.wolf_dark, w: 1.0, h: 1.0, d: 1.5, speed: 2.5, predator: true, tame: 'A wolf pack!' },
+  { id: 'pig', name: 'Pig', body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 1.08, h: 0.94, d: 1.42, speed: 1.1, tame: 'Oink!', habitats: ['meadow', 'woodland'], groupMin: 2, groupMax: 3 },
+  { id: 'sheep', name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 1.16, h: 1.1, d: 1.36, speed: 1.0, tame: 'Baa!', habitats: ['meadow', 'highland'], groupMin: 3, groupMax: 4 },
+  { id: 'chick', name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.82, h: 0.9, d: 0.86, speed: 1.4, tame: 'Peep!', habitats: ['meadow'], groupMin: 3, groupMax: 4 },
+  { id: 'rabbit', name: 'Rabbit', body: T.rabbit, face: T.rabbit_face, accent: T.rabbit_pink, leg: T.rabbit, ear: T.rabbit_pink, w: 0.84, h: 1.12, d: 0.98, speed: 1.65, tame: 'Hop!', habitats: ['meadow', 'woodland'], groupMin: 2, groupMax: 3 },
+  { id: 'fox', name: 'Fox', body: T.fox, face: T.fox_face, accent: T.fox_cream, leg: T.fox, ear: T.fox, w: 0.94, h: 1.03, d: 1.48, speed: 1.75, tame: 'Yip!', habitats: ['woodland', 'highland'], groupMin: 1, groupMax: 2 },
+  { id: 'deer', name: 'Deer', body: T.deer, face: T.deer_face, accent: T.deer_dark, antler: T.deer_antler, leg: T.deer_dark, w: 1.02, h: 1.58, d: 1.38, speed: 1.85, tame: 'A quiet deer.', habitats: ['woodland', 'highland'], groupMin: 2, groupMax: 3 },
+  { id: 'wolf', name: 'Wolf', body: T.wolf, face: T.wolf_face, accent: T.wolf_dark, leg: T.wolf_dark, w: 1.0, h: 1.0, d: 1.5, speed: 2.5, predator: true, tame: 'A wolf pack!', habitats: ['meadow', 'woodland', 'highland'], groupMin: 3, groupMax: 3 },
 ];
 
 function animalById(id) {
