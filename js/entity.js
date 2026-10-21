@@ -155,10 +155,18 @@ class Player {
       }
     }
 
-    // integrate + collide, axis by axis
-    this.moveAxis(0, this.vel[0] * dt, w);
-    this.moveAxis(1, this.vel[1] * dt, w);
-    this.moveAxis(2, this.vel[2] * dt, w);
+    // A step-up is only a response to movement in the direction the player
+    // is currently asking to travel. In particular, knockback must not be
+    // mistaken for a deliberate climb when input points the other way.
+    const inputAlignedX = Math.abs(wishX) > 1e-4 && Math.sign(this.vel[0]) === Math.sign(wishX);
+    const inputAlignedZ = Math.abs(wishZ) > 1e-4 && Math.sign(this.vel[2]) === Math.sign(wishZ);
+    const hasMoveIntentX = Math.abs(wishX) > 1e-4;
+    const hasMoveIntentZ = Math.abs(wishZ) > 1e-4;
+
+    this._stepUpUsed = false;
+    this.moveAxis(0, this.vel[0] * dt, w, inputAlignedX, hasMoveIntentX);
+    this.moveAxis(1, this.vel[1] * dt, w, false, false);
+    this.moveAxis(2, this.vel[2] * dt, w, inputAlignedZ, hasMoveIntentZ);
 
     if (this.onGround && !this.flying) this.walkAnim += Math.hypot(this.vel[0], this.vel[2]) * dt * 3.2;
     else this.walkAnim += dt * 1.4;
@@ -179,10 +187,71 @@ class Player {
     }
   }
 
+  positionIsClear(pos, world) {
+    const half = 0.32;
+    const minX = Math.floor(pos[0] - half), maxX = Math.floor(pos[0] + half);
+    const minY = Math.floor(pos[1] + 0.001), maxY = Math.floor(pos[1] + 1.78);
+    const minZ = Math.floor(pos[2] - half), maxZ = Math.floor(pos[2] + half);
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        for (let x = minX; x <= maxX; x++) {
+          const id = world.getBlock(x, y, z);
+          if (id !== 0 && !isLiquid(id) && isSolid(id)) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  hasSupportAt(pos, world, requireFullFootprint) {
+    const half = 0.32;
+    const supportY = Math.floor(pos[1] - 0.05);
+    const minX = Math.floor(pos[0] - half), maxX = Math.floor(pos[0] + half);
+    const minZ = Math.floor(pos[2] - half), maxZ = Math.floor(pos[2] + half);
+    let supported = false;
+
+    for (let z = minZ; z <= maxZ; z++) {
+      for (let x = minX; x <= maxX; x++) {
+        const solid = isSolid(world.getBlock(x, supportY, z));
+        if (requireFullFootprint && !solid) return false;
+        if (solid) supported = true;
+      }
+    }
+    return supported;
+  }
+
+  tryStepUp(amount, world, inputAligned) {
+    if (!inputAligned || !this.onGround || this.flying || this.inWater || this.sneak ||
+        this.climbNormal || this._stepUpUsed || this.vel[1] > 0.01 || amount === 0) return false;
+
+    const raised = [this.pos[0], this.pos[1] + 1, this.pos[2]];
+    if (!this.positionIsClear(raised, world) || !this.hasSupportAt(raised, world, false)) return false;
+
+    this.pos[1] = raised[1];
+    this.vel[1] = 0;
+    this.onGround = true;
+    this._stepUpUsed = true;
+    return true;
+  }
+
   // Sweep one axis and push out of any blocks we end up inside.
-  moveAxis(axis, amount, world) {
+  moveAxis(axis, amount, world, inputAligned, hasMoveIntent) {
     if (amount === 0) return;
     const p = this.pos;
+
+    // Ledge safety should stop deliberate sneaking, but must not absorb a
+    // recent damage impulse just because the player is holding a direction.
+    if (axis !== 1 && this.sneak && hasMoveIntent && this.hurtCooldown <= 0) {
+      const target = p.slice();
+      target[axis] += amount;
+      if (!this.hasSupportAt(target, world, true)) {
+        this.vel[axis] = 0;
+        return;
+      }
+    }
+
+    if (axis === 1) this.onGround = false;
     p[axis] += amount;
 
     const half = 0.32;
@@ -198,20 +267,20 @@ class Player {
           if (!isSolid(id)) continue;
           // resolve on the axis we moved
           if (axis === 0) {
+            if (this.tryStepUp(amount, world, inputAligned)) return;
             if (amount > 0) p[0] = x - half - 0.001; else p[0] = x + 1 + half + 0.001;
             this.vel[0] = 0;
           } else if (axis === 1) {
             if (amount > 0) { p[1] = y - 1.78 - 0.001; this.vel[1] = 0; }
             else { p[1] = y + 1 + 0.001; this.vel[1] = 0; this.onGround = true; }
           } else {
+            if (this.tryStepUp(amount, world, inputAligned)) return;
             if (amount > 0) p[2] = z - half - 0.001; else p[2] = z + 1 + half + 0.001;
             this.vel[2] = 0;
           }
         }
       }
     }
-    if (axis === 1 && amount < 0) this.onGround = true;
-    if (axis === 1 && amount !== 0 && Math.abs(this.vel[1]) < 0.01) this.onGround = amount < 0;
   }
 
   forwardVec(out) {
