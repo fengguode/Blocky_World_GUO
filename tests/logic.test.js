@@ -17,8 +17,8 @@ const H = require('./harness');
 const g = H.load({ seed: 1337 });
 
 const {
-  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS, HOTBAR_ITEMS,
-  CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, ANIMALS, isStorybookWorld,
+  World, Chunk, CHUNK, WORLD_H, SEA_LEVEL, WORLD_SIZE, CHUNKS_PER_SIDE, MIN_EDGE, MAX_EDGE, BLOCKS, HOTBAR_BLOCKS, HOTBAR_ITEMS, T,
+  CENTRE_CHUNK, WORLD_CENTRE, characterById, CHARACTERS, CHARACTER_MODEL_STYLES, ANIMALS, isStorybookWorld,
   Player, Fight, Bot, Particles, PROJ_DEFS, Game, M4, Observer, Cam, migrateWorldSave,
 } = g;
 
@@ -470,15 +470,15 @@ H.test('animal cube batches upload per-part transforms and issue one instanced d
     drawElementsInstanced(...args) { draws.push(args); },
   };
   Game.gl = fakeGL;
-  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uBoxRotation: 'uBoxRotation', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
   Game.animalBatchVAO = 'animal-vao';
   Game.animalBatchBuffer = 'animal-buffer';
   Game.animalBatchCapacity = 4;
-  Game.animalBatchData = new Float32Array(36);
+  Game.animalBatchData = new Float32Array(44);
   Game.cube = { count: 36 };
   const boxes = [
     { pos: [4, 2, -3], size: [1, 2, 3], tile: 7, yaw: 0 },
-    { pos: [-1, 5, 8], size: [0.5, 0.75, 1.25], tile: 11, yaw: Math.PI / 2 },
+    { pos: [-1, 5, 8], size: [0.5, 0.75, 1.25], tile: 11, yaw: Math.PI / 2, pitch: Math.PI / 6 },
   ];
   try {
     Game.drawAnimalBoxes(null, boxes);
@@ -488,12 +488,14 @@ H.test('animal cube batches upload per-part transforms and issue one instanced d
     H.eq(JSON.stringify(draws[0]), JSON.stringify([fakeGL.TRIANGLES, 36, fakeGL.UNSIGNED_SHORT, 0, 2]),
       'draw should instance the shared cube mesh');
     H.eq(uploads.length, 1, 'instance data should upload in one contiguous buffer');
-    H.eq(uploads[0].length, 18, 'instance data should contain nine floats per box');
-    H.eq(JSON.stringify(uploads[0].slice(0, 15)), JSON.stringify([4, 2, -3, 1, 2, 3, 1, 0, 7, -1, 5, 8, 0.5, 0.75, 1.25]),
+    H.eq(uploads[0].length, 22, 'instance data should contain eleven floats per box');
+    H.eq(JSON.stringify(uploads[0].slice(0, 11)), JSON.stringify([4, 2, -3, 1, 2, 3, 1, 0, 1, 0, 7]),
       'instance data should preserve each box position, dimensions, and tile');
-    H.near(uploads[0][15], 0, 1e-6, 'quarter-turn cosine should be near zero');
-    H.near(uploads[0][16], 1, 1e-6, 'quarter-turn sine should be one');
-    H.eq(uploads[0][17], 11, 'second instance should keep its own material tile');
+    H.near(uploads[0][17], 0, 1e-6, 'quarter-turn yaw cosine should be near zero');
+    H.near(uploads[0][18], 1, 1e-6, 'quarter-turn yaw sine should be one');
+    H.near(uploads[0][19], Math.cos(Math.PI / 6), 1e-6, 'part pitch cosine should be uploaded');
+    H.near(uploads[0][20], Math.sin(Math.PI / 6), 1e-6, 'part pitch sine should be uploaded');
+    H.eq(uploads[0][21], 11, 'second instance should keep its own material tile');
   } finally {
     Game.gl = originalGL;
     Game.progBox = originalProgram;
@@ -524,20 +526,22 @@ H.test('rounded animal parts use their own instanced mesh and corrected normals'
     drawElementsInstanced(...args) { drawCalls.push(args); },
   };
   Game.gl = fakeGL;
-  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uBoxRotation: 'uBoxRotation', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
   Game.animalRoundBatchVAO = 'round-vao';
   Game.animalRoundBatchBuffer = 'round-buffer';
   Game.animalRoundBatchCapacity = 4;
-  Game.animalRoundBatchData = new Float32Array(36);
+  Game.animalRoundBatchData = new Float32Array(44);
   Game.animalEllipsoid = { count: 576 };
   try {
-    Game.drawAnimalEllipsoids(null, [{ pos: [1, 2, 3], size: [0.4, 0.7, 0.3], tile: 9, yaw: 0.5 }]);
+    Game.drawAnimalEllipsoids(null, [{ pos: [1, 2, 3], size: [0.4, 0.7, 0.3], tile: 9, yaw: 0.5, pitch: -0.4 }]);
     H.eq(JSON.stringify(roundValues), '[1]', 'ellipsoid shader should inverse-scale normals');
     H.eq(drawCalls.length, 1, 'rounded parts should use one instanced draw');
     H.eq(JSON.stringify(drawCalls[0]), JSON.stringify([fakeGL.TRIANGLES, 576, fakeGL.UNSIGNED_SHORT, 0, 1]),
       'rounded batch should draw the low-poly ellipsoid mesh');
     H.eq(uploads.length, 1, 'rounded transforms should upload once');
-    H.eq(uploads[0][8], 9, 'rounded part should preserve its material tile');
+    H.near(uploads[0][8], Math.cos(-0.4), 1e-6, 'rounded part should upload its pitch cosine');
+    H.near(uploads[0][9], Math.sin(-0.4), 1e-6, 'rounded part should upload its pitch sine');
+    H.eq(uploads[0][10], 9, 'rounded part should preserve its material tile');
   } finally {
     Game.gl = saved.gl;
     Game.progBox = saved.program;
@@ -549,22 +553,48 @@ H.test('rounded animal parts use their own instanced mesh and corrected normals'
   }
 });
 
-H.test('animal instance lighting rotates face normals with the box yaw', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'js/main.js'), 'utf8');
-  const programStart = source.indexOf('this.progBox = createProgram(gl,');
-  H.assert(programStart >= 0, 'box shader should exist');
-  const vertexStart = source.indexOf('`', programStart);
-  const vertexEnd = source.indexOf('`', vertexStart + 1);
-  H.assert(vertexStart >= 0 && vertexEnd > vertexStart, 'box vertex shader source should be extractable');
-  const vertexShader = source.slice(vertexStart + 1, vertexEnd);
-  H.assert(/vec3 localNormal = aNormal;/.test(vertexShader), 'ordinary cube faces should retain their original normals');
-  H.assert(/localNormal = normalize\(aNormal \/ max\(abs\(dimensions\), vec3\(0\.0001\)\)\);/.test(vertexShader),
-    'rounded animal normals should compensate for non-uniform ellipsoid scale');
-  H.assert(/aBoxRotation\.x \* localNormal\.x \+ aBoxRotation\.y \* localNormal\.z/.test(vertexShader),
-    'instanced animal normals should use the same yaw rotation as their geometry');
-  H.assert(/vNormal = worldNormal;/.test(vertexShader), 'the shader should pass world-space face normals forward');
-  H.assert(/dot\(worldNormal, normalize\(vec3\(0\.4, 0\.9, 0\.35\)\)\)/.test(vertexShader),
-    'directional face lighting should follow the rotated normal');
+H.test('non-instanced character limbs retain their yaw and pitch rotation', () => {
+  const saved = {
+    gl: Game.gl, program: Game.progBox, vao: Game.animalBatchVAO,
+    cube: Game.cube, boxModel: Game._boxModel, boxMvp: Game._boxMvp,
+    viewProj: Cam.viewProj,
+  };
+  const matrices = [];
+  const rotations = [];
+  const fakeGL = {
+    TRIANGLES: 1, UNSIGNED_SHORT: 2,
+    useProgram() {}, uniformMatrix4fv(location, transpose, value) { matrices.push(Array.from(value)); },
+    uniform3f() {}, uniform1f() {}, uniform4f(location, ...value) { rotations.push(value); },
+    bindVertexArray() {}, drawElements() {},
+  };
+  Game.gl = fakeGL;
+  Game.progBox = { u: { uMVP: 0, uBoxCenter: 1, uBoxSize: 2, uBoxRotation: 3, uTint: 4,
+    uAlpha: 5, uTile: 6, uUseTex: 7, uInstanced: 8, uRoundShape: 9 } };
+  Game.animalBatchVAO = null;
+  Game.cube = { vao: 'cube', count: 36 };
+  Game._boxModel = M4.create();
+  Game._boxMvp = M4.create();
+  Cam.viewProj = M4.create();
+  try {
+    Game.drawAnimalBoxes(null, [{
+      pos: [4, 2, -3], size: [1, 2, 3], tile: 7, yaw: Math.PI / 2, pitch: Math.PI / 6,
+    }]);
+    H.eq(matrices.length, 1, 'fallback draws the character limb once');
+    H.near(matrices[0][4], -1, 1e-6, 'limb local Y gains the expected X tilt');
+    H.near(matrices[0][5], Math.sqrt(3), 1e-6, 'limb local Y retains its pitched vertical component');
+    H.near(matrices[0][6], 0, 1e-6, 'quarter-turn yaw rotates the pitch into world X');
+    H.eq(rotations.length, 1, 'fallback shader receives the same per-part orientation');
+    H.near(rotations[0][1], 1, 1e-6, 'fallback orientation uses the requested yaw');
+    H.near(rotations[0][2], Math.cos(Math.PI / 6), 1e-6, 'fallback orientation uses the requested pitch');
+  } finally {
+    Game.gl = saved.gl;
+    Game.progBox = saved.program;
+    Game.animalBatchVAO = saved.vao;
+    Game.cube = saved.cube;
+    Game._boxModel = saved.boxModel;
+    Game._boxMvp = saved.boxMvp;
+    Cam.viewProj = saved.viewProj;
+  }
 });
 H.test('every hotbar entry is a real, solid block', () => {
   H.eq(g.HOTBAR_BLOCKS.length, 9);
@@ -3083,6 +3113,172 @@ H.test('box TRS keeps a character part at its world position', () => {
   H.near(origin[2], -4, 0.001, 'box center z follows the character');
   const localX = transform(1, 0, 0);
   H.near(localX[2], -6, 0.001, 'box scale and facing rotation are composed');
+});
+
+H.test('playable character models use rounded forms and keep their signature details', () => {
+  const originalRounded = Game.drawAnimalEllipsoids;
+  const originalBoxes = Game.drawAnimalBoxes;
+  const originalFaceStrips = Game.drawCharacterFaceStrips;
+  const originalBuildHand = Game.drawBuildHand;
+  const oldState = Game.state;
+  const oldPlayers = Game.players;
+  let rounded = [], details = [], faceStrips = [], faceStripMeshes = [], roundedTint, detailTint;
+  Game.drawAnimalEllipsoids = (prog, parts, tint) => { rounded = parts; roundedTint = tint; };
+  Game.drawAnimalBoxes = (prog, parts, tint) => { details = parts; detailTint = tint; };
+  Game.drawCharacterFaceStrips = (prog, strips, base, yaw, headSize, headY) => {
+    faceStrips = strips;
+    faceStripMeshes = strips.map(strip => ({
+      strip,
+      mesh: Game.buildCharacterFaceStripMesh(strip, base, yaw, headSize, headY),
+    }));
+  };
+  Game.drawBuildHand = () => {};
+  Game.state = 'fight';
+  Game.players = [];
+  try {
+    for (const character of CHARACTERS) {
+      rounded = []; details = []; faceStrips = []; faceStripMeshes = [];
+      const player = {
+        char: character, pos: [12, 3, -4], yaw: 0, walkAnim: 0, onGround: true,
+        swing: null, hurtFlash: 0, ko: false, ultMeter: 0, maxUlt: 100,
+      };
+      Game.drawCharacter(null, player, 1);
+      const style = CHARACTER_MODEL_STYLES[character.appearance];
+      H.assert(style, character.name + ' has a model style');
+      H.assert(rounded.length >= 12, character.name + ' renders a rounded body, head, limbs, hair, and footwear');
+      H.assert(rounded.some(part => part.tile === character.shirt && part.size === style.torso),
+        character.name + ' keeps the selected outfit on the rounded torso');
+      H.assert(rounded.some(part => part.tile === character.skin && part.size === style.head),
+        character.name + ' keeps the selected face on a rounded head');
+      H.eq(details.filter(part => part.size === style.eye).length, 2,
+      character.name + ' has two visible eye details');
+    }
+
+    const capture = (character, overrides = {}) => {
+      rounded = []; details = []; faceStrips = []; faceStripMeshes = [];
+      Game.drawCharacter(null, {
+        char: character, pos: [0, 0, 0], yaw: 0, walkAnim: 0, onGround: true,
+        swing: null, hurtFlash: 0, ko: false, ultMeter: 0, maxUlt: 100,
+        ...overrides,
+      }, 1);
+      return { rounded, details, faceStrips, faceStripMeshes };
+    };
+    const steve = characterById('steve');
+    const steveStyle = CHARACTER_MODEL_STYLES[steve.appearance];
+    const walking = capture(steve, { walkAnim: Math.PI / 2 });
+    H.assert(walking.rounded.filter(part => part.tile === steve.shirt && part.size === steveStyle.arm)
+      .every(part => Math.abs(part.pitch) > 0.5), 'walking swings both rounded arms at the shoulder');
+    H.assert(walking.rounded.filter(part => part.tile === steve.pants && part.size === steveStyle.leg)
+      .every(part => Math.abs(part.pitch) > 0.4), 'walking swings both rounded legs at the hip');
+    const attacking = capture(steve, { swing: { t: 0.5, attack: 0 }, swingTotal: 1 });
+    H.assert(attacking.rounded.filter(part => part.tile === steve.shirt && part.size === steveStyle.arm)
+      .some(part => Math.abs(part.pitch) > 1.5), 'attack pose rotates the active arm');
+
+    const faceDetailsSitAboveEllipsoid = (character, parts) => {
+      const style = CHARACTER_MODEL_STYLES[character.appearance];
+      const halfWidth = style.head[0] * 0.5;
+      const halfHeight = style.head[1] * 0.5;
+      const halfDepth = style.head[2] * 0.5;
+      const headY = 0.7 + 0.75 + 0.3;
+      for (const part of parts) {
+        const side = part.pos[0];
+        const vertical = part.pos[1] - headY;
+        const forward = -part.pos[2];
+        const surface = halfDepth * Math.sqrt(Math.max(0.04,
+          1 - (side / halfWidth) ** 2 - (vertical / halfHeight) ** 2));
+        const backGap = forward - part.size[2] * 0.5 - surface;
+        H.assert(backGap >= 0.005 && backGap <= 0.012,
+          character.name + ' raised face detail sits just above the curved head');
+      }
+    };
+    const faceMeshesFollowEllipsoid = (character, parts) => {
+      const style = CHARACTER_MODEL_STYLES[character.appearance];
+      const rx = style.head[0] * 0.5;
+      const ry = style.head[1] * 0.5;
+      const rz = style.head[2] * 0.5;
+      const headY = 0.7 + 0.75 + 0.3;
+      H.assert(parts.length > 0, character.name + ' produces a curved face mesh');
+      for (const { strip, mesh } of parts) {
+        H.eq(mesh.data.length % 8, 0, character.name + ' face mesh uses position, normal, and UV vertices');
+        H.eq(mesh.data.length / 8, strip.columns * strip.rows * 6,
+          character.name + ' face mesh covers each grid cell with two triangles');
+        for (let i = 0; i < mesh.data.length; i += 8) {
+          const x = mesh.data[i];
+          const vertical = mesh.data[i + 1] - headY;
+          const forward = -mesh.data[i + 2];
+          const surface = rz * Math.sqrt(1 - (x / rx) ** 2 - (vertical / ry) ** 2);
+          H.assert(forward > surface,
+            character.name + ' face mesh vertices stay outside the head');
+          H.near(forward - surface, strip.clearance || 0.008, 0.0002,
+            character.name + ' face mesh vertices follow the curved surface');
+          const normalLength = Math.hypot(mesh.data[i + 3], mesh.data[i + 4], mesh.data[i + 5]);
+          H.near(normalLength, 1, 0.001, character.name + ' face mesh normals are normalized');
+        }
+        for (let i = 0; i < mesh.data.length; i += 24) {
+          const ab = [0, 1, 2].map(axis => mesh.data[i + 8 + axis] - mesh.data[i + axis]);
+          const ac = [0, 1, 2].map(axis => mesh.data[i + 16 + axis] - mesh.data[i + axis]);
+          const faceNormal = [
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+          ];
+          const vertexNormal = [0, 1, 2].map(axis =>
+            (mesh.data[i + 3 + axis] + mesh.data[i + 11 + axis] + mesh.data[i + 19 + axis]) / 3);
+          H.assert(faceNormal[0] * vertexNormal[0] + faceNormal[1] * vertexNormal[1] +
+            faceNormal[2] * vertexNormal[2] > 0,
+          character.name + ' face mesh triangles wind toward their outward normals');
+        }
+        for (let i = 0; i < mesh.data.length; i += 48) {
+          for (const offsets of [[0, 8, 16], [24, 32, 40]]) {
+            const x = offsets.reduce((sum, offset) => sum + mesh.data[i + offset], 0) / 3;
+            const y = offsets.reduce((sum, offset) => sum + mesh.data[i + offset + 1], 0) / 3 - headY;
+            const forward = -offsets.reduce((sum, offset) => sum + mesh.data[i + offset + 2], 0) / 3;
+            const surface = rz * Math.sqrt(1 - (x / rx) ** 2 - (y / ry) ** 2);
+            H.assert(forward - surface >= 0.004 && forward - surface <= 0.012,
+              character.name + ' face mesh triangles remain close to the curved surface');
+          }
+        }
+      }
+    };
+    const steveFace = capture(steve);
+    faceDetailsSitAboveEllipsoid(steve, steveFace.details.filter(part => part.size === steveStyle.eye));
+    const hero = characterById('spider');
+    const heroFace = capture(hero);
+    faceMeshesFollowEllipsoid(hero,
+      heroFace.faceStripMeshes.filter(part => part.strip.tile === T.hero_blue));
+    H.eq(heroFace.faceStrips.filter(strip => strip.tile === T.hero_blue).length, 1,
+      'Web Hero mask is one surface-conforming curved mesh');
+    const ninja = characterById('ninja');
+    const ninjaFace = capture(ninja);
+    faceMeshesFollowEllipsoid(ninja, ninjaFace.faceStripMeshes);
+    H.eq(ninjaFace.faceStrips.filter(strip => strip.tile === T.hero_red).length, 1,
+      'Fire Ninja red brow strip is one surface-conforming curved mesh');
+    H.eq(ninjaFace.faceStrips.filter(strip => strip.tile === T.pants_dark).length, 1,
+      'Fire Ninja lower face wrap is one surface-conforming curved mesh');
+    const golemFace = capture(characterById('golem'));
+    faceMeshesFollowEllipsoid(characterById('golem'), golemFace.faceStripMeshes);
+    H.assert(capture(characterById('doll')).rounded.filter(part => part.tile === characterById('doll').hair).length >= 6,
+      'Dolly has pigtails and a bow made from rounded hair pieces');
+    H.assert(capture(characterById('spider')).faceStrips.some(part => part.tile === T.hero_blue),
+      'Web Hero keeps the blue eye mask shown in the selection portrait');
+    H.assert(capture(characterById('ninja')).faceStrips.some(part => part.tile === T.pants_dark),
+      'Fire Ninja keeps a face wrap in the in-game model');
+
+    const injured = {
+      char: characterById('steve'), pos: [0, 0, 0], yaw: 0, walkAnim: 0, onGround: true,
+      swing: null, hurtFlash: 1, ko: false, ultMeter: 0, maxUlt: 100,
+    };
+    Game.drawCharacter(null, injured, 1);
+    H.eq(roundedTint.join(','), '1,0.45,0.45', 'rounded shapes preserve the damage flash');
+    H.eq(detailTint.join(','), '1,0.45,0.45', 'face details preserve the damage flash');
+  } finally {
+    Game.drawAnimalEllipsoids = originalRounded;
+    Game.drawAnimalBoxes = originalBoxes;
+    Game.drawCharacterFaceStrips = originalFaceStrips;
+    Game.drawBuildHand = originalBuildHand;
+    Game.state = oldState;
+    Game.players = oldPlayers;
+  }
 });
 
 H.test('the cube mesh is well formed', () => {

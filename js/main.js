@@ -341,7 +341,7 @@ const Game = {
       layout(location=2) in vec2 aUV;
       layout(location=3) in vec3 aBoxCenter;
       layout(location=4) in vec3 aBoxSize;
-      layout(location=5) in vec2 aBoxRotation;
+      layout(location=5) in vec4 aBoxRotation;
       layout(location=6) in float aBoxTile;
 
       uniform mat4 uMVP;
@@ -351,6 +351,7 @@ const Game = {
       uniform vec3 uCamPos;
       uniform vec3 uBoxCenter;
       uniform vec3 uBoxSize;
+      uniform vec4 uBoxRotation;
       uniform float uFogNear;
       uniform float uFogFar;
       uniform vec3 uFogColor;
@@ -369,13 +370,14 @@ const Game = {
           vec3 dimensions = uInstanced > 0.5 ? aBoxSize : uBoxSize;
           localNormal = normalize(aNormal / max(abs(dimensions), vec3(0.0001)));
         }
-        vec3 worldNormal = localNormal;
-        if (uInstanced > 0.5) {
-          worldNormal = vec3(
-            aBoxRotation.x * localNormal.x + aBoxRotation.y * localNormal.z,
-            localNormal.y,
-            -aBoxRotation.y * localNormal.x + aBoxRotation.x * localNormal.z);
-        }
+        vec4 rotation = uInstanced > 0.5 ? aBoxRotation : uBoxRotation;
+        vec3 pitchNormal = vec3(localNormal.x,
+          rotation.z * localNormal.y + rotation.w * localNormal.z,
+          -rotation.w * localNormal.y + rotation.z * localNormal.z);
+        vec3 worldNormal = vec3(
+          rotation.x * pitchNormal.x + rotation.y * pitchNormal.z,
+          pitchNormal.y,
+          -rotation.y * pitchNormal.x + rotation.x * pitchNormal.z);
         vNormal = worldNormal;
         // simple directional shading so boxy characters read as 3D
         float key = 0.45 + 0.55 * max(0.0, dot(worldNormal, normalize(vec3(0.4, 0.9, 0.35))));
@@ -385,10 +387,13 @@ const Game = {
         vec3 worldPos = aPos;
         if (uInstanced > 0.5) {
           vec3 scaledPos = aPos * aBoxSize;
+          vec3 pitchedPos = vec3(scaledPos.x,
+            rotation.z * scaledPos.y + rotation.w * scaledPos.z,
+            -rotation.w * scaledPos.y + rotation.z * scaledPos.z);
           worldPos = aBoxCenter + vec3(
-            aBoxRotation.x * scaledPos.x + aBoxRotation.y * scaledPos.z,
-            scaledPos.y,
-            -aBoxRotation.y * scaledPos.x + aBoxRotation.x * scaledPos.z);
+            rotation.x * pitchedPos.x + rotation.y * pitchedPos.z,
+            pitchedPos.y,
+            -rotation.y * pitchedPos.x + rotation.x * pitchedPos.z);
         }
         float d = distance(uCamPos, uInstanced > 0.5 ? aBoxCenter : uBoxCenter);
         vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
@@ -541,7 +546,7 @@ const Game = {
       set('Buffer', null);
       return;
     }
-    const floatsPerPart = 9;
+    const floatsPerPart = 11;
     const capacity = 64;
     const data = new Float32Array(capacity * floatsPerPart);
     const vao = gl.createVertexArray();
@@ -566,7 +571,7 @@ const Game = {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
     const stride = floatsPerPart * Float32Array.BYTES_PER_ELEMENT;
-    for (const [location, width, offset] of [[3, 3, 0], [4, 3, 3], [5, 2, 6], [6, 1, 8]]) {
+    for (const [location, width, offset] of [[3, 3, 0], [4, 3, 3], [5, 4, 6], [6, 1, 10]]) {
       gl.enableVertexAttribArray(location);
       gl.vertexAttribPointer(location, width, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribDivisor(location, 1);
@@ -2559,6 +2564,9 @@ const Game = {
     gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
     gl.uniform3f(p.u.uBoxCenter, center[0], center[1], center[2]);
     gl.uniform3f(p.u.uBoxSize, size[0], size[1], size[2]);
+    if (p.u.uBoxRotation != null && typeof gl.uniform4f === 'function') {
+      gl.uniform4f(p.u.uBoxRotation, Math.cos(rotY || 0), Math.sin(rotY || 0), 1, 0);
+    }
     gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, alpha === undefined ? 1 : alpha);
     gl.uniform1f(p.u.uTile, tile || 0);
@@ -2570,28 +2578,39 @@ const Game = {
     gl.drawElements(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0);
   },
 
-  drawAnimalParts(prog, parts, mesh, prefix, roundShape) {
+  drawAnimalParts(prog, parts, mesh, prefix, roundShape, tint = [1, 1, 1]) {
     if (!parts.length) return;
     const gl = this.gl;
     const capacityKey = prefix + 'Capacity';
     const dataKey = prefix + 'Data';
     const bufferKey = prefix + 'Buffer';
     const vaoKey = prefix + 'VAO';
-    const floatsPerPart = 9;
+    const floatsPerPart = 11;
     if (!this[vaoKey] || typeof gl.drawElementsInstanced !== 'function') {
       const p = this.progBox;
       gl.useProgram(p);
       gl.uniform1f(p.u.uRoundShape, roundShape ? 1 : 0);
       gl.uniform1f(p.u.uInstanced, 0);
-      gl.uniform3f(p.u.uTint, 1, 1, 1);
+      gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
       gl.uniform1f(p.u.uAlpha, 1);
       gl.uniform1f(p.u.uUseTex, 1);
       for (const part of parts) {
-        const model = M4.composeTRS(this._boxModel, part.pos, part.size, part.yaw || 0);
+        const yaw = part.yaw || 0;
+        const pitch = part.pitch || 0;
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+        const ca = Math.cos(pitch), sa = Math.sin(pitch);
+        const basis = [[cy, 0, -sy], [-sy * sa, ca, -cy * sa], [sy * ca, sa, cy * ca]];
+        const model = M4.composeTRS(this._boxModel, part.pos, part.size, yaw);
+        for (let col = 0; col < 3; col++) {
+          for (let row = 0; row < 3; row++) model[col * 4 + row] = basis[col][row] * part.size[col];
+        }
         const mvp = M4.multiply(this._boxMvp, Cam.viewProj, model);
         gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
         gl.uniform3f(p.u.uBoxCenter, part.pos[0], part.pos[1], part.pos[2]);
         gl.uniform3f(p.u.uBoxSize, part.size[0], part.size[1], part.size[2]);
+        if (p.u.uBoxRotation != null && typeof gl.uniform4f === 'function') {
+          gl.uniform4f(p.u.uBoxRotation, cy, sy, ca, sa);
+        }
         gl.uniform1f(p.u.uTile, part.tile || 0);
         gl.bindVertexArray(mesh.vao);
         gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
@@ -2618,16 +2637,19 @@ const Game = {
       data[at + 3] = part.size[0];
       data[at + 4] = part.size[1];
       data[at + 5] = part.size[2];
+      const pitch = part.pitch || 0;
       data[at + 6] = c;
       data[at + 7] = s;
-      data[at + 8] = part.tile || 0;
+      data[at + 8] = Math.cos(pitch);
+      data[at + 9] = Math.sin(pitch);
+      data[at + 10] = part.tile || 0;
     }
 
     const p = this.progBox;
     gl.useProgram(p);
     gl.uniformMatrix4fv(p.u.uMVP, false, Cam.viewProj);
     gl.uniform3f(p.u.uBoxCenter, 0, 0, 0);
-    gl.uniform3f(p.u.uTint, 1, 1, 1);
+    gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, 1);
     gl.uniform1f(p.u.uTile, 0);
     gl.uniform1f(p.u.uUseTex, 1);
@@ -2640,12 +2662,118 @@ const Game = {
     gl.drawElementsInstanced(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0, parts.length);
   },
 
-  drawAnimalBoxes(prog, boxes) {
-    this.drawAnimalParts(prog, boxes, this.cube, 'animalBatch', false);
+  drawAnimalBoxes(prog, boxes, tint) {
+    this.drawAnimalParts(prog, boxes, this.cube, 'animalBatch', false, tint);
   },
 
-  drawAnimalEllipsoids(prog, ellipsoids) {
-    this.drawAnimalParts(prog, ellipsoids, this.animalEllipsoid, 'animalRoundBatch', true);
+  drawAnimalEllipsoids(prog, ellipsoids, tint) {
+    this.drawAnimalParts(prog, ellipsoids, this.animalEllipsoid, 'animalRoundBatch', true, tint);
+  },
+
+  buildCharacterFaceStripMesh(strip, base, yaw, headSize, headY) {
+    const rx = headSize[0] * 0.5;
+    const ry = headSize[1] * 0.5;
+    const rz = headSize[2] * 0.5;
+    const edgeY = Math.abs(strip.centerY - headY) + strip.height * 0.5;
+    const surfaceHalfWidth = rx * Math.sqrt(Math.max(0.04, 1 - (edgeY / ry) ** 2));
+    const halfWidth = Math.min(strip.halfWidth, surfaceHalfWidth * 0.82);
+    const columns = strip.columns || 12;
+    const rows = strip.rows || 8;
+    const clearance = strip.clearance || 0.008;
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+    const right = [cosYaw, 0, -sinYaw];
+    const forward = [-sinYaw, 0, -cosYaw];
+    const grid = new Array((columns + 1) * (rows + 1));
+    const vertex = (side, vertical, u, v) => {
+      const radial = 1 - (side / rx) ** 2 - (vertical / ry) ** 2;
+      const surface = rz * Math.sqrt(Math.max(0, radial));
+      const depth = surface + clearance;
+      const nx = side / (rx * rx);
+      const ny = vertical / (ry * ry);
+      const nf = surface / (rz * rz);
+      const normalLength = Math.hypot(nx, ny, nf);
+      const worldNormal = [
+        (right[0] * nx + forward[0] * nf) / normalLength,
+        ny / normalLength,
+        (right[2] * nx + forward[2] * nf) / normalLength,
+      ];
+      return [
+        base[0] + right[0] * side + forward[0] * depth,
+        base[1] + headY + vertical,
+        base[2] + right[2] * side + forward[2] * depth,
+        worldNormal[0], worldNormal[1], worldNormal[2], u, v,
+      ];
+    };
+
+    for (let row = 0; row <= rows; row++) {
+      const v = row / rows;
+      const vertical = strip.centerY - headY + (v - 0.5) * strip.height;
+      for (let column = 0; column <= columns; column++) {
+        const u = column / columns;
+        const side = (u - 0.5) * halfWidth * 2;
+        grid[row * (columns + 1) + column] = vertex(side, vertical, u, v);
+      }
+    }
+
+    const data = [];
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        const bottomLeft = grid[row * (columns + 1) + column];
+        const bottomRight = grid[row * (columns + 1) + column + 1];
+        const topLeft = grid[(row + 1) * (columns + 1) + column];
+        const topRight = grid[(row + 1) * (columns + 1) + column + 1];
+        // The winding faces out from the ellipsoid's front, toward the player.
+        data.push(...topLeft, ...bottomRight, ...bottomLeft,
+          ...topLeft, ...topRight, ...bottomRight);
+      }
+    }
+    return {
+      data: new Float32Array(data),
+      tile: strip.tile,
+      center: [base[0], base[1] + headY, base[2]],
+      columns,
+      rows,
+      halfWidth,
+    };
+  },
+
+  drawCharacterFaceStrips(prog, strips, base, yaw, headSize, headY, tint) {
+    if (!strips.length) return;
+    const gl = this.gl;
+    const boxProg = this.progBox;
+    if (!this.characterFaceStripVAO) {
+      this.characterFaceStripVAO = gl.createVertexArray();
+      this.characterFaceStripBuffer = gl.createBuffer();
+      gl.bindVertexArray(this.characterFaceStripVAO);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.characterFaceStripBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+      gl.bindVertexArray(null);
+    }
+
+    gl.useProgram(boxProg);
+    gl.uniform3f(boxProg.u.uTint, tint[0], tint[1], tint[2]);
+    gl.uniform3f(boxProg.u.uBoxSize, 1, 1, 1);
+    gl.uniform4f(boxProg.u.uBoxRotation, 1, 0, 1, 0);
+    gl.uniform1f(boxProg.u.uAlpha, 1);
+    gl.uniform1f(boxProg.u.uUseTex, 1);
+    gl.uniform1f(boxProg.u.uInstanced, 0);
+    gl.uniform1f(boxProg.u.uRoundShape, 0);
+    gl.uniformMatrix4fv(boxProg.u.uMVP, false, Cam.viewProj);
+    gl.bindVertexArray(this.characterFaceStripVAO);
+    for (const strip of strips) {
+      const mesh = this.buildCharacterFaceStripMesh(strip, base, yaw, headSize, headY);
+      gl.uniform1f(boxProg.u.uTile, mesh.tile || 0);
+      gl.uniform3f(boxProg.u.uBoxCenter, mesh.center[0], mesh.center[1], mesh.center[2]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.characterFaceStripBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.data, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.data.length / 8);
+    }
+    gl.bindVertexArray(null);
   },
 
   drawAnimals(prog, animals, dayF) {
@@ -2752,6 +2880,7 @@ const Game = {
   drawCharacter(prog, p, dayF) {
     if (!p) return;
     const c = p.char;
+    const model = CHARACTER_MODEL_STYLES[c.appearance] || CHARACTER_MODEL_STYLES.builder;
     const swing = p.swing ? Math.min(1, p.swing.t / Math.max(0.01, p.swingTotal)) : 0;
     const attacking = !!p.swing;
     const atk = p.swing ? p.swing.attack : 0;
@@ -2777,7 +2906,7 @@ const Game = {
     const tint = flash ? [1, 0.45, 0.45] : [1, 1, 1];
     const bob = p.onGround ? Math.abs(Math.sin(p.walkAnim)) * 0.06 : 0;
     const base = [p.pos[0], p.pos[1] + bob, p.pos[2]];
-    const bodyH = 0.75, legH = 0.75;
+    const bodyH = 0.75, legH = 0.7;
     // facing vectors, needed for the eyes, hair and doll details
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -2787,81 +2916,112 @@ const Game = {
       base[2] + fz * forward + rz * side,
     ];
 
-    // legs
-    this.drawLimb(prog, base, yaw, [-0.15, legH, 0], legL, [0.25, legH, 0.28], c.pants, tint, dayF);
-    this.drawLimb(prog, base, yaw, [0.15, legH, 0], legR, [0.25, legH, 0.28], c.pants, tint, dayF);
-    // body
-    this.drawBox(prog, [base[0], base[1] + legH + bodyH / 2, base[2]],
-      [0.52, bodyH, 0.3], c.shirt, tint, yaw, 1);
-    // Small chest pixels give every character a second accent colour and a clearer identity.
-    if (c.accent) {
-      const chestY = legH + bodyH * 0.58;
-      this.drawBox(prog, point(0.17, 0, chestY), [0.15, 0.16, 0.035], c.accent, tint, yaw, 1);
-      this.drawBox(prog, point(0.193, -0.025, chestY + 0.055), [0.045, 0.045, 0.018], T.wool, tint, yaw, 1);
-      this.drawBox(prog, point(0.193, 0.025, chestY - 0.055), [0.045, 0.045, 0.018], c.shirt, tint, yaw, 1);
+    const rounded = [];
+    const details = [];
+    const faceStrips = [];
+    const addRound = (pos, size, tile, pitch = 0) => rounded.push({ pos, size, tile, yaw, pitch });
+    const addDetail = (pos, size, tile) => details.push({ pos, size, tile, yaw });
+    const headY = legH + bodyH + 0.3;
+    const headHalf = model.head.map(dimension => dimension * 0.5);
+    const headFront = headHalf[2] + 0.015;
+    const faceForward = (side, y, depth) => {
+      const x = side / headHalf[0];
+      const v = (y - headY) / headHalf[1];
+      const front = headHalf[2] * Math.sqrt(Math.max(0.04, 1 - x * x - v * v));
+      return front + depth * 0.5 + 0.007;
+    };
+    const addFaceStrip = (centerY, halfWidth, height, tile) => {
+      faceStrips.push({ centerY, halfWidth, height, tile, columns: 12, rows: 8 });
+    };
+    const isGolem = c.appearance === 'golem';
+    const isDoll = c.appearance === 'doll';
+
+    addRound([base[0], base[1] + legH + bodyH * 0.5, base[2]], model.torso, c.shirt);
+    for (const side of [-1, 1]) {
+      addRound(point(0, side * model.shoulders[0] * 0.36, legH + bodyH - 0.13),
+        model.shoulders, c.shirt);
     }
     if (c.dressSkirt) {
-      this.drawBox(prog, [base[0], base[1] + legH + 0.12, base[2]],
-        [0.68, 0.34, 0.42], c.shirt, tint, yaw, 1);
+      addRound(point(0, 0, legH + 0.12), [0.72, 0.32, 0.47], c.shirt);
     }
-    // arms
-    this.drawLimb(prog, base, yaw, [-0.36, legH + bodyH - 0.15, 0], armL, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
-    this.drawLimb(prog, base, yaw, [0.36, legH + bodyH - 0.15, 0], armR, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
-    if (this.state === 'play' && p === this.players[0]) this.drawBuildHand(prog, p, false, base, armR);
-    // head
-    const headY = base[1] + legH + bodyH + 0.3;
-    this.drawBox(prog, [base[0], headY, base[2]], [0.5, 0.5, 0.5], c.skin, tint, yaw, 1);
 
-    // Hair: a full cap for most characters. The doll gets a rounder, softer
-    // shape with a fringe so she reads as a doll rather than a person.
-    if (c.dollFace) {
-      this.drawBox(prog, [base[0], headY + 0.16, base[2]], [0.58, 0.3, 0.58], c.hair, tint, yaw, 1);
-      // fringe across the forehead
-      this.drawBox(prog, [
-        base[0] + fx * 0.2, headY + 0.11, base[2] + fz * 0.2,
-      ], [0.54, 0.16, 0.16], c.hair, tint, yaw, 1);
-      // two pigtails
-      for (const s of [-1, 1]) {
-        this.drawBox(prog, [
-          base[0] + rx * s * 0.34, headY + 0.06, base[2] + rz * s * 0.34,
-        ], [0.2, 0.34, 0.2], c.hair, tint, yaw, 1);
+    const armPivotY = legH + bodyH - 0.14;
+    for (const [side, angle] of [[-1, armL], [1, armR]]) {
+      const armForward = -model.arm[1] * 0.5 * Math.sin(angle);
+      const armY = armPivotY - model.arm[1] * 0.5 * Math.cos(angle);
+      addRound(point(armForward, side * 0.36, armY), model.arm, c.shirt, angle);
+      addRound(point(armForward * 1.72, side * 0.36, armPivotY - model.arm[1] * 0.9 * Math.cos(angle)),
+        [0.16, 0.15, 0.17], c.skin);
+    }
+
+    for (const [side, angle] of [[-1, legL], [1, legR]]) {
+      const legForward = -model.leg[1] * 0.5 * Math.sin(angle);
+      const legY = legH - model.leg[1] * 0.5 * Math.cos(angle);
+      addRound(point(legForward, side * 0.15, legY), model.leg, c.pants, angle);
+      addRound(point(legForward * 1.45 + 0.04, side * 0.15, Math.max(0.08, legH - legH * Math.cos(angle) + 0.1)),
+        model.shoe, c.shoe);
+    }
+
+    addRound(point(0, 0, headY), model.head, c.skin);
+    const hairTop = headY + model.head[1] * 0.36;
+    addRound(point(0, 0, hairTop), [model.head[0] * 1.04, 0.23, model.head[2] * 1.04], c.hair);
+    addRound(point(model.head[2] * 0.44, 0, headY + model.head[1] * 0.24),
+      [model.head[0] * 0.88, 0.13, 0.14], c.hair);
+
+    if (model.hair === 'ponytail') {
+      addRound(point(-0.31, 0, headY + 0.03), [0.18, 0.34, 0.18], c.hair);
+      addRound(point(-0.4, 0, headY - 0.19), [0.15, 0.26, 0.16], c.hair);
+    } else if (model.hair === 'pigtails') {
+      for (const side of [-1, 1]) {
+        addRound(point(-0.02, side * 0.31, headY + 0.02), [0.19, 0.32, 0.19], c.hair);
       }
-    } else {
-      this.drawBox(prog, [base[0], headY + 0.19, base[2]], [0.54, 0.16, 0.54], c.hair, tint, yaw, 1);
+      const bowY = headY + model.head[1] * 0.5 + 0.07;
+      addRound(point(headFront * 0.42, -0.14, bowY), [0.16, 0.12, 0.09], c.hair);
+      addRound(point(headFront * 0.42, 0.14, bowY), [0.16, 0.12, 0.09], c.hair);
+      addRound(point(headFront * 0.55, 0, bowY), [0.08, 0.1, 0.1], c.accent);
+    } else if (model.hair === 'stone-crown') {
+      for (const side of [-1, 0, 1]) {
+        addRound(point(-0.015, side * 0.16, hairTop + 0.11), [0.19, 0.24, 0.19], c.hair);
+      }
     }
 
-    // eyes on the front face
-    const eyeOff = c.dollFace ? 0.15 : 0.13;
-    const eyeSize = c.dollFace ? 0.11 : 0.07;
-    for (const s of [-1, 1]) {
-      this.drawBox(prog, [
-        base[0] + fx * 0.26 + rx * s * eyeOff,
-        headY + (c.dollFace ? 0.0 : 0.02),
-        base[2] + fz * 0.26 + rz * s * eyeOff,
-      ], [eyeSize, c.dollFace ? 0.13 : 0.09, 0.03], T.eye, tint, yaw, 1);
+    const eyeY = headY + (isDoll ? 0.015 : 0.025);
+    if (c.appearance === 'web-hero') {
+      addFaceStrip(eyeY, model.head[0] * 0.41, 0.17, T.hero_blue);
+    } else if (c.appearance === 'ninja') {
+      addFaceStrip(headY + 0.2, model.head[0] * 0.47, 0.105, T.hero_red);
+      addFaceStrip(headY - 0.12, model.head[0] * 0.39, 0.17, T.pants_dark);
+    } else if (isGolem) {
+      addFaceStrip(headY + 0.085, model.head[0] * 0.44, 0.09, T.stone);
     }
+
+    for (const side of [-1, 1]) {
+      addDetail(point(faceForward(side * model.eyeOffset, eyeY, model.eye[2]),
+        side * model.eyeOffset, eyeY), model.eye, isGolem ? T.glowstone : T.eye);
+      if (isDoll) {
+        const lashY = eyeY + 0.045;
+        addDetail(point(faceForward(side * model.eyeOffset, lashY, 0.02), side * model.eyeOffset, lashY),
+          [0.035, 0.035, 0.02], T.wool);
+      }
+    }
+
+    const chestY = legH + bodyH * 0.58;
+    if (c.accent) {
+      addDetail(point(model.torso[2] * 0.5 + 0.018, 0, chestY), [0.15, 0.16, 0.04], c.accent);
+      addDetail(point(model.torso[2] * 0.5 + 0.042, -0.035, chestY + 0.055), [0.04, 0.045, 0.02], T.wool);
+      addDetail(point(model.torso[2] * 0.5 + 0.042, 0.035, chestY - 0.055), [0.04, 0.045, 0.02], c.shirt);
+    }
+
+    this.drawAnimalEllipsoids(prog, rounded, tint);
+    this.drawAnimalBoxes(prog, details, tint);
+    this.drawCharacterFaceStrips(prog, faceStrips, base, yaw, model.head, headY, tint);
+    if (this.state === 'play' && p === this.players[0]) this.drawBuildHand(prog, p, false, base, armR);
 
     // glowing outline when an ultimate is ready
     if (p.ultMeter >= p.maxUlt && !p.ko) {
       this.drawBox(prog, [base[0], base[1] + 1.0, base[2]], [0.8, 1.9, 0.8], T.glowstone,
         [0.4, 0.9, 0.5], 0, 0.14);
     }
-  },
-
-  // One arm or leg, rotated about the shoulder/hip.
-  drawLimb(prog, base, yaw, offset, angle, size, tile, tint, dayF) {
-    const gl = this.gl;
-    const pivotY = offset[1];
-    const ca = Math.cos(angle), sa = Math.sin(angle);
-    // rotate the limb forward/back around its top pivot
-    const len = size[1];
-    const midY = pivotY - len / 2 * ca;
-    const midZ = len / 2 * sa;
-    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    const cx = base[0] + rx * offset[0];
-    const cz = base[2] + rz * offset[0];
-    const basis = [[rx, 0, rz], [-Math.sin(yaw) * sa, ca, -Math.cos(yaw) * sa], [Math.sin(yaw) * ca, sa, Math.cos(yaw) * ca]];
-    this.drawBox(prog, [cx + Math.sin(yaw) * midZ, base[1] + midY, cz + Math.cos(yaw) * midZ], size, tile, tint, yaw, 1, basis);
   },
 
   drawProjectile(prog, projectile) {
