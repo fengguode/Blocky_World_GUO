@@ -55,6 +55,22 @@ function arenaWorld(seed) {
   return w;
 }
 
+function collisionWorld() {
+  const cells = new Set();
+  const key = (x, y, z) => x + ',' + y + ',' + z;
+  const w = {
+    setBlock(x, y, z, id) {
+      const k = key(x, y, z);
+      if (id) cells.add(k); else cells.delete(k);
+    },
+    getBlock(x, y, z) { return cells.has(key(x, y, z)) ? 3 : 0; },
+  };
+  for (let x = -4; x <= 4; x++) {
+    for (let z = -4; z <= 4; z++) w.setBlock(x, 0, z, 3);
+  }
+  return w;
+}
+
 // A chunk erased to nothing, so quad counts are unambiguous.
 function scratchWorld(seed) {
   const w = new World(seed === undefined ? 900 : seed);
@@ -1506,6 +1522,175 @@ H.test('walking moves the player along the direction they face', () => {
   const moved = Math.abs(p.pos[2] - z0);
   H.assert(moved > 1, 'walking should cover ground, moved ' + moved.toFixed(2));
   H.assert(p.pos[2] < z0, 'facing -Z should shrink the Z coordinate');
+});
+
+H.test('a grounded player walks up a one-block step without jumping', () => {
+  const w = collisionWorld();
+  for (let x = 0; x <= 3; x++) w.setBlock(x, 1, 0, 3);
+  const p = new Player(w, characterById('steve'));
+  p.pos = [-1.5, 1, 0.5];
+  p.onGround = true;
+  p.yaw = -Math.PI / 2; // forward moves toward +X
+
+  stepSim(p, 60, { mz: 1 });
+  H.assert(p.pos[0] > 2.5,
+    'the player should walk across the raised platform, reached x=' + p.pos[0].toFixed(2));
+  H.near(p.pos[1], 2, 0.05, 'the player should stand on the step without jumping');
+});
+
+H.test('a grounded player can auto-step while moving along the Z axis', () => {
+  const w = collisionWorld();
+  for (let z = 0; z <= 3; z++) w.setBlock(0, 1, z, 3);
+  const p = new Player(w, characterById('steve'));
+  p.pos = [0.5, 1, -1.5];
+  p.onGround = true;
+  p.yaw = Math.PI; // forward moves toward +Z
+
+  stepSim(p, 60, { mz: 1 });
+  H.assert(p.pos[2] > 2.5,
+    'the player should walk across the Z-axis step, reached z=' + p.pos[2].toFixed(2));
+  H.near(p.pos[1], 2, 0.05, 'the player should climb only one block');
+});
+
+H.test('diagonal movement cannot auto-step up two blocks in one frame', () => {
+  const w = collisionWorld();
+  w.setBlock(0, 1, -1, 3); // first axis can step onto this block
+  w.setBlock(0, 2, 0, 3);  // second axis would need a second step in the same frame
+  const p = new Player(w, characterById('steve'));
+  p.pos = [-0.33, 1, -0.33];
+  p.onGround = true;
+  p.yaw = -Math.PI / 2;
+
+  p.update(0.05, 1, 1, false, false);
+  H.near(p.pos[1], 2, 0.05,
+    'the diagonal move should step onto the first block, but not the second');
+  H.assert(p.pos[2] < 0,
+    'the second axis should remain blocked after the one-step-per-frame limit is used');
+});
+
+H.test('a player cannot auto-step into a two-block wall or a low ceiling', () => {
+  const blockedBy = (upperBlockY) => {
+    const w = collisionWorld();
+    w.setBlock(0, 1, 0, 3);
+    w.setBlock(0, upperBlockY, 0, 3);
+    const p = new Player(w, characterById('steve'));
+    p.pos = [-1.5, 1, 0.5];
+    p.onGround = true;
+    p.yaw = -Math.PI / 2;
+    stepSim(p, 45, { mz: 1 });
+    H.assert(p.pos[0] < 0,
+      'the player should stop before the obstructed step, reached x=' + p.pos[0].toFixed(2));
+    H.near(p.pos[1], 1, 0.05, 'the player should remain at the lower level');
+  };
+
+  blockedBy(2); // a second wall block occupies the raised player's body
+  blockedBy(3); // a block at head height is a low ceiling
+});
+
+H.test('automatic step-up does not apply while flying or airborne', () => {
+  const tryMovement = ({ flying, grounded }) => {
+    const w = collisionWorld();
+    w.setBlock(0, 1, 0, 3);
+    const p = new Player(w, characterById('steve'));
+    p.pos = [-0.33, 1, 0.5];
+    p.vel = [8, 0, 0];
+    p.onGround = grounded;
+    p.flying = flying;
+    p.yaw = -Math.PI / 2;
+    p.update(1 / 60, 0, flying ? 1 : 0, false, false);
+    return p;
+  };
+
+  const flyer = tryMovement({ flying: true, grounded: true });
+  H.near(flyer.pos[1], 1, 0.05, 'flight stays level at the step');
+  H.assert(flyer.pos[0] < 0, 'flight must keep the solid-block collision');
+
+  const airborne = tryMovement({ flying: false, grounded: false });
+  H.assert(airborne.pos[1] < 1.1, 'an airborne player should not be lifted onto the step');
+  H.assert(airborne.pos[0] < 0, 'the airborne player should still collide with the step');
+});
+
+H.test('a stale grounded state clears when falling through open air', () => {
+  const p = new Player(collisionWorld(), characterById('steve'));
+  p.pos = [0.5, 5, 0.5];
+  p.onGround = true;
+
+  p.update(1 / 60, 0, 0, false, false);
+  H.eq(p.onGround, false, 'the player must become airborne without a landing collision');
+});
+
+H.test('a player walks down from a raised platform and lands normally', () => {
+  const w = collisionWorld();
+  for (let x = 0; x <= 2; x++) w.setBlock(x, 1, 0, 3);
+  const p = new Player(w, characterById('steve'));
+  p.pos = [1.5, 2, 0.5];
+  p.onGround = true;
+  p.yaw = Math.PI / 2; // forward moves toward -X, off the platform
+
+  stepSim(p, 60, { mz: 1 });
+  H.assert(p.pos[0] < 0, 'the player should walk down from the raised platform');
+  H.near(p.pos[1], 1, 0.05, 'the player should land on the lower floor');
+  H.eq(p.onGround, true, 'the lower floor should ground the player');
+});
+
+H.test('sneaking stops intentional movement at a ledge', () => {
+  const w = collisionWorld();
+  for (let x = -4; x <= 4; x++) {
+    for (let z = -4; z < 0; z++) w.setBlock(x, 0, z, 0);
+  }
+  const p = new Player(w, characterById('steve'));
+  p.pos = [0.5, 1, 0.5];
+  p.onGround = true;
+  p.yaw = 0; // forward moves toward -Z and off the platform
+
+  stepSim(p, 120, { mz: 1, sneak: true });
+  H.assert(p.pos[2] >= 0 && p.pos[2] < 0.35,
+    'sneaking should approach the ledge closely and stop before falling, ended at z=' + p.pos[2].toFixed(2));
+});
+
+H.test('sneak ledge protection stops residual momentum while reversing input', () => {
+  const w = collisionWorld();
+  for (let x = -4; x <= 4; x++) {
+    for (let z = -4; z < 0; z++) w.setBlock(x, 0, z, 0);
+  }
+  const p = new Player(w, characterById('steve'));
+  p.pos = [0.5, 1, 0.02];
+  p.vel = [0, 0, -20]; // residual momentum toward -Z, off the ledge
+  p.onGround = true;
+  p.yaw = 0;
+
+  p.update(1 / 60, 0, -1, false, true); // input away from the ledge, still sneaking
+  H.assert(p.pos[2] >= 0,
+    'sneaking should stop residual momentum at the edge even when reversing input');
+});
+
+H.test('sneak ledge protection does not absorb real hit knockback against input', () => {
+  const w = collisionWorld();
+  for (let x = -4; x <= 4; x++) {
+    for (let z = -4; z < 0; z++) w.setBlock(x, 0, z, 0);
+  }
+  const p = new Player(w, characterById('steve'));
+  p.pos = [0.5, 1, 0.02];
+  p.onGround = true;
+  p.yaw = 0;
+  p.takeDamage(1, [0, 0, -1], 20);
+
+  p.update(1 / 60, 0, -1, false, true); // input points away; the hit impulse points toward -Z
+  H.assert(p.pos[2] < 0,
+    'a recent hit reaction should continue even when sneaking and reversing input');
+});
+
+H.test('knockback without aligned movement input does not auto-step', () => {
+  const w = collisionWorld();
+  w.setBlock(0, 1, 0, 3);
+  const p = new Player(w, characterById('steve'));
+  p.pos = [-0.33, 1, 0.5];
+  p.vel = [8, 0, 0];
+  p.onGround = true;
+
+  p.update(1 / 60, 0, 0, false, false);
+  H.near(p.pos[1], 1, 0.05, 'knockback alone must not climb onto the block');
+  H.assert(p.pos[0] < 0, 'knockback should retain normal collision with the block');
 });
 
 H.test('sneaking is slower than walking', () => {
