@@ -3074,11 +3074,17 @@ const Game = {
     const s = a.scale;
     const yaw = a.yaw;
     const base = a.pos;
+    const walkPhase = Number.isFinite(a.walkAnim) ? a.walkAnim : 0;
+    const gaitScale = a.onGround === false ? 0 : 1;
+    const bodyBob = Math.abs(Math.sin(walkPhase * 2)) * 0.025 * s * gaitScale;
     const boxes = batch ? batch.boxes : [];
     const ellipsoids = batch ? batch.ellipsoids : [];
     // The model builder keeps its existing part layout, but its soft anatomy
     // now uses a real rounded mesh. Sharp beaks and antler branches stay cubes.
-    const drawOval = (prog, pos, size, tile, tint, rotY) => ellipsoids.push({ pos, size, tile, yaw: rotY || 0 });
+    const drawOval = (prog, pos, size, tile, tint, rotY) =>
+      ellipsoids.push({ pos, size, tile, yaw: rotY || 0 });
+    const drawOvalWithPitch = (prog, pos, size, tile, tint, rotY, pitch) =>
+      ellipsoids.push({ pos, size, tile, yaw: rotY || 0, pitch: pitch || 0 });
     const drawCube = (prog, pos, size, tile, tint, rotY) => boxes.push({ pos, size, tile, yaw: rotY || 0 });
     const legH = d.h * (d.id === 'deer' ? 0.5 : d.id === 'rabbit' ? 0.37 : 0.42);
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
@@ -3095,8 +3101,8 @@ const Game = {
           [width * s, height * verticalScale, depth * s], tile, [1, 1, 1], yaw, 1);
       }
     };
-    const bodyY = base[1] + legH + d.h * 0.32;
-    const headY = base[1] + legH + d.h * 0.8;
+    const bodyY = base[1] + legH + d.h * 0.32 + bodyBob;
+    const headY = base[1] + legH + d.h * 0.8 + bodyBob;
     const headForward = d.d * (d.id === 'chick' ? 0.34 : d.id === 'rabbit' ? 0.3 : d.id === 'deer' ? 0.34 : 0.4);
     const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : d.id === 'rabbit' ? 0.68 : d.id === 'fox' ? 0.7 : d.id === 'deer' ? 0.48 : 0.72);
     const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : d.id === 'rabbit' ? 0.42 : d.id === 'fox' ? 0.38 : d.id === 'deer' ? 0.32 : 0.52);
@@ -3107,8 +3113,15 @@ const Game = {
       [-d.d * 0.29, -d.w * 0.29], [-d.d * 0.29, d.w * 0.29],
       [d.d * 0.28, -d.w * 0.29], [d.d * 0.28, d.w * 0.29],
     ]) {
-      drawOval(prog, point(forward, side, base[1] + legH * 0.5),
-        [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, 1);
+      // A light diagonal trot gives the rounded legs a readable walk cycle
+      // without changing the animal's collision body or saved position.
+      const sameDiagonal = (forward > 0) === (side < 0);
+      const phase = walkPhase + (sameDiagonal ? 0 : Math.PI);
+      const legPitch = Math.sin(phase) * 0.38 * gaitScale;
+      const legForward = forward + Math.sin(legPitch) * legH * 0.34;
+      const legLift = Math.max(0, Math.cos(phase)) * 0.045 * gaitScale * s;
+      drawOvalWithPitch(prog, point(legForward, side, base[1] + legH * 0.5 + legLift),
+        [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, legPitch);
     }
 
     const bodySize = d.id === 'pig'

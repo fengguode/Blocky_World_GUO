@@ -381,6 +381,43 @@ H.test('wolf uses a heavy rounded ruff, amber eye framing, and sharp ivory fangs
   }
 });
 
+H.test('animal leg gait follows the walk cycle with diagonal pair timing', () => {
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
+  try {
+    for (const def of ANIMALS) {
+      const capturePose = walkAnim => {
+        let rounded = [];
+        Game.drawAnimalEllipsoids = (prog, parts) => { rounded = parts.slice(); };
+        Game.drawAnimalBoxes = () => {};
+        Game.drawAnimal(null, {
+          def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim, onGround: true,
+        }, 1);
+        H.assert(rounded.length >= 4, def.id + ' should render four articulated legs');
+        return rounded;
+      };
+      const planted = capturePose(0);
+      const stride = capturePose(Math.PI / 2);
+      const plantedLegs = planted.slice(0, 4);
+      const strideLegs = stride.slice(0, 4);
+      H.assert(strideLegs.some((leg, index) => Math.abs(leg.pitch || 0) > 0.1 ||
+        Math.abs(leg.pos[0] - plantedLegs[index].pos[0]) > 0.05),
+      def.id + ' legs should move with its walk cycle');
+      H.assert(stride.slice(4).every(part => Math.abs(part.pitch || 0) < 1e-9),
+        def.id + ' walk pitch should not tilt body or face details');
+      H.near(strideLegs[1].pitch, strideLegs[2].pitch, 1e-9,
+        def.id + ' diagonal front-left/rear-right legs should share a gait phase');
+      H.near(strideLegs[0].pitch, strideLegs[3].pitch, 1e-9,
+        def.id + ' diagonal rear-left/front-right legs should share a gait phase');
+      H.near(strideLegs[0].pitch, -strideLegs[1].pitch, 1e-9,
+        def.id + ' opposite diagonal pairs should alternate');
+    }
+  } finally {
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
+  }
+});
+
 H.test('wildlife draws each geometry family in one shared batch', () => {
   const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
   const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
@@ -2926,6 +2963,26 @@ H.test('an unprovoked wolf hunts nearby animals without targeting the player', (
   const after = Math.hypot(wolf.pos[0] - sheep.pos[0], wolf.pos[2] - sheep.pos[2]);
   H.assert(after < before, 'wolf should move toward its animal prey');
   H.eq(wolf.aggressiveTimer, 0, 'hunting does not make a calm wolf attack the player');
+});
+
+H.test('wandering animals keep a stable cruising speed between decisions', () => {
+  const originalRandom = Math.random;
+  const world = { getBlock(x, y) { return y === 0 ? 1 : 0; } };
+  const animal = new g.Animal(g.animalById('rabbit'), 0, 1.2, 0);
+  animal.yaw = 0;
+  animal.think = 10;
+  let randomIndex = 0;
+  Math.random = () => [0, 0.99][randomIndex++] ?? 0.5;
+  try {
+    animal.update(1 / 60, world, null);
+    const first = Math.hypot(animal.vel[0], animal.vel[2]);
+    animal.update(1 / 60, world, null);
+    const second = Math.hypot(animal.vel[0], animal.vel[2]);
+    H.assert(first > 0, 'a wandering animal should move at its selected cruising speed');
+    H.near(second, first, 1e-9, 'cruising speed should not be rerolled every frame');
+  } finally {
+    Math.random = originalRandom;
+  }
 });
 
 H.test('a wolf only bites the player after the pack is provoked', () => {
