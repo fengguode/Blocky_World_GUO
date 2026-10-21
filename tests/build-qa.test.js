@@ -12,6 +12,7 @@ const qaTestCheckout = require('./qa-test-checkout');
 const isolatedChild = process.env.BW_QA_TEST_ISOLATED_CHECKOUT === '1';
 const root = isolatedChild ? path.resolve(process.cwd()) : path.join(__dirname, '..');
 const output = path.join(root, '.qa-public');
+const previewOutput = path.join(root, '.preview-public');
 const builder = require(path.join(root, 'scripts', 'build-qa.js'));
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -64,7 +65,10 @@ async function run() {
   assert(allowed.includes('js/storage.js'));
   assert(!allowed.includes('js/network.js'));
   assert.equal(builder.validateOutputPath(output), output);
+  assert.equal(builder.validateOutputPath(previewOutput, undefined, 'preview'), previewOutput);
   rejects(() => builder.validateOutputPath(root), 'builder refuses repository root as output');
+  rejects(() => builder.validateOutputPath(root, undefined, 'preview'), 'preview builder refuses repository root as output');
+  assert(!builder.assetAllowlist('preview').has('js/qa-fixture.js'), 'playable preview excludes the frozen observer fixture');
   builder.assertCleanCheckout('');
   rejects(() => builder.assertCleanCheckout(' M js/main.js'), 'builder refuses inputs that differ from recorded HEAD');
 
@@ -177,7 +181,24 @@ async function run() {
   await builder.build();
   const second = Object.fromEntries(walk(output).map((file) => [file, digest(fs.readFileSync(path.join(output, file)))]));
   assert.deepEqual(second, first, 'repeated builds produce byte-identical output and provenance');
-  console.log('QA sanitizer tests passed (denylist, allowlist, fixture, output scan, manifest, dirty-checkout protection, reproducibility).');
+  await builder.build('preview');
+  const previewFirst = Object.fromEntries(walk(previewOutput).map((file) => [file, digest(fs.readFileSync(path.join(previewOutput, file)))]));
+  const previewManifest = JSON.parse(fs.readFileSync(path.join(previewOutput, 'provenance.json'), 'utf8'));
+  assert.equal(previewManifest.mode, 'preview');
+  assert.deepEqual(previewManifest.playablePreview, { startsAt: 'main-menu', storage: 'page-memory-only' });
+  assert(!Object.hasOwn(previewManifest, 'qaFixture'), 'playable preview has no observer fixture provenance');
+  assert(previewManifest.transforms.includes('leave the normal game menu interactive and start a fresh page-memory-only world when Play & Build is selected'));
+  builder.assertSanitizedOutput(previewOutput, 'preview');
+  const previewHtml = fs.readFileSync(path.join(previewOutput, 'index.html'), 'utf8');
+  assert.match(previewHtml, /<title>Blocky World Preview<\/title>/i);
+  assert.match(previewHtml, /id="btn-play"/);
+  assert.doesNotMatch(previewHtml, /qa-fixture|observe-hud.*show/i);
+  assert(!fs.existsSync(path.join(previewOutput, 'js', 'qa-fixture.js')));
+  assert.deepEqual(walk(path.join(previewOutput, 'js')).map((file) => 'js/' + file).sort(), [...builder.assetAllowlist('preview')].sort());
+  await builder.build('preview');
+  const previewSecond = Object.fromEntries(walk(previewOutput).map((file) => [file, digest(fs.readFileSync(path.join(previewOutput, file)))]));
+  assert.deepEqual(previewSecond, previewFirst, 'repeated playable-preview builds are byte-identical');
+  console.log('Sanitized builds passed (denylist, allowlists, frozen QA fixture, interactive preview, output scan, provenance, dirty-checkout protection, reproducibility).');
 }
 
 async function runWithoutTouchingDeveloperCheckout() {

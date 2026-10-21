@@ -11,6 +11,7 @@ const CHARACTERS = [
     id: 'steve',
     name: 'Steve',
     style: 'Balanced Builder',
+    appearance: 'builder',
     color: '#4a90d9',
     desc: 'The classic blocky builder. Strong, steady, good at everything. Great for learning the ropes.',
     skin: T.skin, hair: T.hair_brown, shirt: T.builder_shirt, accent: T.shirt_cyan, pants: T.pants, shoe: T.shoe,
@@ -28,6 +29,7 @@ const CHARACTERS = [
     id: 'alex',
     name: 'Alex',
     style: 'Parkour Ranger',
+    appearance: 'ranger',
     color: '#4ec3b0',
     desc: 'Quick and nimble. Runs fast, jumps higher, and whips out a triple combo.',
     skin: T.skin, hair: T.hair_gold, shirt: T.ranger_shirt, accent: T.shirt_blue, pants: T.pants_dark, shoe: T.shoe,
@@ -45,6 +47,7 @@ const CHARACTERS = [
     id: 'spider',
     name: 'Web Hero',
     style: 'Wall-Crawling Hero',
+    appearance: 'web-hero',
     color: '#e63946',
     desc: 'A red and blue wall crawler. Can zip up walls and hit from far away with web shots.',
     skin: T.skin, hair: T.hero_red, shirt: T.climber_shirt, accent: T.hero_red, pants: T.hero_blue, shoe: T.hero_red,
@@ -64,6 +67,7 @@ const CHARACTERS = [
     id: 'doll',
     name: 'Dolly',
     style: 'Sparkle Power',
+    appearance: 'doll',
     color: '#ff7ad9',
     desc: 'A cheerful doll in a pink dress. She throws glittery stars and heals herself every time she lands a hit.',
     skin: T.skin_doll, hair: T.hair_pink, shirt: T.dolly_dress, accent: T.glowstone, pants: T.dolly_leggings, shoe: T.hero_red,
@@ -82,6 +86,7 @@ const CHARACTERS = [
     id: 'golem',
     name: 'Stone Golem',
     style: 'Heavy Hitter',
+    appearance: 'golem',
     color: '#9aa0a6',
     desc: 'Big, slow and incredibly strong. Every hit sends the enemy flying.',
     skin: T.cobble, hair: T.stone, shirt: T.cobble, accent: T.glowstone, pants: T.stone, shoe: T.stone,
@@ -99,6 +104,7 @@ const CHARACTERS = [
     id: 'ninja',
     name: 'Fire Ninja',
     style: 'Blazing Speed',
+    appearance: 'ninja',
     color: '#ff7a18',
     desc: 'A fast fire ninja who dashes and throws flame shurikens.',
     skin: T.skin, hair: T.hero_red, shirt: T.fire_ninja, accent: T.glowstone, pants: T.pants_dark, shoe: T.shoe,
@@ -114,16 +120,28 @@ const CHARACTERS = [
   },
 ];
 
+const CHARACTER_MODEL_STYLES = Object.freeze({
+  builder: { torso: [0.58, 0.76, 0.4], shoulders: [0.34, 0.23, 0.32], head: [0.58, 0.62, 0.56], arm: [0.22, 0.58, 0.24], leg: [0.24, 0.56, 0.27], shoe: [0.28, 0.15, 0.36], eye: [0.075, 0.11, 0.035], eyeOffset: 0.15, hair: 'cap' },
+  ranger: { torso: [0.55, 0.74, 0.39], shoulders: [0.32, 0.22, 0.31], head: [0.58, 0.64, 0.56], arm: [0.21, 0.58, 0.24], leg: [0.23, 0.58, 0.26], shoe: [0.27, 0.15, 0.35], eye: [0.075, 0.11, 0.035], eyeOffset: 0.15, hair: 'ponytail' },
+  'web-hero': { torso: [0.56, 0.76, 0.39], shoulders: [0.34, 0.23, 0.31], head: [0.58, 0.62, 0.56], arm: [0.22, 0.58, 0.24], leg: [0.24, 0.58, 0.27], shoe: [0.27, 0.15, 0.35], eye: [0.09, 0.12, 0.035], eyeOffset: 0.15, hair: 'hero-cap' },
+  doll: { torso: [0.56, 0.72, 0.4], shoulders: [0.34, 0.22, 0.32], head: [0.64, 0.67, 0.59], arm: [0.21, 0.56, 0.23], leg: [0.23, 0.54, 0.25], shoe: [0.27, 0.15, 0.34], eye: [0.11, 0.14, 0.04], eyeOffset: 0.16, hair: 'pigtails' },
+  golem: { torso: [0.68, 0.84, 0.47], shoulders: [0.4, 0.28, 0.39], head: [0.64, 0.64, 0.62], arm: [0.27, 0.62, 0.29], leg: [0.28, 0.58, 0.3], shoe: [0.31, 0.17, 0.38], eye: [0.075, 0.1, 0.035], eyeOffset: 0.17, hair: 'stone-crown' },
+  ninja: { torso: [0.54, 0.78, 0.37], shoulders: [0.33, 0.22, 0.3], head: [0.56, 0.62, 0.54], arm: [0.2, 0.58, 0.22], leg: [0.22, 0.58, 0.25], shoe: [0.26, 0.14, 0.34], eye: [0.08, 0.1, 0.035], eyeOffset: 0.145, hair: 'headband' },
+});
+
 function characterById(id) {
   return CHARACTERS.find(c => c.id === id) || CHARACTERS[0];
 }
 
 /* ---------- friendly animals ---------- */
 const ANIMALS = [
-  { id: 'pig',    name: 'Pig',    body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 1.08, h: 0.94, d: 1.42, speed: 1.1, tame: 'Oink!' },
-  { id: 'sheep',  name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 1.16, h: 1.1, d: 1.36, speed: 1.0, tame: 'Baa!' },
-  { id: 'chick',  name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.82, h: 0.9, d: 0.86, speed: 1.4, tame: 'Peep!' },
-  { id: 'wolf',   name: 'Wolf', body: T.wolf, face: T.wolf_face, accent: T.wolf_dark, leg: T.wolf_dark, w: 1.0, h: 1.0, d: 1.5, speed: 2.5, predator: true, tame: 'A wolf pack!' },
+  { id: 'pig', name: 'Pig', body: T.pig_skin, face: T.pig_skin, accent: T.pig_snout, leg: T.pig_skin, w: 1.08, h: 0.94, d: 1.42, speed: 1.1, tame: 'Oink!', habitats: ['meadow', 'woodland'], groupMin: 2, groupMax: 3 },
+  { id: 'sheep', name: 'Sheep', body: T.wool, face: T.sheep_face, accent: T.skin, leg: T.skin, w: 1.16, h: 1.1, d: 1.36, speed: 1.0, tame: 'Baa!', habitats: ['meadow', 'highland'], groupMin: 3, groupMax: 4 },
+  { id: 'chick', name: 'Chick', body: T.chick, face: T.chick, accent: T.chick_wing, beak: T.beak, leg: T.beak, w: 0.82, h: 0.9, d: 0.86, speed: 1.4, tame: 'Peep!', habitats: ['meadow'], groupMin: 3, groupMax: 4 },
+  { id: 'rabbit', name: 'Rabbit', body: T.rabbit, face: T.rabbit_face, accent: T.rabbit_pink, leg: T.rabbit, ear: T.rabbit_pink, w: 0.84, h: 1.12, d: 0.98, speed: 1.65, tame: 'Hop!', habitats: ['meadow', 'woodland'], groupMin: 2, groupMax: 3 },
+  { id: 'fox', name: 'Fox', body: T.fox, face: T.fox_face, accent: T.fox_cream, leg: T.fox, ear: T.fox, w: 0.94, h: 1.03, d: 1.48, speed: 1.75, tame: 'Yip!', habitats: ['woodland', 'highland'], groupMin: 1, groupMax: 2 },
+  { id: 'deer', name: 'Deer', body: T.deer, face: T.deer_face, accent: T.deer_dark, antler: T.deer_antler, leg: T.deer_dark, w: 1.02, h: 1.58, d: 1.38, speed: 1.85, tame: 'A quiet deer.', habitats: ['woodland', 'highland'], groupMin: 2, groupMax: 3 },
+  { id: 'wolf', name: 'Wolf', body: T.wolf, face: T.wolf_face, accent: T.wolf_dark, leg: T.wolf_dark, w: 1.0, h: 1.0, d: 1.5, speed: 2.5, predator: true, tame: 'A wolf pack!', habitats: ['meadow', 'woodland', 'highland'], groupMin: 3, groupMax: 3 },
 ];
 
 function animalById(id) {

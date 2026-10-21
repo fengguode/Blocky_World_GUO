@@ -592,6 +592,39 @@ T.chick_wing = pushTile('chick_wing', pixelArtTile([224, 197, 104], [
 T.beak = pushTile('beak', pixelArtTile([232, 168, 52], [
   { x: 4, y: 4, rows: ['  bb ', 'bbbb', '  bb '], colors: { b: shadeColor([232,168,52], -26) } },
 ]));
+T.rabbit = pushTile('rabbit', pixelArtTile([190, 176, 157], [
+  { x: 1, y: 2, rows: ['  lll ', ' lllll', 'llllll', ' llll '], colors: { l: [224, 211, 190] } },
+  { x: 9, y: 10, rows: [' ddd ', 'ddddd', ' ddd '], colors: { d: [158, 139, 121] } },
+]));
+T.rabbit_face = pushTile('rabbit_face', pixelArtTile([224, 211, 190], [
+  { x: 2, y: 2, rows: ['  ddd ', ' dllll', 'ddllll', ' dddd '], colors: { d: [188, 169, 149], l: [242, 231, 213] } },
+]));
+T.rabbit_pink = pushTile('rabbit_pink', pixelArtTile([211, 145, 145], [
+  { x: 4, y: 2, rows: ['  pp  ', ' pppp ', ' pppp ', '  pp  '], colors: { p: [235, 175, 171] } },
+]));
+T.fox = pushTile('fox', pixelArtTile([207, 112, 54], [
+  { x: 1, y: 2, rows: ['  hhhh ', ' hhhhhh', 'hhhhhhh', ' hhhhhh'], colors: { h: [235, 148, 69] } },
+  { x: 9, y: 10, rows: [' ddd ', 'ddddd', ' ddd '], colors: { d: [149, 74, 48] } },
+]));
+T.fox_face = pushTile('fox_face', pixelArtTile([228, 139, 63], [
+  { x: 2, y: 2, rows: ['  ddd ', ' dllll', 'ddllll', ' dddd '], colors: { d: [183, 83, 48], l: [248, 224, 185] } },
+]));
+T.fox_cream = pushTile('fox_cream', pixelArtTile([241, 221, 187], [
+  { x: 3, y: 3, rows: ['  ccc ', ' ccccc', 'cccccc', '  cc  '], colors: { c: [255, 240, 209] } },
+]));
+T.deer = pushTile('deer', pixelArtTile([167, 111, 69], [
+  { x: 1, y: 2, rows: ['  hhhh ', ' hhhhhh', 'hhhhhhh', ' hhhhhh'], colors: { h: [196, 139, 84] } },
+  { x: 9, y: 10, rows: ['  sss ', ' sssss', '  sss '], colors: { s: [224, 187, 132] } },
+]));
+T.deer_face = pushTile('deer_face', pixelArtTile([195, 140, 88], [
+  { x: 2, y: 2, rows: ['  lll ', ' lllll', 'ddllld', '  ddd '], colors: { l: [237, 211, 167], d: [125, 77, 52] } },
+]));
+T.deer_dark = pushTile('deer_dark', pixelArtTile([109, 72, 49], [
+  { x: 2, y: 2, rows: ['  ddd ', ' ddddd', '  ddd '], colors: { d: [78, 52, 42] } },
+]));
+T.deer_antler = pushTile('deer_antler', pixelArtTile([174, 132, 83], [
+  { x: 1, y: 1, rows: ['d   d', 'dd dd', ' d d ', '  d  '], colors: { d: [214, 177, 119] } },
+]));
 
 /* ============================================================
    Block table

@@ -3,6 +3,9 @@ node_modules/
 .qa-public/
 .qa-public.tmp-*/
 .qa-public.previous-*/
+.preview-public/
+.preview-public.tmp-*/
+.preview-public.previous-*/
 .env
 .env.*
 !.env.example

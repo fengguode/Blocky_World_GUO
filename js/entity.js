@@ -340,6 +340,9 @@ class Animal {
     this.onGround = false;
     this.jumpCool = 0;
     this.scale = 0.85 + Math.random() * 0.3;
+    // Pick a per-animal cruising pace once. Rerolling this in update() makes
+    // motion jitter at frame rate and gives no player-readable behavior cue.
+    this.wanderSpeed = def.speed * (0.4 + Math.random() * 0.3);
     this.health = 30;
     this.dead = false;
     this.packId = null;
@@ -361,7 +364,7 @@ class Animal {
     this.aggressiveTimer = Math.max(0, this.aggressiveTimer - dt);
     if (this.jumpCool > 0) this.jumpCool -= dt;
 
-    let speed = this.def.speed * (0.4 + Math.random() * 0.3);
+    let speed = this.wanderSpeed;
     let target = null;
     if (this.aggressiveTimer > 0 && player && !player.ko) {
       const dx = player.pos[0] - this.pos[0], dz = player.pos[2] - this.pos[2];

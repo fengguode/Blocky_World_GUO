@@ -38,6 +38,8 @@ Live visits support Play & Build, Fight Arena, and Observe World for Florenz, Ma
 
 **Play & Build** — Explore, break blocks, and place blocks. Flying starts enabled; use **FLY** to toggle and **▲▼** to move vertically. Each character uses their Fight Arena maximum health. Left-click or tap **BREAK** to attack animals or a visiting player; fist, wood, stone, and gold attacks deal 8, 12, 16, and 20 damage. Select a wood, stone, or gold block to use that material's attack strength; other selections use a fist. Animals have 30 health, retaliate for 5 damage no more than once per second after being hit, and each defeated animal gives one meat. Breaking leaves has a 15% chance to give one apple. Select food and use right-click or **PLACE** to eat it; an apple restores 20 health and meat restores 30. At zero health, the player respawns at their spawn after 2.4 seconds at full health; world edits and food inventory remain.
 
+Wildlife includes pigs, sheep, chicks, rabbits, foxes, deer, and wolves. Their organic forms use a low-poly rounded mesh with crisp accents for features such as beaks, ears, and antlers; wolves have a heavier ruff, amber eyes, and small fangs. Herbivores appear in small spaced groups, with species favored by meadow, woodland, or highland terrain. The local simulation is capped at 28 active animals, including three wolf packs; it recenters and replenishes as the player explores. Wildlife positions are temporary and do not change the saved-world format.
+
 **Fight Arena** — Choose characters and fight in a generated arena. On a phone, the second fighter is computer-controlled; a connected controller can take over.
 
 **Observe World** — See the world from different camera views and take a photo.
@@ -84,6 +86,17 @@ npm run test:qa
 ```
 
 The builder emits only its explicit local HTML, CSS, and JavaScript allowlist under `.qa-public/`; CSS resource URLs are limited to same-document fragments. Ordinary offline play continues to use `index.html` and the existing local-save adapter. `provenance.json` records the source commit/tree, sanitizer and dependency hashes, source-input hashes, and every generated runtime asset hash. Run the build from a clean Git checkout so the recorded revision exactly identifies its inputs. The build validates staged output before replacing a previous successful build. This command prepares QA assets only; it does not publish or deploy them.
+
+## Playable sanitized preview
+
+Create a LAN-testable game build that keeps the real main menu and Play & Build path interactive while removing family profiles, PINs, server routes, persistent browser storage, and remote resources:
+
+```
+npm run build:preview
+npm run serve:preview
+```
+
+The builder emits a separate `.preview-public/` directory. The preview starts at the menu, and its game saves last only until the page is closed or refreshed. The static server binds only to the machine's LAN interfaces on TCP port 200 and serves only `.preview-public/`; it does not start the family server or expose profile/world data. The preview is for local play checks, not a production release.
 
 ## Source files
 

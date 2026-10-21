@@ -47,6 +47,16 @@ const Game = {
   activeWorldType: 'normal',
   players: [],
   animals: [],
+  animalActiveCap: 28,
+  animalPackTarget: 3,
+  animalPreyTarget: 19,
+  animalGroupSpacing: 15,
+  animalRegionRadius: 48,
+  animalRecenterDistance: 42,
+  animalRefreshSeconds: 18,
+  _animalRefreshTimer: 0,
+  _animalRegionCenter: null,
+  _animalGroupSequence: 0,
   mode: 'play',
   paused: false,
   showDebug: false,
@@ -331,14 +341,17 @@ const Game = {
       layout(location=2) in vec2 aUV;
       layout(location=3) in vec3 aBoxCenter;
       layout(location=4) in vec3 aBoxSize;
-      layout(location=5) in vec2 aBoxRotation;
+      layout(location=5) in vec4 aBoxRotation;
       layout(location=6) in float aBoxTile;
 
       uniform mat4 uMVP;
       uniform float uTile;
       uniform float uInstanced;
+      uniform float uRoundShape;
       uniform vec3 uCamPos;
       uniform vec3 uBoxCenter;
+      uniform vec3 uBoxSize;
+      uniform vec4 uBoxRotation;
       uniform float uFogNear;
       uniform float uFogFar;
       uniform vec3 uFogColor;
@@ -352,13 +365,19 @@ const Game = {
       void main() {
         vUV = aUV;
         vTile = mix(uTile, aBoxTile, uInstanced);
-        vec3 worldNormal = aNormal;
-        if (uInstanced > 0.5) {
-          worldNormal = vec3(
-            aBoxRotation.x * aNormal.x + aBoxRotation.y * aNormal.z,
-            aNormal.y,
-            -aBoxRotation.y * aNormal.x + aBoxRotation.x * aNormal.z);
+        vec3 localNormal = aNormal;
+        if (uRoundShape > 0.5) {
+          vec3 dimensions = uInstanced > 0.5 ? aBoxSize : uBoxSize;
+          localNormal = normalize(aNormal / max(abs(dimensions), vec3(0.0001)));
         }
+        vec4 rotation = uInstanced > 0.5 ? aBoxRotation : uBoxRotation;
+        vec3 pitchNormal = vec3(localNormal.x,
+          rotation.z * localNormal.y + rotation.w * localNormal.z,
+          -rotation.w * localNormal.y + rotation.z * localNormal.z);
+        vec3 worldNormal = vec3(
+          rotation.x * pitchNormal.x + rotation.y * pitchNormal.z,
+          pitchNormal.y,
+          -rotation.y * pitchNormal.x + rotation.x * pitchNormal.z);
         vNormal = worldNormal;
         // simple directional shading so boxy characters read as 3D
         float key = 0.45 + 0.55 * max(0.0, dot(worldNormal, normalize(vec3(0.4, 0.9, 0.35))));
@@ -368,10 +387,13 @@ const Game = {
         vec3 worldPos = aPos;
         if (uInstanced > 0.5) {
           vec3 scaledPos = aPos * aBoxSize;
+          vec3 pitchedPos = vec3(scaledPos.x,
+            rotation.z * scaledPos.y + rotation.w * scaledPos.z,
+            -rotation.w * scaledPos.y + rotation.z * scaledPos.z);
           worldPos = aBoxCenter + vec3(
-            aBoxRotation.x * scaledPos.x + aBoxRotation.y * scaledPos.z,
-            scaledPos.y,
-            -aBoxRotation.y * scaledPos.x + aBoxRotation.x * scaledPos.z);
+            rotation.x * pitchedPos.x + rotation.y * pitchedPos.z,
+            pitchedPos.y,
+            -rotation.y * pitchedPos.x + rotation.x * pitchedPos.z);
         }
         float d = distance(uCamPos, uInstanced > 0.5 ? aBoxCenter : uBoxCenter);
         vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
@@ -471,6 +493,7 @@ const Game = {
     gl.bindVertexArray(null);
 
     this.cube = this.uploadMesh(buildCube());
+    this.animalEllipsoid = this.uploadMesh(buildEllipsoid(8, 12));
     this.initAnimalBatch();
     this.quad = this.uploadMesh(buildQuad());
     this.sprite = this.uploadMesh(buildSprite());
@@ -509,36 +532,46 @@ const Game = {
   },
 
   initAnimalBatch() {
+    this.initAnimalBatchForMesh(this.cube, 'animalBatch');
+    this.initAnimalBatchForMesh(this.animalEllipsoid, 'animalRoundBatch');
+  },
+
+  initAnimalBatchForMesh(mesh, prefix) {
     const gl = this.gl;
+    const set = (suffix, value) => { this[prefix + suffix] = value; };
     if (typeof gl.vertexAttribDivisor !== 'function' || typeof gl.drawElementsInstanced !== 'function') {
-      this.animalBatchCapacity = 0;
-      this.animalBatchData = new Float32Array(0);
-      this.animalBatchVAO = null;
-      this.animalBatchBuffer = null;
+      set('Capacity', 0);
+      set('Data', new Float32Array(0));
+      set('VAO', null);
+      set('Buffer', null);
       return;
     }
-    const floatsPerBox = 9;
-    this.animalBatchCapacity = 32;
-    this.animalBatchData = new Float32Array(this.animalBatchCapacity * floatsPerBox);
-    this.animalBatchVAO = gl.createVertexArray();
-    this.animalBatchBuffer = gl.createBuffer();
+    const floatsPerPart = 11;
+    const capacity = 64;
+    const data = new Float32Array(capacity * floatsPerPart);
+    const vao = gl.createVertexArray();
+    const buffer = gl.createBuffer();
+    set('Capacity', capacity);
+    set('Data', data);
+    set('VAO', vao);
+    set('Buffer', buffer);
 
-    gl.bindVertexArray(this.animalBatchVAO);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.vbo);
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.nbo);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbo);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cube.ubo);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.ubo);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cube.ibo);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, this.animalBatchData.byteLength, gl.DYNAMIC_DRAW);
-    const stride = floatsPerBox * Float32Array.BYTES_PER_ELEMENT;
-    for (const [location, width, offset] of [[3, 3, 0], [4, 3, 3], [5, 2, 6], [6, 1, 8]]) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
+    const stride = floatsPerPart * Float32Array.BYTES_PER_ELEMENT;
+    for (const [location, width, offset] of [[3, 3, 0], [4, 3, 3], [5, 4, 6], [6, 1, 10]]) {
       gl.enableVertexAttribArray(location);
       gl.vertexAttribPointer(location, width, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribDivisor(location, 1);
@@ -711,8 +744,6 @@ const Game = {
     p2.flying = true;
     this.players.push(p2);
 
-    this.spawnAnimals(16);
-
     // restore saved position if we reloaded
     if (this.saved && this.saved.player1) {
       const s = this.saved.player1;
@@ -725,6 +756,10 @@ const Game = {
       }
       if (this.saved.pick) { this.pick = this.saved.pick; }
     }
+
+    // Wildlife starts around the saved player location so returning players
+    // do not have to travel back to the world origin to find animals.
+    this.spawnAnimals(this.animalPreyTarget, p1.pos);
 
     if (this.pendingWorldMigration) {
       if (!window.Network || !Network.serverMode || (Network.visitRole !== 'visitor' && Network.visitRole !== 'pending')) this.save(true);
@@ -756,56 +791,170 @@ const Game = {
     }
   },
 
-  spawnAnimals(count) {
-    this.animals = [];
-    const defs = ANIMALS.filter(def => !def.predator);
-    const ox = this.world.originX, oz = this.world.originZ;
-    const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
-    for (let i = 0; i < count; i++) {
-      const def = defs[(Math.random() * defs.length) | 0];
-      let placed = false;
-      for (let tries = 0; tries < 60 && !placed; tries++) {
-        const a = Math.random() * Math.PI * 2;
-        const r = 5 + Math.random() * reach;
-        const x = Math.floor(ox + Math.cos(a) * r);
-        const z = Math.floor(oz + Math.sin(a) * r);
-        if (this.world.isStandable(x, z)) {
-          this.animals.push(new Animal(def, x + 0.5, this.world.findSurfaceY(x, z) + 1, z + 0.5));
-          placed = true;
+  wildlifeHabitatAt(x, z, surfaceY) {
+    const y = surfaceY === undefined ? this.world.findSurfaceY(x, z) : surfaceY;
+    if (y < 0) return null;
+    const ground = this.world.getBlock(x, y, z);
+    // Beach sand is intentionally left quiet; forest, meadow and high ground
+    // are the three wildlife regions described by the current terrain.
+    if (ground === 5) return null;
+    let foliageNear = false;
+    for (let dy = 2; dy <= 7 && !foliageNear; dy += 2) {
+      for (let dx = -3; dx <= 3 && !foliageNear; dx += 3) {
+        for (let dz = -3; dz <= 3; dz += 3) {
+          if (this.world.getBlock(x + dx, y + dy, z + dz) === 9) {
+            foliageNear = true;
+            break;
+          }
         }
       }
     }
+    const type = ground === 13 || y >= SEA_LEVEL + 22
+      ? 'highland' : foliageNear ? 'woodland' : 'meadow';
+    return { type, surfaceY: y, ground, foliageNear };
+  },
 
-    // Three compact packs keep the wolves visibly social without filling the
-    // whole map with extra entities on lower-memory phones and tablets.
-    let packNumber = 0;
-    for (let pack = 0; pack < 3; pack++) {
-      let anchor = null;
-      for (let tries = 0; tries < 60 && !anchor; tries++) {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = 8 + Math.random() * reach;
-        const x = Math.floor(ox + Math.cos(angle) * radius);
-        const z = Math.floor(oz + Math.sin(angle) * radius);
-        if (this.world.isStandable(x, z)) anchor = [x, z];
+  animalGroupAnchors() {
+    const groups = new Map();
+    let solo = 0;
+    for (const animal of this.animals) {
+      if (animal.dead) continue;
+      const key = animal.packId ? 'pack:' + animal.packId
+        : animal.herdId ? 'herd:' + animal.herdId : 'solo:' + (++solo);
+      let group = groups.get(key);
+      if (!group) { group = { x: 0, z: 0, count: 0, anchor: animal.groupAnchor || null }; groups.set(key, group); }
+      if (!group.anchor) {
+        group.x += animal.pos[0];
+        group.z += animal.pos[2];
       }
-      if (!anchor) continue;
-      const packId = 'wolf-pack-' + (++packNumber) + '-' + Math.floor(Math.random() * 1000000);
-      for (let member = 0; member < 3; member++) {
-        let placed = false;
-        for (let tries = 0; tries < 40 && !placed; tries++) {
-          const angle = Math.random() * Math.PI * 2;
-          const radius = member === 0 ? 0 : 1 + Math.random() * 3.5;
-          const x = Math.floor(anchor[0] + Math.cos(angle) * radius);
-          const z = Math.floor(anchor[1] + Math.sin(angle) * radius);
-          if (!this.world.isStandable(x, z)) continue;
-          const wolf = new Animal(animalById('wolf'), x + 0.5, this.world.findSurfaceY(x, z) + 1, z + 0.5);
-          wolf.packId = packId;
-          wolf.packLeader = this.animals.find(a => a.packId === packId) || wolf;
-          this.animals.push(wolf);
-          placed = true;
-        }
-      }
+      group.count++;
     }
+    return Array.from(groups.values(), group => ({
+      x: group.anchor ? group.anchor[0] : group.x / group.count,
+      z: group.anchor ? group.anchor[1] : group.z / group.count,
+    }));
+  },
+
+  findWildlifeSpawnPoint(center, minRadius, maxRadius, def, anchors, minSpacing, attemptLimit) {
+    const groups = anchors || [];
+    const spacingSq = (minSpacing || 0) ** 2;
+    for (let tries = 0; tries < (attemptLimit || 60); tries++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minRadius + Math.random() * Math.max(0, maxRadius - minRadius);
+      const x = Math.floor(center[0] + Math.cos(angle) * radius);
+      const z = Math.floor(center[1] + Math.sin(angle) * radius);
+      const surfaceY = this.world.findSurfaceY(x, z);
+      if (surfaceY < 0 || surfaceY + 2 >= WORLD_H ||
+          this.world.getBlock(x, surfaceY + 1, z) !== 0 || this.world.getBlock(x, surfaceY + 2, z) !== 0) continue;
+      const habitat = this.wildlifeHabitatAt(x, z, surfaceY);
+      if (!habitat || (def && !def.habitats.includes(habitat.type))) continue;
+      if (groups.some(group => (group.x - (x + 0.5)) ** 2 + (group.z - (z + 0.5)) ** 2 < spacingSq)) continue;
+      if (!def && !ANIMALS.some(candidate => !candidate.predator && candidate.habitats.includes(habitat.type))) continue;
+      return { x, z, y: habitat.surfaceY + 1, habitat: habitat.type };
+    }
+    return null;
+  },
+
+  spawnAnimalGroup(def, anchor, memberCount, groupId) {
+    const members = [];
+    const points = [anchor];
+    for (let i = 0; i < memberCount; i++) {
+      const point = i === 0 ? anchor : this.findWildlifeSpawnPoint([anchor.x, anchor.z], 1.2, 4.5, def,
+          points.map(p => ({ x: p.x + 0.5, z: p.z + 0.5 })), 1.1, 16);
+      if (!point) break;
+      if (i > 0) points.push(point);
+      const animal = new Animal(def, point.x + 0.5, point.y, point.z + 0.5);
+      animal.groupAnchor = [anchor.x + 0.5, anchor.z + 0.5];
+      if (def.predator) animal.packId = groupId;
+      else animal.herdId = groupId;
+      members.push(animal);
+    }
+    if (def.predator && members.length) {
+      const leader = members[0];
+      for (const member of members) member.packLeader = leader;
+    }
+    this.animals.push(...members);
+    return members.length;
+  },
+
+  spawnWolfPacks(center, targetPacks, reach) {
+    const wolf = animalById('wolf');
+    const packIds = new Set(this.animals.filter(a => a.def.predator && a.packId && !a.dead).map(a => a.packId));
+    let packNumber = packIds.size;
+    let anchors = this.animalGroupAnchors();
+    while (packNumber < targetPacks && this.animals.length + 3 <= this.animalActiveCap) {
+      const point = this.findWildlifeSpawnPoint(center, 8, reach, wolf, anchors, this.animalGroupSpacing);
+      if (!point) break;
+      const packId = 'wolf-pack-' + (++this._animalGroupSequence);
+      const added = this.spawnAnimalGroup(wolf, point, 3, packId);
+      if (!added) break;
+      packNumber++;
+      anchors = this.animalGroupAnchors();
+    }
+  },
+
+  spawnWildlifeGroups(targetPrey, center, reach, maxNewGroups) {
+    let preyCount = this.animals.filter(a => !a.def.predator && !a.dead).length;
+    let groupsAdded = 0, attempts = 0, previousSpecies = '';
+    while (preyCount < targetPrey && this.animals.length < this.animalActiveCap && attempts++ < 180) {
+      if (maxNewGroups !== undefined && groupsAdded >= maxNewGroups) break;
+      const remaining = Math.min(targetPrey - preyCount, this.animalActiveCap - this.animals.length);
+      if (remaining < 2) break;
+      const anchors = this.animalGroupAnchors();
+      const point = this.findWildlifeSpawnPoint(center, 8, reach, null, anchors, this.animalGroupSpacing);
+      if (!point) break;
+      let candidates = ANIMALS.filter(def => !def.predator && def.habitats.includes(point.habitat));
+      if (!candidates.length) continue;
+      if (candidates.length > 1 && candidates.some(def => def.id !== previousSpecies)) {
+        candidates = candidates.filter(def => def.id !== previousSpecies);
+      }
+      const def = candidates[(Math.random() * candidates.length) | 0];
+      const min = Math.min(def.groupMin, remaining);
+      const max = Math.min(def.groupMax, remaining);
+      const memberCount = min + ((Math.random() * (max - min + 1)) | 0);
+      const herdId = 'herd-' + (++this._animalGroupSequence);
+      const added = this.spawnAnimalGroup(def, point, memberCount, herdId);
+      if (!added) continue;
+      preyCount += added;
+      previousSpecies = def.id;
+      groupsAdded++;
+    }
+    return preyCount;
+  },
+
+  spawnAnimals(count, playerPosition) {
+    this.animals = [];
+    this._animalRefreshTimer = 0;
+    this._animalGroupSequence = 0;
+    const player = playerPosition || (this.players[0] && this.players[0].pos);
+    const center = player ? [player[0], player[2]]
+      : [this.world.originX || WORLD_CENTRE, this.world.originZ || WORLD_CENTRE];
+    this._animalRegionCenter = center.slice();
+    const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
+    const preyTarget = Math.max(0, Math.min(Math.floor(count) || 0, this.animalActiveCap - this.animalPackTarget * 3));
+    this.spawnWolfPacks(center, this.animalPackTarget, reach);
+    this.spawnWildlifeGroups(preyTarget, center, reach);
+  },
+
+  pruneDistantAnimalGroups(player, radius) {
+    const radiusSq = radius * radius;
+    const groups = new Map();
+    for (const animal of this.animals) {
+      if (animal.dead) continue;
+      const key = animal.packId ? 'pack:' + animal.packId
+        : animal.herdId ? 'herd:' + animal.herdId : 'solo:' + animal.pos.join(',');
+      let group = groups.get(key);
+      if (!group) { group = { members: [], x: 0, z: 0 }; groups.set(key, group); }
+      group.members.push(animal);
+      group.x += animal.pos[0]; group.z += animal.pos[2];
+    }
+    const keep = new Set();
+    for (const group of groups.values()) {
+      const x = group.x / group.members.length - player[0];
+      const z = group.z / group.members.length - player[2];
+      if (x * x + z * z <= radiusSq) for (const member of group.members) keep.add(member);
+    }
+    this.animals = this.animals.filter(animal => keep.has(animal));
   },
 
   provokeWolfPack(wolf) {
@@ -931,6 +1080,22 @@ const Game = {
     }
     for (const animal of this.animals) animal.update(dt, this.world, player);
     this.animals = this.animals.filter(animal => !animal.dead);
+
+    if (player && !player.ko) {
+      this._animalRefreshTimer += dt;
+      const center = this._animalRegionCenter || [player.pos[0], player.pos[2]];
+      const dx = player.pos[0] - center[0], dz = player.pos[2] - center[1];
+      const regionChanged = dx * dx + dz * dz >= this.animalRecenterDistance * this.animalRecenterDistance;
+      if (regionChanged || this._animalRefreshTimer >= this.animalRefreshSeconds) {
+        this._animalRefreshTimer = 0;
+        if (regionChanged) this.pruneDistantAnimalGroups(player.pos, this.animalRegionRadius);
+        this._animalRegionCenter = [player.pos[0], player.pos[2]];
+        const reach = Math.max(12, Math.min(70, this.renderDist * CHUNK - 8));
+        this.spawnWolfPacks([player.pos[0], player.pos[2]], this.animalPackTarget, reach);
+        this.spawnWildlifeGroups(this.animalPreyTarget, [player.pos[0], player.pos[2]], reach,
+          regionChanged ? undefined : 1);
+      }
+    }
   },
 
   /* ============================================================
@@ -964,8 +1129,9 @@ const Game = {
     this._breakHeld = this._useHeld = this._flyHeld = this._camToggleHeld = false;
     this.players[0].flying = true;
     this.players[0].flying = false;   // start on the ground so kids can just walk
+    this.players[1].networkRemote = true;
+    this.players[1].networkRemoteVisible = false;
     if (window.Network && Network.visitRole) {
-      this.players[1].networkRemote = true;
       this.players[1].networkRemoteVisible = !!Network.remotePlayerState;
     }
     Cam.thirdPerson = true;
@@ -990,6 +1156,8 @@ const Game = {
   startFight() {
     this.restoreSharedArena();
     this.players.length = 2;
+    this.players[1].networkRemote = false;
+    this.players[1].networkRemoteVisible = true;
     this.sharedFightStarted = false;
     this.mode = 'fight';
     this.state = 'fight';
@@ -2398,58 +2566,224 @@ const Game = {
 
     gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
     gl.uniform3f(p.u.uBoxCenter, center[0], center[1], center[2]);
+    gl.uniform3f(p.u.uBoxSize, size[0], size[1], size[2]);
+    if (p.u.uBoxRotation != null && typeof gl.uniform4f === 'function') {
+      gl.uniform4f(p.u.uBoxRotation, Math.cos(rotY || 0), Math.sin(rotY || 0), 1, 0);
+    }
     gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, alpha === undefined ? 1 : alpha);
     gl.uniform1f(p.u.uTile, tile || 0);
     gl.uniform1f(p.u.uUseTex, tile === undefined || tile === null ? 0 : 1);
     gl.uniform1f(p.u.uInstanced, 0);
+    gl.uniform1f(p.u.uRoundShape, 0);
 
     gl.bindVertexArray(this.cube.vao);
     gl.drawElements(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0);
   },
 
-  drawAnimalBoxes(prog, boxes) {
-    if (!boxes.length) return;
+  drawAnimalParts(prog, parts, mesh, prefix, roundShape, tint = [1, 1, 1]) {
+    if (!parts.length) return;
     const gl = this.gl;
-    const floatsPerBox = 9;
-    if (boxes.length > this.animalBatchCapacity) {
-      this.animalBatchCapacity = boxes.length;
-      this.animalBatchData = new Float32Array(this.animalBatchCapacity * floatsPerBox);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, this.animalBatchData.byteLength, gl.DYNAMIC_DRAW);
+    const capacityKey = prefix + 'Capacity';
+    const dataKey = prefix + 'Data';
+    const bufferKey = prefix + 'Buffer';
+    const vaoKey = prefix + 'VAO';
+    const floatsPerPart = 11;
+    if (!this[vaoKey] || typeof gl.drawElementsInstanced !== 'function') {
+      const p = this.progBox;
+      gl.useProgram(p);
+      gl.uniform1f(p.u.uRoundShape, roundShape ? 1 : 0);
+      gl.uniform1f(p.u.uInstanced, 0);
+      gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
+      gl.uniform1f(p.u.uAlpha, 1);
+      gl.uniform1f(p.u.uUseTex, 1);
+      for (const part of parts) {
+        const yaw = part.yaw || 0;
+        const pitch = part.pitch || 0;
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+        const ca = Math.cos(pitch), sa = Math.sin(pitch);
+        const basis = [[cy, 0, -sy], [-sy * sa, ca, -cy * sa], [sy * ca, sa, cy * ca]];
+        const model = M4.composeTRS(this._boxModel, part.pos, part.size, yaw);
+        for (let col = 0; col < 3; col++) {
+          for (let row = 0; row < 3; row++) model[col * 4 + row] = basis[col][row] * part.size[col];
+        }
+        const mvp = M4.multiply(this._boxMvp, Cam.viewProj, model);
+        gl.uniformMatrix4fv(p.u.uMVP, false, mvp);
+        gl.uniform3f(p.u.uBoxCenter, part.pos[0], part.pos[1], part.pos[2]);
+        gl.uniform3f(p.u.uBoxSize, part.size[0], part.size[1], part.size[2]);
+        if (p.u.uBoxRotation != null && typeof gl.uniform4f === 'function') {
+          gl.uniform4f(p.u.uBoxRotation, cy, sy, ca, sa);
+        }
+        gl.uniform1f(p.u.uTile, part.tile || 0);
+        gl.bindVertexArray(mesh.vao);
+        gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+      }
+      return;
     }
 
-    const data = this.animalBatchData;
-    for (let i = 0; i < boxes.length; i++) {
-      const box = boxes[i];
-      const at = i * floatsPerBox;
-      const c = box.yaw ? Math.cos(box.yaw) : 1;
-      const s = box.yaw ? Math.sin(box.yaw) : 0;
-      data[at] = box.pos[0];
-      data[at + 1] = box.pos[1];
-      data[at + 2] = box.pos[2];
-      data[at + 3] = box.size[0];
-      data[at + 4] = box.size[1];
-      data[at + 5] = box.size[2];
+    if (parts.length > this[capacityKey]) {
+      this[capacityKey] = Math.max(parts.length, this[capacityKey] * 2);
+      this[dataKey] = new Float32Array(this[capacityKey] * floatsPerPart);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this[bufferKey]);
+      gl.bufferData(gl.ARRAY_BUFFER, this[dataKey].byteLength, gl.DYNAMIC_DRAW);
+    }
+
+    const data = this[dataKey];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const at = i * floatsPerPart;
+      const c = part.yaw ? Math.cos(part.yaw) : 1;
+      const s = part.yaw ? Math.sin(part.yaw) : 0;
+      data[at] = part.pos[0];
+      data[at + 1] = part.pos[1];
+      data[at + 2] = part.pos[2];
+      data[at + 3] = part.size[0];
+      data[at + 4] = part.size[1];
+      data[at + 5] = part.size[2];
+      const pitch = part.pitch || 0;
       data[at + 6] = c;
       data[at + 7] = s;
-      data[at + 8] = box.tile || 0;
+      data[at + 8] = Math.cos(pitch);
+      data[at + 9] = Math.sin(pitch);
+      data[at + 10] = part.tile || 0;
     }
 
     const p = this.progBox;
     gl.useProgram(p);
     gl.uniformMatrix4fv(p.u.uMVP, false, Cam.viewProj);
     gl.uniform3f(p.u.uBoxCenter, 0, 0, 0);
-    gl.uniform3f(p.u.uTint, 1, 1, 1);
+    gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform1f(p.u.uAlpha, 1);
     gl.uniform1f(p.u.uTile, 0);
     gl.uniform1f(p.u.uUseTex, 1);
     gl.uniform1f(p.u.uInstanced, 1);
+    gl.uniform1f(p.u.uRoundShape, roundShape ? 1 : 0);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.animalBatchBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data.subarray(0, boxes.length * floatsPerBox));
-    gl.bindVertexArray(this.animalBatchVAO);
-    gl.drawElementsInstanced(gl.TRIANGLES, this.cube.count, gl.UNSIGNED_SHORT, 0, boxes.length);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this[bufferKey]);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data.subarray(0, parts.length * floatsPerPart));
+    gl.bindVertexArray(this[vaoKey]);
+    gl.drawElementsInstanced(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0, parts.length);
+  },
+
+  drawAnimalBoxes(prog, boxes, tint) {
+    this.drawAnimalParts(prog, boxes, this.cube, 'animalBatch', false, tint);
+  },
+
+  drawAnimalEllipsoids(prog, ellipsoids, tint) {
+    this.drawAnimalParts(prog, ellipsoids, this.animalEllipsoid, 'animalRoundBatch', true, tint);
+  },
+
+  buildCharacterFaceStripMesh(strip, base, yaw, headSize, headY) {
+    const rx = headSize[0] * 0.5;
+    const ry = headSize[1] * 0.5;
+    const rz = headSize[2] * 0.5;
+    const edgeY = Math.abs(strip.centerY - headY) + strip.height * 0.5;
+    const surfaceHalfWidth = rx * Math.sqrt(Math.max(0.04, 1 - (edgeY / ry) ** 2));
+    const halfWidth = Math.min(strip.halfWidth, surfaceHalfWidth * 0.82);
+    const columns = strip.columns || 12;
+    const rows = strip.rows || 8;
+    const clearance = strip.clearance || 0.008;
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+    const right = [cosYaw, 0, -sinYaw];
+    const forward = [-sinYaw, 0, -cosYaw];
+    const grid = new Array((columns + 1) * (rows + 1));
+    const vertex = (side, vertical, u, v) => {
+      const radial = 1 - (side / rx) ** 2 - (vertical / ry) ** 2;
+      const surface = rz * Math.sqrt(Math.max(0, radial));
+      const depth = surface + clearance;
+      const nx = side / (rx * rx);
+      const ny = vertical / (ry * ry);
+      const nf = surface / (rz * rz);
+      const normalLength = Math.hypot(nx, ny, nf);
+      const worldNormal = [
+        (right[0] * nx + forward[0] * nf) / normalLength,
+        ny / normalLength,
+        (right[2] * nx + forward[2] * nf) / normalLength,
+      ];
+      return [
+        base[0] + right[0] * side + forward[0] * depth,
+        base[1] + headY + vertical,
+        base[2] + right[2] * side + forward[2] * depth,
+        worldNormal[0], worldNormal[1], worldNormal[2], u, v,
+      ];
+    };
+
+    for (let row = 0; row <= rows; row++) {
+      const v = row / rows;
+      const vertical = strip.centerY - headY + (v - 0.5) * strip.height;
+      for (let column = 0; column <= columns; column++) {
+        const u = column / columns;
+        const side = (u - 0.5) * halfWidth * 2;
+        grid[row * (columns + 1) + column] = vertex(side, vertical, u, v);
+      }
+    }
+
+    const data = [];
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        const bottomLeft = grid[row * (columns + 1) + column];
+        const bottomRight = grid[row * (columns + 1) + column + 1];
+        const topLeft = grid[(row + 1) * (columns + 1) + column];
+        const topRight = grid[(row + 1) * (columns + 1) + column + 1];
+        // The winding faces out from the ellipsoid's front, toward the player.
+        data.push(...topLeft, ...bottomRight, ...bottomLeft,
+          ...topLeft, ...topRight, ...bottomRight);
+      }
+    }
+    return {
+      data: new Float32Array(data),
+      tile: strip.tile,
+      center: [base[0], base[1] + headY, base[2]],
+      columns,
+      rows,
+      halfWidth,
+    };
+  },
+
+  drawCharacterFaceStrips(prog, strips, base, yaw, headSize, headY, tint) {
+    if (!strips.length) return;
+    const gl = this.gl;
+    const boxProg = this.progBox;
+    if (!this.characterFaceStripVAO) {
+      this.characterFaceStripVAO = gl.createVertexArray();
+      this.characterFaceStripBuffer = gl.createBuffer();
+      gl.bindVertexArray(this.characterFaceStripVAO);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.characterFaceStripBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+      gl.bindVertexArray(null);
+    }
+
+    gl.useProgram(boxProg);
+    gl.uniform3f(boxProg.u.uTint, tint[0], tint[1], tint[2]);
+    gl.uniform3f(boxProg.u.uBoxSize, 1, 1, 1);
+    gl.uniform4f(boxProg.u.uBoxRotation, 1, 0, 1, 0);
+    gl.uniform1f(boxProg.u.uAlpha, 1);
+    gl.uniform1f(boxProg.u.uUseTex, 1);
+    gl.uniform1f(boxProg.u.uInstanced, 0);
+    gl.uniform1f(boxProg.u.uRoundShape, 0);
+    gl.uniformMatrix4fv(boxProg.u.uMVP, false, Cam.viewProj);
+    gl.bindVertexArray(this.characterFaceStripVAO);
+    for (const strip of strips) {
+      const mesh = this.buildCharacterFaceStripMesh(strip, base, yaw, headSize, headY);
+      gl.uniform1f(boxProg.u.uTile, mesh.tile || 0);
+      gl.uniform3f(boxProg.u.uBoxCenter, mesh.center[0], mesh.center[1], mesh.center[2]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.characterFaceStripBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.data, gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.data.length / 8);
+    }
+    gl.bindVertexArray(null);
+  },
+
+  drawAnimals(prog, animals, dayF) {
+    const batch = { ellipsoids: [], boxes: [] };
+    for (const animal of animals) this.drawAnimal(prog, animal, dayF, batch);
+    this.drawAnimalEllipsoids(prog, batch.ellipsoids);
+    this.drawAnimalBoxes(prog, batch.boxes);
   },
 
   renderEntities(prog, dayF) {
@@ -2491,9 +2825,7 @@ const Game = {
     }
 
     // animals
-    for (const a of this.animals) {
-      this.drawAnimal(prog, a, dayF);
-    }
+    this.drawAnimals(prog, this.animals, dayF);
 
     // projectiles
     for (const pr of Fight.projectiles) {
@@ -2551,6 +2883,7 @@ const Game = {
   drawCharacter(prog, p, dayF) {
     if (!p) return;
     const c = p.char;
+    const model = CHARACTER_MODEL_STYLES[c.appearance] || CHARACTER_MODEL_STYLES.builder;
     const swing = p.swing ? Math.min(1, p.swing.t / Math.max(0.01, p.swingTotal)) : 0;
     const attacking = !!p.swing;
     const atk = p.swing ? p.swing.attack : 0;
@@ -2576,7 +2909,7 @@ const Game = {
     const tint = flash ? [1, 0.45, 0.45] : [1, 1, 1];
     const bob = p.onGround ? Math.abs(Math.sin(p.walkAnim)) * 0.06 : 0;
     const base = [p.pos[0], p.pos[1] + bob, p.pos[2]];
-    const bodyH = 0.75, legH = 0.75;
+    const bodyH = 0.75, legH = 0.7;
     // facing vectors, needed for the eyes, hair and doll details
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -2586,81 +2919,112 @@ const Game = {
       base[2] + fz * forward + rz * side,
     ];
 
-    // legs
-    this.drawLimb(prog, base, yaw, [-0.15, legH, 0], legL, [0.25, legH, 0.28], c.pants, tint, dayF);
-    this.drawLimb(prog, base, yaw, [0.15, legH, 0], legR, [0.25, legH, 0.28], c.pants, tint, dayF);
-    // body
-    this.drawBox(prog, [base[0], base[1] + legH + bodyH / 2, base[2]],
-      [0.52, bodyH, 0.3], c.shirt, tint, yaw, 1);
-    // Small chest pixels give every character a second accent colour and a clearer identity.
-    if (c.accent) {
-      const chestY = legH + bodyH * 0.58;
-      this.drawBox(prog, point(0.17, 0, chestY), [0.15, 0.16, 0.035], c.accent, tint, yaw, 1);
-      this.drawBox(prog, point(0.193, -0.025, chestY + 0.055), [0.045, 0.045, 0.018], T.wool, tint, yaw, 1);
-      this.drawBox(prog, point(0.193, 0.025, chestY - 0.055), [0.045, 0.045, 0.018], c.shirt, tint, yaw, 1);
+    const rounded = [];
+    const details = [];
+    const faceStrips = [];
+    const addRound = (pos, size, tile, pitch = 0) => rounded.push({ pos, size, tile, yaw, pitch });
+    const addDetail = (pos, size, tile) => details.push({ pos, size, tile, yaw });
+    const headY = legH + bodyH + 0.3;
+    const headHalf = model.head.map(dimension => dimension * 0.5);
+    const headFront = headHalf[2] + 0.015;
+    const faceForward = (side, y, depth) => {
+      const x = side / headHalf[0];
+      const v = (y - headY) / headHalf[1];
+      const front = headHalf[2] * Math.sqrt(Math.max(0.04, 1 - x * x - v * v));
+      return front + depth * 0.5 + 0.007;
+    };
+    const addFaceStrip = (centerY, halfWidth, height, tile) => {
+      faceStrips.push({ centerY, halfWidth, height, tile, columns: 12, rows: 8 });
+    };
+    const isGolem = c.appearance === 'golem';
+    const isDoll = c.appearance === 'doll';
+
+    addRound([base[0], base[1] + legH + bodyH * 0.5, base[2]], model.torso, c.shirt);
+    for (const side of [-1, 1]) {
+      addRound(point(0, side * model.shoulders[0] * 0.36, legH + bodyH - 0.13),
+        model.shoulders, c.shirt);
     }
     if (c.dressSkirt) {
-      this.drawBox(prog, [base[0], base[1] + legH + 0.12, base[2]],
-        [0.68, 0.34, 0.42], c.shirt, tint, yaw, 1);
+      addRound(point(0, 0, legH + 0.12), [0.72, 0.32, 0.47], c.shirt);
     }
-    // arms
-    this.drawLimb(prog, base, yaw, [-0.36, legH + bodyH - 0.15, 0], armL, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
-    this.drawLimb(prog, base, yaw, [0.36, legH + bodyH - 0.15, 0], armR, [0.22, 0.62, 0.24], c.shirt, tint, dayF);
-    if (this.state === 'play' && p === this.players[0]) this.drawBuildHand(prog, p, false, base, armR);
-    // head
-    const headY = base[1] + legH + bodyH + 0.3;
-    this.drawBox(prog, [base[0], headY, base[2]], [0.5, 0.5, 0.5], c.skin, tint, yaw, 1);
 
-    // Hair: a full cap for most characters. The doll gets a rounder, softer
-    // shape with a fringe so she reads as a doll rather than a person.
-    if (c.dollFace) {
-      this.drawBox(prog, [base[0], headY + 0.16, base[2]], [0.58, 0.3, 0.58], c.hair, tint, yaw, 1);
-      // fringe across the forehead
-      this.drawBox(prog, [
-        base[0] + fx * 0.2, headY + 0.11, base[2] + fz * 0.2,
-      ], [0.54, 0.16, 0.16], c.hair, tint, yaw, 1);
-      // two pigtails
-      for (const s of [-1, 1]) {
-        this.drawBox(prog, [
-          base[0] + rx * s * 0.34, headY + 0.06, base[2] + rz * s * 0.34,
-        ], [0.2, 0.34, 0.2], c.hair, tint, yaw, 1);
+    const armPivotY = legH + bodyH - 0.14;
+    for (const [side, angle] of [[-1, armL], [1, armR]]) {
+      const armForward = -model.arm[1] * 0.5 * Math.sin(angle);
+      const armY = armPivotY - model.arm[1] * 0.5 * Math.cos(angle);
+      addRound(point(armForward, side * 0.36, armY), model.arm, c.shirt, angle);
+      addRound(point(armForward * 1.72, side * 0.36, armPivotY - model.arm[1] * 0.9 * Math.cos(angle)),
+        [0.16, 0.15, 0.17], c.skin);
+    }
+
+    for (const [side, angle] of [[-1, legL], [1, legR]]) {
+      const legForward = -model.leg[1] * 0.5 * Math.sin(angle);
+      const legY = legH - model.leg[1] * 0.5 * Math.cos(angle);
+      addRound(point(legForward, side * 0.15, legY), model.leg, c.pants, angle);
+      addRound(point(legForward * 1.45 + 0.04, side * 0.15, Math.max(0.08, legH - legH * Math.cos(angle) + 0.1)),
+        model.shoe, c.shoe);
+    }
+
+    addRound(point(0, 0, headY), model.head, c.skin);
+    const hairTop = headY + model.head[1] * 0.36;
+    addRound(point(0, 0, hairTop), [model.head[0] * 1.04, 0.23, model.head[2] * 1.04], c.hair);
+    addRound(point(model.head[2] * 0.44, 0, headY + model.head[1] * 0.24),
+      [model.head[0] * 0.88, 0.13, 0.14], c.hair);
+
+    if (model.hair === 'ponytail') {
+      addRound(point(-0.31, 0, headY + 0.03), [0.18, 0.34, 0.18], c.hair);
+      addRound(point(-0.4, 0, headY - 0.19), [0.15, 0.26, 0.16], c.hair);
+    } else if (model.hair === 'pigtails') {
+      for (const side of [-1, 1]) {
+        addRound(point(-0.02, side * 0.31, headY + 0.02), [0.19, 0.32, 0.19], c.hair);
       }
-    } else {
-      this.drawBox(prog, [base[0], headY + 0.19, base[2]], [0.54, 0.16, 0.54], c.hair, tint, yaw, 1);
+      const bowY = headY + model.head[1] * 0.5 + 0.07;
+      addRound(point(headFront * 0.42, -0.14, bowY), [0.16, 0.12, 0.09], c.hair);
+      addRound(point(headFront * 0.42, 0.14, bowY), [0.16, 0.12, 0.09], c.hair);
+      addRound(point(headFront * 0.55, 0, bowY), [0.08, 0.1, 0.1], c.accent);
+    } else if (model.hair === 'stone-crown') {
+      for (const side of [-1, 0, 1]) {
+        addRound(point(-0.015, side * 0.16, hairTop + 0.11), [0.19, 0.24, 0.19], c.hair);
+      }
     }
 
-    // eyes on the front face
-    const eyeOff = c.dollFace ? 0.15 : 0.13;
-    const eyeSize = c.dollFace ? 0.11 : 0.07;
-    for (const s of [-1, 1]) {
-      this.drawBox(prog, [
-        base[0] + fx * 0.26 + rx * s * eyeOff,
-        headY + (c.dollFace ? 0.0 : 0.02),
-        base[2] + fz * 0.26 + rz * s * eyeOff,
-      ], [eyeSize, c.dollFace ? 0.13 : 0.09, 0.03], T.eye, tint, yaw, 1);
+    const eyeY = headY + (isDoll ? 0.015 : 0.025);
+    if (c.appearance === 'web-hero') {
+      addFaceStrip(eyeY, model.head[0] * 0.41, 0.17, T.hero_blue);
+    } else if (c.appearance === 'ninja') {
+      addFaceStrip(headY + 0.2, model.head[0] * 0.47, 0.105, T.hero_red);
+      addFaceStrip(headY - 0.12, model.head[0] * 0.39, 0.17, T.pants_dark);
+    } else if (isGolem) {
+      addFaceStrip(headY + 0.085, model.head[0] * 0.44, 0.09, T.stone);
     }
+
+    for (const side of [-1, 1]) {
+      addDetail(point(faceForward(side * model.eyeOffset, eyeY, model.eye[2]),
+        side * model.eyeOffset, eyeY), model.eye, isGolem ? T.glowstone : T.eye);
+      if (isDoll) {
+        const lashY = eyeY + 0.045;
+        addDetail(point(faceForward(side * model.eyeOffset, lashY, 0.02), side * model.eyeOffset, lashY),
+          [0.035, 0.035, 0.02], T.wool);
+      }
+    }
+
+    const chestY = legH + bodyH * 0.58;
+    if (c.accent) {
+      addDetail(point(model.torso[2] * 0.5 + 0.018, 0, chestY), [0.15, 0.16, 0.04], c.accent);
+      addDetail(point(model.torso[2] * 0.5 + 0.042, -0.035, chestY + 0.055), [0.04, 0.045, 0.02], T.wool);
+      addDetail(point(model.torso[2] * 0.5 + 0.042, 0.035, chestY - 0.055), [0.04, 0.045, 0.02], c.shirt);
+    }
+
+    this.drawAnimalEllipsoids(prog, rounded, tint);
+    this.drawAnimalBoxes(prog, details, tint);
+    this.drawCharacterFaceStrips(prog, faceStrips, base, yaw, model.head, headY, tint);
+    if (this.state === 'play' && p === this.players[0]) this.drawBuildHand(prog, p, false, base, armR);
 
     // glowing outline when an ultimate is ready
     if (p.ultMeter >= p.maxUlt && !p.ko) {
       this.drawBox(prog, [base[0], base[1] + 1.0, base[2]], [0.8, 1.9, 0.8], T.glowstone,
         [0.4, 0.9, 0.5], 0, 0.14);
     }
-  },
-
-  // One arm or leg, rotated about the shoulder/hip.
-  drawLimb(prog, base, yaw, offset, angle, size, tile, tint, dayF) {
-    const gl = this.gl;
-    const pivotY = offset[1];
-    const ca = Math.cos(angle), sa = Math.sin(angle);
-    // rotate the limb forward/back around its top pivot
-    const len = size[1];
-    const midY = pivotY - len / 2 * ca;
-    const midZ = len / 2 * sa;
-    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    const cx = base[0] + rx * offset[0];
-    const cz = base[2] + rz * offset[0];
-    const basis = [[rx, 0, rz], [-Math.sin(yaw) * sa, ca, -Math.cos(yaw) * sa], [Math.sin(yaw) * ca, sa, Math.cos(yaw) * ca]];
-    this.drawBox(prog, [cx + Math.sin(yaw) * midZ, base[1] + midY, cz + Math.cos(yaw) * midZ], size, tile, tint, yaw, 1, basis);
   },
 
   drawProjectile(prog, projectile) {
@@ -2705,14 +3069,24 @@ const Game = {
     }
   },
 
-  drawAnimal(prog, a, dayF) {
+  drawAnimal(prog, a, dayF, batch = null) {
     const d = a.def;
     const s = a.scale;
     const yaw = a.yaw;
     const base = a.pos;
-    const boxes = [];
-    const drawBox = (prog, pos, size, tile, tint, rotY) => boxes.push({ pos, size, tile, yaw: rotY || 0 });
-    const legH = d.h * 0.42;
+    const walkPhase = Number.isFinite(a.walkAnim) ? a.walkAnim : 0;
+    const gaitScale = a.onGround === false ? 0 : 1;
+    const bodyBob = Math.abs(Math.sin(walkPhase * 2)) * 0.025 * s * gaitScale;
+    const boxes = batch ? batch.boxes : [];
+    const ellipsoids = batch ? batch.ellipsoids : [];
+    // The model builder keeps its existing part layout, but its soft anatomy
+    // now uses a real rounded mesh. Sharp beaks and antler branches stay cubes.
+    const drawOval = (prog, pos, size, tile, tint, rotY) =>
+      ellipsoids.push({ pos, size, tile, yaw: rotY || 0 });
+    const drawOvalWithPitch = (prog, pos, size, tile, tint, rotY, pitch) =>
+      ellipsoids.push({ pos, size, tile, yaw: rotY || 0, pitch: pitch || 0 });
+    const drawCube = (prog, pos, size, tile, tint, rotY) => boxes.push({ pos, size, tile, yaw: rotY || 0 });
+    const legH = d.h * (d.id === 'deer' ? 0.5 : d.id === 'rabbit' ? 0.37 : 0.42);
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const point = (forward, side, y) => [
@@ -2723,33 +3097,46 @@ const Game = {
     const drawSteppedMass = (centerY, layers, tile, scaleVertical = false) => {
       const verticalScale = scaleVertical ? s : 1;
       for (const [forward, side, yOffset, width, height, depth] of layers) {
-        drawBox(prog, point(forward, side, centerY + yOffset * verticalScale),
+        drawOval(prog, point(forward, side, centerY + yOffset * verticalScale),
           [width * s, height * verticalScale, depth * s], tile, [1, 1, 1], yaw, 1);
       }
     };
-    const bodyY = base[1] + legH + d.h * 0.32;
-    const headY = base[1] + legH + d.h * 0.8;
-    const headForward = d.d * (d.id === 'chick' ? 0.34 : 0.4);
-    const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : 0.72);
-    const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : 0.52);
-    const headDepth = d.w * (d.id === 'chick' ? 0.8 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.72 : 0.62);
+    const bodyY = base[1] + legH + d.h * 0.32 + bodyBob;
+    const headY = base[1] + legH + d.h * 0.8 + bodyBob;
+    const headForward = d.d * (d.id === 'chick' ? 0.34 : d.id === 'rabbit' ? 0.3 : d.id === 'deer' ? 0.34 : 0.4);
+    const headWidth = d.w * (d.id === 'chick' ? 0.98 : d.id === 'sheep' ? 0.62 : d.id === 'pig' ? 0.82 : d.id === 'rabbit' ? 0.68 : d.id === 'fox' ? 0.7 : d.id === 'deer' ? 0.48 : 0.72);
+    const headHeight = d.h * (d.id === 'chick' ? 0.72 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.5 : d.id === 'rabbit' ? 0.42 : d.id === 'fox' ? 0.38 : d.id === 'deer' ? 0.32 : 0.52);
+    const headDepth = d.w * (d.id === 'chick' ? 0.8 : d.id === 'sheep' ? 0.48 : d.id === 'pig' ? 0.72 : d.id === 'rabbit' ? 0.62 : d.id === 'fox' ? 0.55 : d.id === 'deer' ? 0.5 : 0.62);
 
     // Four short legs make a stable, readable stance; proportions differ by species.
     for (const [forward, side] of [
       [-d.d * 0.29, -d.w * 0.29], [-d.d * 0.29, d.w * 0.29],
       [d.d * 0.28, -d.w * 0.29], [d.d * 0.28, d.w * 0.29],
     ]) {
-      drawBox(prog, point(forward, side, base[1] + legH * 0.5),
-        [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, 1);
+      // A light diagonal trot gives the rounded legs a readable walk cycle
+      // without changing the animal's collision body or saved position.
+      const sameDiagonal = (forward > 0) === (side < 0);
+      const phase = walkPhase + (sameDiagonal ? 0 : Math.PI);
+      const legPitch = Math.sin(phase) * 0.38 * gaitScale;
+      const legForward = forward + Math.sin(legPitch) * legH * 0.34;
+      const legLift = Math.max(0, Math.cos(phase)) * 0.045 * gaitScale * s;
+      drawOvalWithPitch(prog, point(legForward, side, base[1] + legH * 0.5 + legLift),
+        [0.16 * s, legH, 0.16 * s], d.leg, [1, 1, 1], yaw, legPitch);
     }
 
     const bodySize = d.id === 'pig'
       ? [d.w * 1.08 * s, d.h * 0.48, d.d * 0.72 * s]
       : d.id === 'sheep'
         ? [d.w * 0.7 * s, d.h * 0.52, d.d * 0.62 * s]
-        : d.id === 'chick'
+          : d.id === 'chick'
           ? [d.w * 0.82 * s, d.h * 0.6, d.d * 0.84 * s]
-          : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
+          : d.id === 'rabbit'
+            ? [d.w * 1.02 * s, d.h * 0.46, d.d * 0.68 * s]
+            : d.id === 'fox'
+              ? [d.w * 0.86 * s, d.h * 0.44, d.d * 0.78 * s]
+              : d.id === 'deer'
+                ? [d.w * 0.76 * s, d.h * 0.34, d.d * 0.62 * s]
+                : [d.w * s, d.h * 0.64, d.d * 0.72 * s];
 
     if (d.id === 'pig') {
       // A low barrel, soft belly, back ridge, and forward shoulder form one
@@ -2774,14 +3161,29 @@ const Game = {
         [0, 0, -d.h * 0.18, d.w * 0.7, d.h * 0.2, d.d * 0.74],
         [-d.d * 0.03, 0, d.h * 0.23, d.w * 0.7, d.h * 0.18, d.d * 0.68],
       ], d.body);
+    } else if (d.id === 'rabbit') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 1.02, d.h * 0.46, d.d * 0.68],
+        [d.d * 0.2, 0, d.h * 0.12, d.w * 0.76, d.h * 0.32, d.d * 0.48],
+      ], d.body);
+    } else if (d.id === 'fox') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.04, 0, 0, d.w * 0.86, d.h * 0.44, d.d * 0.78],
+        [d.d * 0.22, 0, d.h * 0.08, d.w * 0.68, d.h * 0.28, d.d * 0.4],
+      ], d.body);
+    } else if (d.id === 'deer') {
+      drawSteppedMass(bodyY, [
+        [-d.d * 0.05, 0, 0, d.w * 0.76, d.h * 0.34, d.d * 0.62],
+        [d.d * 0.18, 0, d.h * 0.06, d.w * 0.62, d.h * 0.28, d.d * 0.4],
+      ], d.body);
     } else {
-      drawBox(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
+      drawOval(prog, [base[0], bodyY, base[2]], bodySize, d.body, [1, 1, 1], yaw, 1);
     }
 
     if (d.id === 'pig') {
       // The pig skin tile carries its flank patches, keeping the body detail in one draw.
       // One short tail box is enough to read from behind without another draw call.
-      drawBox(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
+      drawOval(prog, point(-d.d * 0.54, 0, bodyY + d.h * 0.08),
         [0.14 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
     } else if (d.id === 'sheep') {
       // Uneven, overlapping lobes break the rectangular core into a stepped fleece.
@@ -2795,21 +3197,40 @@ const Game = {
         [d.d * 0.37, 0, d.h * 0.025, d.w * 0.4, d.h * 0.3, d.d * 0.28],
         [-d.d * 0.04, 0, d.h * 0.17, d.w * 0.5, d.h * 0.22, d.d * 0.38],
       ]) {
-        drawBox(prog, point(forward, side, fleeceY + yOffset),
+        drawOval(prog, point(forward, side, fleeceY + yOffset),
           [width * s, height * s, depth * s], d.body, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'chick') {
       // A larger egg-shaped body, chest patch, and projecting wings help the chick read at play distance.
-      drawBox(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
+      drawOval(prog, point(bodySize[2] * 0.5 + 0.02, 0, bodyY),
         [d.w * 0.34 * s, d.h * 0.3, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        drawBox(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY + d.h * 0.03),
+        drawOval(prog, point(-d.d * 0.02, side * (d.w * 0.48), bodyY + d.h * 0.03),
           [0.14 * s, 0.22 * s, 0.34 * s], d.accent, [1, 1, 1], yaw, 1);
       }
       // Three gold tail feathers fan out behind the body so the chick has a bird-like rear silhouette.
       for (const side of [-1, 0, 1]) {
-        drawBox(prog, point(-d.d * 0.48, side * d.w * 0.12, bodyY + d.h * (side === 0 ? 0.12 : 0.08)),
+        drawOval(prog, point(-d.d * 0.48, side * d.w * 0.12, bodyY + d.h * (side === 0 ? 0.12 : 0.08)),
           [0.13 * s, 0.14 * s, 0.24 * s], d.accent, [1, 1, 1], yaw, 1);
+      }
+    } else if (d.id === 'rabbit') {
+      drawOval(prog, point(-d.d * 0.48, 0, bodyY + d.h * 0.12),
+        [0.23 * s, 0.23 * s, 0.23 * s], d.face, [1, 1, 1], yaw, 1);
+      drawOval(prog, point(d.d * 0.13, 0, bodyY + d.h * 0.02),
+        [d.w * 0.44 * s, d.h * 0.25, 0.035 * s], d.face, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'fox') {
+      drawOval(prog, point(d.d * 0.2, 0, bodyY - d.h * 0.01),
+        [d.w * 0.42 * s, d.h * 0.31, 0.04 * s], d.accent, [1, 1, 1], yaw, 1);
+      drawOval(prog, point(-d.d * 0.55, 0, bodyY + d.h * 0.1),
+        [0.22 * s, 0.24 * s, 0.78 * s], d.body, [1, 1, 1], yaw, 1);
+      drawOval(prog, point(-d.d * 0.81, 0, bodyY + d.h * 0.1),
+        [0.2 * s, 0.22 * s, 0.28 * s], d.accent, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'deer') {
+      drawOval(prog, point(d.d * 0.24, 0, bodyY + d.h * 0.38),
+        [d.w * 0.36 * s, d.h * 0.58, d.d * 0.28 * s], d.body, [1, 1, 1], yaw, 1);
+      for (const side of [-1, 1]) {
+        drawOval(prog, point(-d.d * 0.03, side * d.w * 0.26, bodyY + d.h * 0.12),
+          [0.13 * s, 0.12 * s, 0.16 * s], d.face, [1, 1, 1], yaw, 1);
       }
     }
 
@@ -2836,7 +3257,7 @@ const Game = {
         [headForward, headWidth * 0.34, -headHeight * 0.1, headWidth * 0.18, headHeight * 0.28, headDepth * 0.28],
       ], d.face, true);
     } else {
-      drawBox(prog, point(headForward, 0, headY),
+      drawOval(prog, point(headForward, 0, headY),
         [headWidth * s, headHeight * s, headDepth * s], d.face, [1, 1, 1], yaw, 1);
     }
 
@@ -2844,33 +3265,33 @@ const Game = {
     const eyeY = headY + headHeight * 0.06 * s;
     const eyeSide = headWidth * 0.27;
     const eyeTile = d.id === 'wolf' ? T.wolf_eye : T.eye;
-    const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : 0.145;
+    const eyeSize = d.id === 'chick' ? 0.16 : d.id === 'sheep' ? 0.14 : d.id === 'deer' ? 0.12 : 0.145;
     for (const side of [-1, 1]) {
-      drawBox(prog, point(headFront, side * eyeSide, eyeY),
+      drawOval(prog, point(headFront, side * eyeSide, eyeY),
         [eyeSize * s, eyeSize * 1.08 * s, 0.045 * s], eyeTile, [1, 1, 1], yaw, 1);
     }
 
     if (d.id === 'pig') {
       const earY = headY + headHeight * 0.62 * s;
       for (const side of [-1, 1]) {
-        drawBox(prog, point(headForward + 0.015, side * headWidth * 0.37, earY),
+        drawOval(prog, point(headForward + 0.015, side * headWidth * 0.37, earY),
           [0.12 * s, 0.18 * s, 0.15 * s], d.accent, [1, 1, 1], yaw, 1);
       }
       const snoutY = headY - headHeight * 0.2 * s;
-      drawBox(prog, point(headFront + 0.035, 0, snoutY),
+      drawOval(prog, point(headFront + 0.035, 0, snoutY),
         [0.34 * s, 0.22 * s, 0.11 * s], d.accent, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        drawBox(prog, point(headFront + 0.075, side * 0.075, snoutY),
+        drawOval(prog, point(headFront + 0.075, side * 0.075, snoutY),
           [0.045 * s, 0.075 * s, 0.025 * s], T.eye, [1, 1, 1], yaw, 1);
       }
     } else if (d.id === 'sheep') {
       for (const side of [-1, 1]) {
-        drawBox(prog, point(headForward, side * headWidth * 0.56, headY + 0.015),
+        drawOval(prog, point(headForward, side * headWidth * 0.56, headY + 0.015),
           [0.14 * s, 0.09 * s, 0.16 * s], d.accent, [1, 1, 1], yaw, 1);
       }
-      drawBox(prog, point(headFront + 0.03, 0, headY - headHeight * 0.22 * s),
+      drawOval(prog, point(headFront + 0.03, 0, headY - headHeight * 0.22 * s),
         [0.18 * s, 0.13 * s, 0.07 * s], d.accent, [1, 1, 1], yaw, 1);
-      drawBox(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
+      drawOval(prog, point(headForward * 0.85, 0, headY + headHeight * 0.58 * s),
         [0.21 * s, 0.16 * s, 0.2 * s], d.body, [1, 1, 1], yaw, 1);
     } else if (d.id === 'chick') {
       for (const [forward, side, size] of [
@@ -2878,26 +3299,81 @@ const Game = {
         [headForward + 0.015, -headWidth * 0.16, [0.11, 0.14, 0.13]],
         [headForward + 0.015, headWidth * 0.16, [0.11, 0.14, 0.13]],
       ]) {
-        drawBox(prog, point(forward, side, headY + headHeight * 0.58 * s),
+        drawOval(prog, point(forward, side, headY + headHeight * 0.58 * s),
           size.map((n, i) => n * s), d.accent, [1, 1, 1], yaw, 1);
       }
       const beakY = headY - headHeight * 0.18 * s;
-      drawBox(prog, point(headFront + 0.045, 0, beakY),
+      drawCube(prog, point(headFront + 0.045, 0, beakY),
         [0.2 * s, 0.13 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
-      drawBox(prog, point(headFront + 0.13, 0, beakY - 0.005),
+      drawCube(prog, point(headFront + 0.13, 0, beakY - 0.005),
         [0.13 * s, 0.1 * s, 0.14 * s], d.beak, [1, 1, 1], yaw, 1);
     } else if (d.id === 'wolf') {
-      // Keep the established original wolf read: grey muzzle, pointed ears, amber eyes, short tail.
-      drawBox(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
+      // Give the original predator a heavier silhouette: raised shoulder ruff,
+      // layered cheek fur, and a brow that frames its amber eyes.
+      drawOval(prog, point(d.d * 0.16, 0, bodyY + d.h * 0.18),
+        [d.w * 1.12 * s, d.h * 0.58, d.d * 0.42 * s], d.face, [1, 1, 1], yaw, 1);
+      for (const side of [-1, 1]) {
+        drawOval(prog, point(d.d * 0.22, side * d.w * 0.39, bodyY + d.h * 0.1),
+          [d.w * 0.28 * s, d.h * 0.34, d.d * 0.32 * s], d.body, [1, 1, 1], yaw, 1);
+      }
+      for (const side of [-1, 1]) {
+        drawOval(prog, point(headFront + 0.01, side * eyeSide, eyeY + eyeSize * 0.72 * s),
+          [eyeSize * 1.45 * s, eyeSize * 0.42 * s, 0.055 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+      }
+      // Grey muzzle, pointed ears, amber eyes, two small ivory fangs, and tail.
+      drawOval(prog, point(headFront + 0.04, 0, headY - 0.06 * s),
         [0.3 * s, 0.2 * s, 0.1 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
       for (const side of [-1, 1]) {
-        drawBox(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
+        drawOval(prog, point(headForward - 0.02, side * headWidth * 0.38, headY + headHeight * 0.48 * s),
           [0.12 * s, 0.22 * s, 0.12 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
       }
-      drawBox(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
+      for (const side of [-1, 1]) {
+        drawCube(prog, point(headFront + 0.12, side * 0.085, headY - headHeight * 0.25 * s),
+          [0.065 * s, 0.12 * s, 0.04 * s], T.wool, [1, 1, 1], yaw, 1);
+      }
+      drawOval(prog, point(-d.d * 0.52, 0, base[1] + legH + d.h * 0.42),
         [0.18 * s, 0.18 * s, 0.38 * s], T.wolf_dark, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'rabbit') {
+      const earY = headY + headHeight * 0.72 * s;
+      for (const side of [-1, 1]) {
+        const earSide = side * headWidth * 0.28;
+        drawOval(prog, point(headForward - 0.015, earSide, earY),
+          [0.15 * s, 0.48 * s, 0.13 * s], d.body, [1, 1, 1], yaw, 1);
+        drawOval(prog, point(headFront + 0.012, earSide, earY),
+          [0.065 * s, 0.34 * s, 0.035 * s], d.ear, [1, 1, 1], yaw, 1);
+      }
+      const muzzleY = headY - headHeight * 0.16 * s;
+      drawOval(prog, point(headFront + 0.04, 0, muzzleY),
+        [0.24 * s, 0.17 * s, 0.09 * s], d.face, [1, 1, 1], yaw, 1);
+      drawOval(prog, point(headFront + 0.095, 0, muzzleY + 0.01),
+        [0.075 * s, 0.06 * s, 0.045 * s], d.ear, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'fox') {
+      for (const side of [-1, 1]) {
+        drawOval(prog, point(headForward - 0.025, side * headWidth * 0.38, headY + headHeight * 0.55 * s),
+          [0.16 * s, 0.25 * s, 0.16 * s], d.body, [1, 1, 1], yaw, 1);
+      }
+      drawOval(prog, point(headFront + 0.08, 0, headY - headHeight * 0.18 * s),
+        [0.3 * s, 0.2 * s, 0.13 * s], d.accent, [1, 1, 1], yaw, 1);
+      drawOval(prog, point(headFront + 0.16, 0, headY - headHeight * 0.17 * s),
+        [0.09 * s, 0.075 * s, 0.05 * s], T.eye, [1, 1, 1], yaw, 1);
+    } else if (d.id === 'deer') {
+      const antlerBaseY = headY + headHeight * 0.56 * s;
+      for (const side of [-1, 1]) {
+        const antlerSide = side * headWidth * 0.4;
+        drawCube(prog, point(headForward - 0.02, antlerSide, antlerBaseY + 0.18 * s),
+          [0.11 * s, 0.44 * s, 0.11 * s], d.antler, [1, 1, 1], yaw, 1);
+        drawCube(prog, point(headForward - 0.02, antlerSide + side * 0.17, antlerBaseY + 0.25 * s),
+          [0.1 * s, 0.28 * s, 0.1 * s], d.antler, [1, 1, 1], yaw, 1);
+        drawCube(prog, point(headForward - 0.02, antlerSide - side * 0.12, antlerBaseY + 0.32 * s),
+          [0.1 * s, 0.2 * s, 0.1 * s], d.antler, [1, 1, 1], yaw, 1);
+      }
+      drawOval(prog, point(headFront + 0.025, 0, headY - headHeight * 0.18 * s),
+        [0.16 * s, 0.12 * s, 0.075 * s], d.accent, [1, 1, 1], yaw, 1);
     }
-    this.drawAnimalBoxes(prog, boxes);
+    if (!batch) {
+      this.drawAnimalEllipsoids(prog, ellipsoids);
+      this.drawAnimalBoxes(prog, boxes);
+    }
   },
   saveScreenshot() {
     try {
