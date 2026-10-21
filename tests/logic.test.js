@@ -2955,6 +2955,45 @@ H.test('BREAK never toggles camera view and touch VIEW toggles once per press', 
   H.eq(t.Game.cameraViewToggleRequested(), true, 'a later VIEW press changes perspective again');
 });
 
+H.test('Fight Arena toggles between first- and third-person using keyboard and touch', () => {
+  const t = H.load({ touch: true, boot: false });
+  const player = {
+    char: { name: 'Steve', ultName: 'Block Bonanza', speed: 4, jump: 8 },
+    yaw: 0, pitch: 0, ko: false, ultMeter: 0, maxUlt: 100,
+    update() {},
+  };
+  const opponent = {
+    char: { name: 'Alex', ultName: 'Triple Cyclone', speed: 4, jump: 8 },
+    yaw: 0, pitch: 0, ko: false, ultMeter: 0, maxUlt: 100,
+    update() {},
+  };
+  t.Game.state = 'fight';
+  t.Game.players = [player, opponent];
+  t.Game.clampToWorld = () => {};
+  t.Game.handleFightInput = () => {};
+  t.Game.setFightTouchUltReady = () => {};
+  t.Fight.update = () => {};
+  t.UI.updateHUD = () => {};
+  t.Cam.look = () => {};
+  t.Touch.enabled = true;
+  t.Cam.thirdPerson = true;
+
+  t.Input.pressed.KeyV = true;
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, false, 'V switches Fight Arena to first-person');
+  const view = t.document.getElementById('touch-view');
+  H.eq(view.textContent, '1ST', 'the touch label reflects first-person');
+  H.eq(view.attributes['aria-label'], 'Switch to third-person view', 'the accessible label offers the reverse switch');
+
+  t.Input.pressed.KeyV = false;
+  t.Touch.btn.view = true;
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, true, 'touch VIEW switches Fight Arena back to third-person');
+  H.eq(view.textContent, '3RD', 'the touch label reflects third-person');
+  t.Game.update(1 / 60, { ldx: 0, ldy: 0, mx: 0, mz: 0, jump: false, sneak: false, pad: {} });
+  H.eq(t.Cam.thirdPerson, true, 'holding touch VIEW does not toggle repeatedly');
+});
+
 H.test('touch can select a hotbar slot after UI builds the slots', () => {
   const t = H.load({ touch: true, boot: false });
   t.Game.players = [{ selectedSlot: 0 }];

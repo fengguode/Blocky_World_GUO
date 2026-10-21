@@ -1788,6 +1788,17 @@ const Game = {
     return requested;
   },
 
+  toggleCameraView() {
+    Cam.thirdPerson = !Cam.thirdPerson;
+    const viewButton = document.getElementById('touch-view');
+    if (viewButton) {
+      viewButton.textContent = Cam.thirdPerson ? '3RD' : '1ST';
+      viewButton.setAttribute('aria-label', Cam.thirdPerson ? 'Switch to first-person view' : 'Switch to third-person view');
+    }
+    UI.toast(Cam.thirdPerson ? 'Third person' : 'First person');
+    Audio.play('view');
+  },
+
   /* ============================================================
      update
      ============================================================ */
@@ -1802,26 +1813,17 @@ const Game = {
       this.dayPhase = (this.dayPhase + dt / 300) % 1;
     }
 
-    if (this.state === 'play') {
-      // camera follows player 1
+    // Both playable modes share the same camera input and perspective toggle.
+    // Keeping it outside the mode-specific gameplay branches prevents Fight
+    // Arena from silently ignoring the existing V key and touch VIEW button.
+    if (this.state === 'play' || this.state === 'fight') {
       Cam.look(inp.ldx, inp.ldy);
       p1.yaw = Cam.yaw;
       p1.pitch = Cam.pitch;
+      if (this.cameraViewToggleRequested()) this.toggleCameraView();
+    }
 
-      // Camera view toggle: third person shows your character, first person
-      // puts the camera in their eyes. Default is third person because you can
-      // see who you are and where you are going.
-      if (this.cameraViewToggleRequested()) {
-        Cam.thirdPerson = !Cam.thirdPerson;
-        const viewButton = document.getElementById('touch-view');
-        if (viewButton) {
-          viewButton.textContent = Cam.thirdPerson ? '3RD' : '1ST';
-          viewButton.setAttribute('aria-label', Cam.thirdPerson ? 'Switch to first-person view' : 'Switch to third-person view');
-        }
-        UI.toast(Cam.thirdPerson ? 'Third person' : 'First person');
-        Audio.play('view');
-      }
-
+    if (this.state === 'play') {
       // flight toggle — the FLY button on touch, the F key on desktop
       const flyToggle = Input.hit('KeyF') || (Touch.btn.fly && !this._flyHeld);
       if (flyToggle && p1.creative) {
@@ -1859,9 +1861,6 @@ const Game = {
         '</b><br>Fly: <b>' + (p1.flying ? 'on' : 'off') + '</b>');
 
     } else if (this.state === 'fight') {
-      Cam.look(inp.ldx, inp.ldy);
-      p1.yaw = Cam.yaw;
-      p1.pitch = Cam.pitch;
       const pad = inp.pad || {};
       const p1Attack = Input.mouse.leftPressed || Input.mouse.left || pad.attack || (Touch.btn.hit && !this._hitHeld);
       const p1Special = Input.mouse.rightPressed || pad.special || (Touch.btn.use && !this._useHeld);
