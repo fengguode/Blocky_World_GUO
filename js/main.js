@@ -567,6 +567,11 @@ const Game = {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'F3') { this.showDebug = !this.showDebug; e.preventDefault(); }
       if (e.code === 'F10') { e.preventDefault(); this.togglePause(this.state !== 'paused'); }
+      if ((e.code === 'KeyV' || e.code === 'F5') &&
+          (this.state === 'play' || this.state === 'fight')) {
+        e.preventDefault();
+        if (!e.repeat) this.toggleCameraView();
+      }
       // Pointer lock sends every mouse click to the canvas, including clicks
       // aimed at the live-visit controls. Let the host open the mode picker
       // from the keyboard; releasing the lock makes the overlay clickable.
@@ -965,7 +970,7 @@ const Game = {
     }
     Cam.thirdPerson = true;
     Audio.play('select');
-    UI.toast('PLACE uses your selected block or shovel. BREAK mines. V changes the view.');
+    UI.toast('PLACE uses your selected block or shovel. BREAK mines. V or F5 changes the view.');
   },
 
   applyStorybookOpeningView() {
@@ -1783,7 +1788,7 @@ const Game = {
 
   cameraViewToggleRequested() {
     const touchView = Touch.enabled && Touch.btn.view;
-    const requested = Input.hit('KeyV') || (touchView && !this._camToggleHeld);
+    const requested = touchView && !this._camToggleHeld;
     this._camToggleHeld = touchView;
     return requested;
   },

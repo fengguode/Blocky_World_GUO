@@ -50,7 +50,7 @@ The roster includes Steve, Alex, Web Hero, Dolly, Stone Golem, and Fire Ninja. K
 
 On a phone or tablet, use the on-screen thumbstick to move, drag the right side to look, and use the large **BREAK / PLACE / JUMP / FLY** buttons. **BREAK** attacks animals and visiting players; select Apple or Meat in the hotbar, then press **PLACE** to eat. Scroll the hotbar to reach food. In a fight the buttons become **HIT / SKILL / JUMP / FLY**. Controls support touch-only play.
 
-On a desktop, use **WASD** to move, the mouse to look, left click to break or attack, right click to place or eat selected food, **1–9** for blocks, **0** for the shovel, and the mouse wheel or hotbar click for food. **F** toggles flight, **J / K / L** control fight actions, **V** switches between third- and first-person view, **F5** changes camera, **P** takes a photo, and **F10** pauses.
+On a desktop, use **WASD** to move, the mouse to look, left click to break or attack, right click to place or eat selected food, **1–9** for blocks, **0** for the shovel, and the mouse wheel or hotbar click for food. **F** toggles flight, **J / K / L** control fight actions, **V** or **F5** switches between third- and first-person view in Play & Build and Fight Arena, **F5** cycles camera views in Observe, **P** takes a photo, and **F10** pauses.
 
 A second local player can use a gamepad or arrow keys plus Numpad 1 / 2 / 3.
 
