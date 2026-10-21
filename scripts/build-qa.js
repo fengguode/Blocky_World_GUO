@@ -247,7 +247,8 @@ function stripNetworkOnlyMain(source) {
   source = source.replace(/^\s*document\.getElementById\(['\"]shared-fight-dialog['\"]\)\.classList\.(?:add|remove)\(['\"]hidden['\"]\);\r?\n/gm, '');
   source = source.replace(/\.auth-screen,?\s*/g, '');
   source = retainFinalElse(source, 'hostWaiting', 'connected');
-  source = source.replace(/^\s*if \(p\.networkRemote && !p\.networkRemoteVisible\) continue;\r?\n/gm, '');
+  source = source.replace(/^\s*if \(p\.networkRemote && !p\.networkRemoteVisible\) continue;\r?\n/gm,
+    "      if (this.mode === 'play' && p === this.players[1]) continue;\n");
   source = source.replace(/^\s*this\.players\[1\]\.networkRemote(?:Visible|Initialized)?\s*=.*;\r?\n/gm, '');
   source = source.replace(/^\s*remote\.networkRemote(?:Visible|Initialized)?\s*=.*;\r?\n/gm, '');
   source = source.replace(/^\s*fighters\.networkRemote(?:Visible)?\s*=.*;\r?\n/gm, '');

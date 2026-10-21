@@ -1129,8 +1129,9 @@ const Game = {
     this._breakHeld = this._useHeld = this._flyHeld = this._camToggleHeld = false;
     this.players[0].flying = true;
     this.players[0].flying = false;   // start on the ground so kids can just walk
+    this.players[1].networkRemote = true;
+    this.players[1].networkRemoteVisible = false;
     if (window.Network && Network.visitRole) {
-      this.players[1].networkRemote = true;
       this.players[1].networkRemoteVisible = !!Network.remotePlayerState;
     }
     Cam.thirdPerson = true;
@@ -1155,6 +1156,8 @@ const Game = {
   startFight() {
     this.restoreSharedArena();
     this.players.length = 2;
+    this.players[1].networkRemote = false;
+    this.players[1].networkRemoteVisible = true;
     this.sharedFightStarted = false;
     this.mode = 'fight';
     this.state = 'fight';

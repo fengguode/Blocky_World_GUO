@@ -4334,6 +4334,8 @@ H.test('state transitions cover every mode', () => {
   const captureHint = t.document.getElementById('capture-hint');
   t.Game.startPlay();
   H.eq(t.Game.state, 'play');
+  H.eq(t.Game.players[1].networkRemote, true, 'Play & Build treats the unused second slot as a remote actor');
+  H.eq(t.Game.players[1].networkRemoteVisible, false, 'solo Play & Build hides the unused second avatar');
   H.assert(captureHint.classList.contains('show'), 'Play & Build shows its hint when pointer-lock state has no event');
   H.eq(captureHint.dataset.mode, 'play');
   t.Game.toMenu();
@@ -4346,6 +4348,8 @@ H.test('state transitions cover every mode', () => {
   t.Game.pick.p2bot = true;
   t.Game.startFight();
   H.eq(t.Game.state, 'fight');
+  H.eq(t.Game.players[1].networkRemote, false, 'Fight Arena restores the local opponent role');
+  H.eq(t.Game.players[1].networkRemoteVisible, true, 'Fight Arena keeps its opponent visible');
   H.assert(captureHint.classList.contains('show'), 'Fight shows its hint when pointer-lock state has no event');
   H.eq(captureHint.dataset.mode, 'fight');
   H.assert(t.Game.bot, 'a computer opponent should be created');
@@ -4628,6 +4632,8 @@ H.test('sanitized QA output preserves offline play without network or persistent
     key() { memoryCalls.storage++; throw new Error('persistent storage key'); },
     get length() { memoryCalls.storage++; throw new Error('persistent storage length'); },
   };
+  const candidateMain = builder.stripNetworkOnlyMain(fs.readFileSync(path.join(H.ROOT, 'js', 'main.js'), 'utf8'));
+  fs.writeFileSync(path.join(qaOutput, 'js', 'main.js'), candidateMain);
   const qa = H.load({
     sourceRoot: qaOutput, includeNetwork: false,
     boot: false, storage: nativeStorageTrap,
@@ -4660,9 +4666,41 @@ H.test('sanitized QA output preserves offline play without network or persistent
   const p2 = new qa.Player(world, qa.characterById(qa.Game.pick.p2), true);
   p2.pos = [spawn[0] + 2, spawn[1], spawn[2]]; p2.spawn = p2.pos.slice();
   qa.Game.players = [p1, p2];
+  qa.Game.canvas = { requestPointerLock() {} };
+  qa.Game.startPlay();
+  qa.Game.gl = H.stubGL({ vaos: [], buffers: [] });
+  qa.Game.progBox = { u: {} };
+  const drawnPlayPlayers = [];
+  qa.Game.drawCharacter = (_, player) => drawnPlayPlayers.push(player);
+  qa.Game.drawAnimals = () => {};
+  qa.Game.drawBuildHand = () => {};
+  qa.Cam.thirdPerson = true;
+  qa.Game.renderEntities(null, 1 / 60);
+  H.eq(drawnPlayPlayers.length, 1, 'sanitized third-person Play & Build draws one avatar');
+  H.eq(drawnPlayPlayers[0], p1, 'sanitized third-person Play & Build draws the local avatar');
+  drawnPlayPlayers.length = 0;
+  qa.Cam.thirdPerson = false;
+  qa.Game.renderEntities(null, 1 / 60);
+  H.eq(drawnPlayPlayers.length, 0, 'sanitized first-person Play & Build hides both avatar meshes');
+  qa.Game.togglePause(true);
+  H.eq(qa.Game.state, 'paused', 'Play & Build pauses for the overlay');
+  H.eq(qa.Game.mode, 'play', 'paused Play & Build retains its active mode');
+  drawnPlayPlayers.length = 0;
+  qa.Cam.thirdPerson = true;
+  qa.Game.renderEntities(null, 1 / 60);
+  H.eq(drawnPlayPlayers.length, 1, 'sanitized paused Play & Build keeps the unused avatar hidden');
+  H.eq(drawnPlayPlayers[0], p1, 'sanitized paused Play & Build keeps the local avatar');
+  qa.Game.togglePause(false);
+  H.eq(qa.Game.state, 'play', 'Play & Build resumes into its active mode');
   qa.Game.startFight();
   H.eq(qa.Game.state, 'fight', 'local Fight mode starts');
   H.assert(qa.Game.bot, 'offline computer opponent remains available');
+  drawnPlayPlayers.length = 0;
+  qa.Cam.thirdPerson = true;
+  qa.Game.renderEntities(null, 1 / 60);
+  H.eq(drawnPlayPlayers.length, 2, 'sanitized Fight Arena draws both fighter avatars');
+  H.eq(drawnPlayPlayers[0], p1, 'sanitized Fight Arena draws the local fighter');
+  H.eq(drawnPlayPlayers[1], p2, 'sanitized Fight Arena draws the opponent');
   qa.Game.canvas = { width: 1280, height: 720, clientWidth: 1280, clientHeight: 720 };
   qa.Game.gl = H.stubGL({ vaos: [], buffers: [] });
   qa.Game.gl.getProgramParameter = () => 1;
