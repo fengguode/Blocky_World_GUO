@@ -362,7 +362,7 @@ async function build(mode = 'qa') {
       'replace persistent browser storage with page-memory-only BWStorage',
       'minify JavaScript using the pinned Terser dependency',
       mode === 'qa'
-        ? 'add a deterministic QA-only Storybook world and frozen observer fixture'
+        ? 'add a deterministic QA-only Storybook world and observer fixture'
         : 'leave the normal game menu interactive and start a fresh page-memory-only world when Play & Build is selected',
     ],
     ...(mode === 'qa' ? { qaFixture: QA_FIXTURE } : { playablePreview: { startsAt: 'main-menu', storage: 'page-memory-only' } }),
