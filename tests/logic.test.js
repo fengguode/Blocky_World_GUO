@@ -276,18 +276,24 @@ H.test('pig, sheep, and chick silhouettes have distinct proportions', () => {
 
 H.test('animal renderers draw visible faces, multiple colors, and silhouette details', () => {
   const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
   try {
     for (const id of ['pig', 'sheep', 'chick']) {
       const def = ANIMALS.find(a => a.id === id);
       const calls = [];
-      let batches = 0;
-      Game.drawAnimalBoxes = (prog, boxes) => { batches++; calls.push(...boxes); };
+      const cubes = [];
+      let roundBatches = 0;
+      let cubeBatches = 0;
+      Game.drawAnimalEllipsoids = (prog, parts) => { if (parts.length) roundBatches++; calls.push(...parts); };
+      Game.drawAnimalBoxes = (prog, parts) => { if (parts.length) cubeBatches++; cubes.push(...parts); calls.push(...parts); };
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
       const tiles = new Set(calls.map(c => c.tile));
       H.assert(calls.length >= (id === 'chick' ? 13 : 14), id + ' needs visible silhouette and face detail');
-      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' should retain all approved detail boxes');
-      H.eq(batches, 1, id + ' should submit all detail boxes in one instanced draw');
+      H.eq(calls.length, { pig: 20, sheep: 24, chick: 24 }[id], id + ' should retain all approved detail parts');
+      H.eq(roundBatches, 1, id + ' should submit soft anatomy in one rounded instanced draw');
+      H.eq(cubeBatches, id === 'chick' ? 1 : 0, id + ' should batch only its angular beak details');
       H.assert(tiles.size >= 3, id + ' should use multiple colors/materials');
+      H.assert(calls.filter(c => c.tile === def.body).every(c => !cubes.includes(c)), id + ' body and fleece should use rounded geometry');
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs two visible eyes');
       if (id === 'pig') H.assert(calls.some(c => c.tile === def.accent && c.size[0] >= 0.3), 'pig needs a prominent snout');
       if (id === 'sheep') {
@@ -316,19 +322,24 @@ H.test('animal renderers draw visible faces, multiple colors, and silhouette det
     }
   } finally {
     Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
   }
 });
 
 H.test('rabbit, fox, and deer have species-specific readable silhouettes', () => {
   const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
   try {
     for (const id of ['rabbit', 'fox', 'deer']) {
       const def = ANIMALS.find(a => a.id === id);
       const calls = [];
-      Game.drawAnimalBoxes = (prog, boxes) => calls.push(...boxes);
+      const cubes = [];
+      Game.drawAnimalEllipsoids = (prog, parts) => calls.push(...parts);
+      Game.drawAnimalBoxes = (prog, parts) => { cubes.push(...parts); calls.push(...parts); };
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
       H.assert(calls.length >= 15, id + ' needs a multi-part model');
       H.assert(calls.filter(c => c.tile === g.T.eye).length >= 2, id + ' needs visible eyes');
+      H.assert(calls.filter(c => c.tile === def.body).some(c => !cubes.includes(c)), id + ' torso should use rounded geometry');
       if (id === 'rabbit') {
         H.eq(calls.filter(c => c.tile === def.ear && c.size[1] >= 0.34).length, 2, 'rabbit needs two long inner ears');
         H.assert(calls.some(c => c.tile === def.face && c.size[0] >= 0.2 && c.size[2] > 0.08), 'rabbit needs a projecting muzzle and tail puff');
@@ -343,19 +354,67 @@ H.test('rabbit, fox, and deer have species-specific readable silhouettes', () =>
     }
   } finally {
     Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
+  }
+});
+
+H.test('wolf uses a heavy rounded ruff, amber eye framing, and sharp ivory fangs', () => {
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
+  try {
+    const def = ANIMALS.find(a => a.id === 'wolf');
+    const rounded = [], angular = [];
+    Game.drawAnimalEllipsoids = (prog, parts) => rounded.push(...parts);
+    Game.drawAnimalBoxes = (prog, parts) => angular.push(...parts);
+    Game.drawAnimal(null, { def, pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0 }, 1);
+    H.assert(rounded.filter(part => part.tile === def.face && part.size[1] > 0.5).length >= 1,
+      'wolf needs a broad light ruff around its shoulders');
+    H.assert(rounded.filter(part => part.tile === g.T.wolf_dark).length >= 4,
+      'wolf needs dark face framing, muzzle, ears, and tail');
+    H.eq(angular.filter(part => part.tile === g.T.wool).length, 2,
+      'wolf keeps two crisp ivory fangs');
+    H.assert(rounded.filter(part => part.tile === g.T.wolf_eye).length >= 2,
+      'wolf keeps its amber eyes visible');
+  } finally {
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
+  }
+});
+
+H.test('wildlife draws each geometry family in one shared batch', () => {
+  const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
+  try {
+    const animals = ['pig', 'chick', 'wolf'].map(id => ({
+      def: ANIMALS.find(a => a.id === id), pos: [0, 0, 0], scale: 1, yaw: 0, walkAnim: 0,
+    }));
+    const roundBatches = [], cubeBatches = [];
+    Game.drawAnimalEllipsoids = (prog, parts) => roundBatches.push(parts);
+    Game.drawAnimalBoxes = (prog, parts) => cubeBatches.push(parts);
+    Game.drawAnimals(null, animals, 1);
+    H.eq(roundBatches.length, 1, 'all organic wildlife geometry should share one draw batch');
+    H.eq(cubeBatches.length, 1, 'all crisp wildlife details should share one draw batch');
+    H.assert(roundBatches[0].length > animals.length * 10, 'the rounded batch should contain anatomy from each animal');
+    H.assert(cubeBatches[0].length >= 4, 'the crisp batch should retain beaks and fangs');
+  } finally {
+    Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
   }
 });
 
 H.test('animal stepped head tiers follow each animal scale vertically', () => {
   const originalDrawAnimalBoxes = Game.drawAnimalBoxes;
+  const originalDrawAnimalEllipsoids = Game.drawAnimalEllipsoids;
   try {
     const captureHeadTiers = (def, scale, headY, headHeight) => {
       const headCalls = [];
-      Game.drawAnimalBoxes = (prog, boxes) => {
-        for (const { pos, size, tile } of boxes) {
+      const capture = (parts) => {
+        for (const { pos, size, tile } of parts) {
         if (tile === def.face && pos[1] > headY - headHeight * 0.16 * scale) headCalls.push({ pos, size });
         }
       };
+      Game.drawAnimalBoxes = (prog, parts) => capture(parts);
+      Game.drawAnimalEllipsoids = (prog, parts) => capture(parts);
       Game.drawAnimal(null, { def, pos: [0, 0, 0], scale, yaw: 0, walkAnim: 0 }, 1);
       return headCalls;
     };
@@ -383,10 +442,11 @@ H.test('animal stepped head tiers follow each animal scale vertically', () => {
     }
   } finally {
     Game.drawAnimalBoxes = originalDrawAnimalBoxes;
+    Game.drawAnimalEllipsoids = originalDrawAnimalEllipsoids;
   }
 });
 
-H.test('animal instance batches upload per-box transforms and issue one instanced draw', () => {
+H.test('animal cube batches upload per-part transforms and issue one instanced draw', () => {
   const originalGL = Game.gl;
   const originalProgram = Game.progBox;
   const originalVAO = Game.animalBatchVAO;
@@ -395,18 +455,22 @@ H.test('animal instance batches upload per-box transforms and issue one instance
   const originalData = Game.animalBatchData;
   const originalCube = Game.cube;
   const uniformInstanced = [];
+  const uniformRound = [];
   const uploads = [];
   const draws = [];
   const fakeGL = {
     ARRAY_BUFFER: 1, DYNAMIC_DRAW: 2, TRIANGLES: 3, UNSIGNED_SHORT: 4,
     useProgram() {}, uniformMatrix4fv() {}, uniform3f() {},
-    uniform1f(location, value) { if (location === 'uInstanced') uniformInstanced.push(value); },
+    uniform1f(location, value) {
+      if (location === 'uInstanced') uniformInstanced.push(value);
+      if (location === 'uRoundShape') uniformRound.push(value);
+    },
     bindBuffer() {}, bufferData() {}, bufferSubData(target, offset, data) { uploads.push(Array.from(data)); },
     bindVertexArray(vao) { H.eq(vao, 'animal-vao', 'batch should use its instance-enabled VAO'); },
     drawElementsInstanced(...args) { draws.push(args); },
   };
   Game.gl = fakeGL;
-  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced' } };
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
   Game.animalBatchVAO = 'animal-vao';
   Game.animalBatchBuffer = 'animal-buffer';
   Game.animalBatchCapacity = 4;
@@ -419,6 +483,7 @@ H.test('animal instance batches upload per-box transforms and issue one instance
   try {
     Game.drawAnimalBoxes(null, boxes);
     H.eq(JSON.stringify(uniformInstanced), '[1]', 'batch shader should select per-instance transforms');
+    H.eq(JSON.stringify(uniformRound), '[0]', 'cube batch should retain flat face normals');
     H.eq(draws.length, 1, 'all animal boxes should issue one GPU draw');
     H.eq(JSON.stringify(draws[0]), JSON.stringify([fakeGL.TRIANGLES, 36, fakeGL.UNSIGNED_SHORT, 0, 2]),
       'draw should instance the shared cube mesh');
@@ -440,6 +505,50 @@ H.test('animal instance batches upload per-box transforms and issue one instance
   }
 });
 
+H.test('rounded animal parts use their own instanced mesh and corrected normals', () => {
+  const saved = {
+    gl: Game.gl, program: Game.progBox,
+    vao: Game.animalRoundBatchVAO, buffer: Game.animalRoundBatchBuffer,
+    capacity: Game.animalRoundBatchCapacity, data: Game.animalRoundBatchData,
+    mesh: Game.animalEllipsoid,
+  };
+  const drawCalls = [];
+  const roundValues = [];
+  const uploads = [];
+  const fakeGL = {
+    ARRAY_BUFFER: 1, DYNAMIC_DRAW: 2, TRIANGLES: 3, UNSIGNED_SHORT: 4,
+    useProgram() {}, uniformMatrix4fv() {}, uniform3f() {},
+    uniform1f(location, value) { if (location === 'uRoundShape') roundValues.push(value); },
+    bindBuffer() {}, bufferData() {}, bufferSubData(target, offset, data) { uploads.push(Array.from(data)); },
+    bindVertexArray(vao) { H.eq(vao, 'round-vao', 'rounded parts should bind the ellipsoid mesh VAO'); },
+    drawElementsInstanced(...args) { drawCalls.push(args); },
+  };
+  Game.gl = fakeGL;
+  Game.progBox = { u: { uMVP: 'uMVP', uBoxCenter: 'uBoxCenter', uBoxSize: 'uBoxSize', uTint: 'uTint', uAlpha: 'uAlpha', uTile: 'uTile', uUseTex: 'uUseTex', uInstanced: 'uInstanced', uRoundShape: 'uRoundShape' } };
+  Game.animalRoundBatchVAO = 'round-vao';
+  Game.animalRoundBatchBuffer = 'round-buffer';
+  Game.animalRoundBatchCapacity = 4;
+  Game.animalRoundBatchData = new Float32Array(36);
+  Game.animalEllipsoid = { count: 576 };
+  try {
+    Game.drawAnimalEllipsoids(null, [{ pos: [1, 2, 3], size: [0.4, 0.7, 0.3], tile: 9, yaw: 0.5 }]);
+    H.eq(JSON.stringify(roundValues), '[1]', 'ellipsoid shader should inverse-scale normals');
+    H.eq(drawCalls.length, 1, 'rounded parts should use one instanced draw');
+    H.eq(JSON.stringify(drawCalls[0]), JSON.stringify([fakeGL.TRIANGLES, 576, fakeGL.UNSIGNED_SHORT, 0, 1]),
+      'rounded batch should draw the low-poly ellipsoid mesh');
+    H.eq(uploads.length, 1, 'rounded transforms should upload once');
+    H.eq(uploads[0][8], 9, 'rounded part should preserve its material tile');
+  } finally {
+    Game.gl = saved.gl;
+    Game.progBox = saved.program;
+    Game.animalRoundBatchVAO = saved.vao;
+    Game.animalRoundBatchBuffer = saved.buffer;
+    Game.animalRoundBatchCapacity = saved.capacity;
+    Game.animalRoundBatchData = saved.data;
+    Game.animalEllipsoid = saved.mesh;
+  }
+});
+
 H.test('animal instance lighting rotates face normals with the box yaw', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'js/main.js'), 'utf8');
   const programStart = source.indexOf('this.progBox = createProgram(gl,');
@@ -448,8 +557,10 @@ H.test('animal instance lighting rotates face normals with the box yaw', () => {
   const vertexEnd = source.indexOf('`', vertexStart + 1);
   H.assert(vertexStart >= 0 && vertexEnd > vertexStart, 'box vertex shader source should be extractable');
   const vertexShader = source.slice(vertexStart + 1, vertexEnd);
-  H.assert(/vec3 worldNormal = aNormal;/.test(vertexShader), 'ordinary cube faces should retain their original normals');
-  H.assert(/worldNormal = vec3\(\s*aBoxRotation\.x \* aNormal\.x \+ aBoxRotation\.y \* aNormal\.z,\s*aNormal\.y,\s*-aBoxRotation\.y \* aNormal\.x \+ aBoxRotation\.x \* aNormal\.z\);/s.test(vertexShader),
+  H.assert(/vec3 localNormal = aNormal;/.test(vertexShader), 'ordinary cube faces should retain their original normals');
+  H.assert(/localNormal = normalize\(aNormal \/ max\(abs\(dimensions\), vec3\(0\.0001\)\)\);/.test(vertexShader),
+    'rounded animal normals should compensate for non-uniform ellipsoid scale');
+  H.assert(/aBoxRotation\.x \* localNormal\.x \+ aBoxRotation\.y \* localNormal\.z/.test(vertexShader),
     'instanced animal normals should use the same yaw rotation as their geometry');
   H.assert(/vNormal = worldNormal;/.test(vertexShader), 'the shader should pass world-space face normals forward');
   H.assert(/dot\(worldNormal, normalize\(vec3\(0\.4, 0\.9, 0\.35\)\)\)/.test(vertexShader),
@@ -2990,6 +3101,35 @@ H.test('every cube face normal points outward', () => {
     H.assert(px * nx + py * ny + pz * nz > 0,
       'face ' + (v / 4) + ' normal points inward');
   }
+});
+
+H.test('rounded animal mesh has bounded UVs, valid indices, and outward faces', () => {
+  const ellipsoid = g.buildEllipsoid(8, 12);
+  H.eq(ellipsoid.positions.length / 3, 117, '8 by 12 UV sphere vertex count');
+  H.eq(ellipsoid.indices.length, 576, '8 by 12 UV sphere triangle indices');
+  H.eq(ellipsoid.normals.length, ellipsoid.positions.length, 'each vertex has a normal');
+  H.eq(ellipsoid.uvs.length / 2, ellipsoid.positions.length / 3, 'each vertex has texture coordinates');
+  for (let i = 0; i < ellipsoid.positions.length; i += 3) {
+    const x = ellipsoid.positions[i], y = ellipsoid.positions[i + 1], z = ellipsoid.positions[i + 2];
+    H.assert(Math.abs(x) <= 0.5 + 1e-6 && Math.abs(y) <= 0.5 + 1e-6 && Math.abs(z) <= 0.5 + 1e-6,
+      'unit mesh positions fit the shared instance bounds');
+    const nx = ellipsoid.normals[i], ny = ellipsoid.normals[i + 1], nz = ellipsoid.normals[i + 2];
+    H.near(Math.hypot(nx, ny, nz), 1, 1e-5, 'vertex normal is normalized');
+  }
+  for (const uv of ellipsoid.uvs) H.assert(uv >= 0 && uv <= 1, 'UV coordinates remain in the texture tile');
+  let visibleFaces = 0;
+  for (let i = 0; i < ellipsoid.indices.length; i += 3) {
+    const ia = ellipsoid.indices[i] * 3, ib = ellipsoid.indices[i + 1] * 3, ic = ellipsoid.indices[i + 2] * 3;
+    const ab = [ellipsoid.positions[ib] - ellipsoid.positions[ia], ellipsoid.positions[ib + 1] - ellipsoid.positions[ia + 1], ellipsoid.positions[ib + 2] - ellipsoid.positions[ia + 2]];
+    const ac = [ellipsoid.positions[ic] - ellipsoid.positions[ia], ellipsoid.positions[ic + 1] - ellipsoid.positions[ia + 1], ellipsoid.positions[ic + 2] - ellipsoid.positions[ia + 2]];
+    const cross = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    if (Math.hypot(...cross) < 1e-8) continue;
+    const radial = [ellipsoid.positions[ia] + ellipsoid.positions[ib] + ellipsoid.positions[ic], ellipsoid.positions[ia + 1] + ellipsoid.positions[ib + 1] + ellipsoid.positions[ic + 1], ellipsoid.positions[ia + 2] + ellipsoid.positions[ib + 2] + ellipsoid.positions[ic + 2]];
+    H.assert(cross[0] * radial[0] + cross[1] * radial[1] + cross[2] * radial[2] > 0,
+      'non-degenerate triangle winding faces outward');
+    visibleFaces++;
+  }
+  H.eq(visibleFaces, 168, 'all non-degenerate triangles are tested');
 });
 
 /* ============================================================

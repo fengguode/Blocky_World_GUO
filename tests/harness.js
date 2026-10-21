@@ -301,7 +301,7 @@ function load(options) {
   globalThis.__X = {
     ATLAS, T, BLOCKS, HOTBAR_BLOCKS, HOTBAR_ITEMS, isSolid, isOpaque, isLiquid, isCutout, lightOf,
     clamp255, blockIconCanvas, buildBlockTexture,
-    createGL, createProgram, M4, buildCube, buildQuad, buildSprite,
+    createGL, createProgram, M4, buildCube, buildEllipsoid, buildQuad, buildSprite,
     CHUNK, WORLD_H, SEA_LEVEL, Chunk, World, noise2, fbm,
     WORLD_SIZE, CHUNKS_PER_SIDE, CENTRE_CHUNK, WORLD_CENTRE, MIN_EDGE, MAX_EDGE,
     isStorybookWorld,

@@ -202,6 +202,49 @@ function buildCube() {
   };
 }
 
+// Low-poly UV sphere used for rounded character and animal forms. The mesh is
+// deliberately modest so many instanced animals remain inexpensive on touch
+// devices. Its unit-space bounds match buildCube(), keeping instance sizing
+// consistent between the two meshes.
+function buildEllipsoid(latitudeSegments = 8, longitudeSegments = 12) {
+  const lat = Math.max(4, Math.floor(latitudeSegments));
+  const lon = Math.max(6, Math.floor(longitudeSegments));
+  const positions = [], normals = [], uvs = [], indices = [];
+
+  for (let y = 0; y <= lat; y++) {
+    const v = y / lat;
+    const phi = -Math.PI / 2 + v * Math.PI;
+    const ring = Math.cos(phi);
+    const py = Math.sin(phi);
+    for (let x = 0; x <= lon; x++) {
+      const u = x / lon;
+      const theta = u * Math.PI * 2;
+      const px = ring * Math.cos(theta);
+      const pz = ring * Math.sin(theta);
+      positions.push(px * 0.5, py * 0.5, pz * 0.5);
+      normals.push(px, py, pz);
+      uvs.push(u, 1 - v);
+    }
+  }
+
+  const stride = lon + 1;
+  for (let y = 0; y < lat; y++) {
+    for (let x = 0; x < lon; x++) {
+      const a = y * stride + x;
+      const b = a + stride;
+      // This winding faces outwards with the project's back-face culling.
+      indices.push(a, b, b + 1, a, b + 1, a + 1);
+    }
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
+    indices: new Uint16Array(indices),
+  };
+}
+
 // Flat XZ quad lying on the ground, used for the shadow blob.
 function buildQuad() {
   return {
