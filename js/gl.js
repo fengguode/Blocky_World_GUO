@@ -218,7 +218,9 @@ function buildEllipsoid(latitudeSegments = 8, longitudeSegments = 12) {
     const py = Math.sin(phi);
     for (let x = 0; x <= lon; x++) {
       const u = x / lon;
-      const theta = u * Math.PI * 2;
+      // Put U=0.5 at the local -Z front so centered eye and muzzle pixels stay
+      // on an animal's face rather than wrapping around its side.
+      const theta = u * Math.PI * 2 + Math.PI / 2;
       const px = ring * Math.cos(theta);
       const pz = ring * Math.sin(theta);
       positions.push(px * 0.5, py * 0.5, pz * 0.5);

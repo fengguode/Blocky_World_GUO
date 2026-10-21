@@ -3109,6 +3109,15 @@ H.test('rounded animal mesh has bounded UVs, valid indices, and outward faces', 
   H.eq(ellipsoid.indices.length, 576, '8 by 12 UV sphere triangle indices');
   H.eq(ellipsoid.normals.length, ellipsoid.positions.length, 'each vertex has a normal');
   H.eq(ellipsoid.uvs.length / 2, ellipsoid.positions.length / 3, 'each vertex has texture coordinates');
+  const frontVertex = (8 / 2) * (12 + 1) + (12 / 2);
+  H.near(ellipsoid.positions[frontVertex * 3], 0, 1e-6,
+    'center of the face tile lies on the ellipsoid front axis');
+  H.near(ellipsoid.positions[frontVertex * 3 + 1], 0, 1e-6,
+    'center of the face tile lies on the equator');
+  H.near(ellipsoid.positions[frontVertex * 3 + 2], -0.5, 1e-6,
+    'face tile center points toward local -Z');
+  H.near(ellipsoid.uvs[frontVertex * 2], 0.5, 1e-6,
+    'animal face tile center uses U=0.5');
   for (let i = 0; i < ellipsoid.positions.length; i += 3) {
     const x = ellipsoid.positions[i], y = ellipsoid.positions[i + 1], z = ellipsoid.positions[i + 2];
     H.assert(Math.abs(x) <= 0.5 + 1e-6 && Math.abs(y) <= 0.5 + 1e-6 && Math.abs(z) <= 0.5 + 1e-6,
