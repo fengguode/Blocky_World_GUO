@@ -87,6 +87,17 @@ npm run test:qa
 
 The builder emits only its explicit local HTML, CSS, and JavaScript allowlist under `.qa-public/`; CSS resource URLs are limited to same-document fragments. Ordinary offline play continues to use `index.html` and the existing local-save adapter. `provenance.json` records the source commit/tree, sanitizer and dependency hashes, source-input hashes, and every generated runtime asset hash. Run the build from a clean Git checkout so the recorded revision exactly identifies its inputs. The build validates staged output before replacing a previous successful build. This command prepares QA assets only; it does not publish or deploy them.
 
+## Playable sanitized preview
+
+Create a LAN-testable game build that keeps the real main menu and Play & Build path interactive while removing family profiles, PINs, server routes, persistent browser storage, and remote resources:
+
+```
+npm run build:preview
+npm run serve:preview
+```
+
+The builder emits a separate `.preview-public/` directory. The preview starts at the menu, and its game saves last only until the page is closed or refreshed. The static server binds only to the machine's LAN interfaces on TCP port 200 and serves only `.preview-public/`; it does not start the family server or expose profile/world data. The preview is for local play checks, not a production release.
+
 ## Source files
 
 ```

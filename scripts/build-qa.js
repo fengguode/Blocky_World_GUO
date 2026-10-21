@@ -5,13 +5,26 @@ const { execFileSync } = require('node:child_process');
 const terser = require('terser');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const OUT = path.join(REPO_ROOT, '.qa-public');
+const BUILD_DIRECTORIES = Object.freeze({ qa: '.qa-public', preview: '.preview-public' });
+const OUT = path.join(REPO_ROOT, BUILD_DIRECTORIES.qa);
 const JS_FILES = [
   'blocks.js', 'gl.js', 'world.js', 'mesher.js', 'chars.js', 'input.js',
   'camera.js', 'entity.js', 'bot.js', 'fight.js', 'touch.js', 'ui.js', 'main.js',
 ];
-const JS_ASSET_ALLOWLIST = new Set([...JS_FILES.map((file) => 'js/' + file), 'js/storage.js', 'js/qa-fixture.js']);
+const JS_SOURCE_ALLOWLIST = [...JS_FILES.map((file) => 'js/' + file), 'js/storage.js'];
+const JS_ASSET_ALLOWLIST = new Set([...JS_SOURCE_ALLOWLIST, 'js/qa-fixture.js']);
 const REMOVED_SHARED_FIGHT_CONTROL_IDS = ['btn-fight-lobby-settings', 'btn-fight-lobby-exit'];
+
+function assetAllowlist(mode = 'qa') {
+  if (mode !== 'qa' && mode !== 'preview') throw new Error('Unknown sanitized build mode: ' + mode);
+  return new Set(mode === 'qa' ? [...JS_SOURCE_ALLOWLIST, 'js/qa-fixture.js'] : JS_SOURCE_ALLOWLIST);
+}
+
+function outputDirectory(mode = 'qa') {
+  const directory = BUILD_DIRECTORIES[mode];
+  if (!directory) throw new Error('Unknown sanitized build mode: ' + mode);
+  return path.join(REPO_ROOT, directory);
+}
 
 const QA_FIXTURE = Object.freeze({
   seed: 1337,
@@ -94,7 +107,7 @@ function readSource(file) {
 
 function assertCleanCheckout(status) {
   if (String(status).trim()) {
-    throw new Error('QA builds require a clean Git checkout so the recorded source commit matches every input');
+    throw new Error('Sanitized builds require a clean Git checkout so the recorded source commit matches every input');
   }
 }
 
@@ -106,10 +119,11 @@ function walkFiles(root, prefix = '') {
   }).sort();
 }
 
-function validateOutputPath(candidate, fileSystem = fs) {
+function validateOutputPath(candidate, fileSystem = fs, mode = 'qa') {
   const resolved = path.resolve(candidate);
-  if (resolved !== OUT || path.dirname(resolved) !== REPO_ROOT || path.basename(resolved) !== '.qa-public') {
-    throw new Error('QA output must be the dedicated .qa-public directory');
+  const expected = outputDirectory(mode);
+  if (resolved !== expected || path.dirname(resolved) !== REPO_ROOT || path.basename(resolved) !== BUILD_DIRECTORIES[mode]) {
+    throw new Error(mode.toUpperCase() + ' output must be the dedicated ' + BUILD_DIRECTORIES[mode] + ' directory');
   }
   if (fileSystem.existsSync(resolved) && fileSystem.lstatSync(resolved).isSymbolicLink()) {
     throw new Error('QA output directory must not be a symbolic link');
@@ -249,13 +263,16 @@ function stripNetworkOnlyMain(source) {
   return source;
 }
 
-async function build() {
-  validateOutputPath(OUT);
+async function build(mode = 'qa') {
+  const out = outputDirectory(mode);
+  const outputName = BUILD_DIRECTORIES[mode];
+  const title = mode === 'qa' ? 'Blocky World QA' : 'Blocky World Preview';
+  validateOutputPath(out, fs, mode);
   assertCleanCheckout(gitValue(['status', '--porcelain', '--untracked-files=all']));
-  const stage = path.join(REPO_ROOT, '.qa-public.tmp-' + process.pid);
-  const backup = path.join(REPO_ROOT, '.qa-public.previous-' + process.pid);
+  const stage = path.join(REPO_ROOT, outputName + '.tmp-' + process.pid);
+  const backup = path.join(REPO_ROOT, outputName + '.previous-' + process.pid);
   for (const candidate of [stage, backup]) {
-    if (fs.existsSync(candidate)) throw new Error('Refusing to reuse an existing QA build path: ' + candidate);
+    if (fs.existsSync(candidate)) throw new Error('Refusing to reuse an existing sanitized build path: ' + candidate);
   }
   fs.mkdirSync(stage, { recursive: true });
   try {
@@ -266,7 +283,7 @@ async function build() {
     html = removeHtmlElementById(html, id);
   }
   html = html.replace(/\s*<div class="session-row">[\s\S]*?<\/div>\s*/g, '\n');
-  html = html.replace(/Marlene\s*&amp;\s*Florenz's Game/gi, 'Blocky World QA');
+  html = html.replace(/Marlene\s*&amp;\s*Florenz's Game/gi, title);
   html = html.replace(/\b(?:Marlene|Florenz|Feng)\b/gi, 'Player');
   fs.writeFileSync(path.join(stage, 'index.html'), html);
   const sourceCss = readSource('style.css');
@@ -309,10 +326,12 @@ async function build() {
     'window.BWStorage = BWStorage;',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(stage, 'js', 'qa-fixture.js'), qaFixtureSource());
-  html = html.replace('<script src="js/main.js"></script>', '<script src="js/qa-fixture.js"></script>\n<script src="js/main.js"></script>');
+  if (mode === 'qa') {
+    fs.writeFileSync(path.join(stage, 'js', 'qa-fixture.js'), qaFixtureSource());
+    html = html.replace('<script src="js/main.js"></script>', '<script src="js/qa-fixture.js"></script>\n<script src="js/main.js"></script>');
+  }
   fs.writeFileSync(path.join(stage, 'index.html'), html);
-  assertSanitizedOutput(stage);
+  assertSanitizedOutput(stage, mode);
   const sourceFiles = ['index.html', 'style.css', ...JS_FILES.map((file) => path.join('js', file))];
   const sourceHashes = Object.fromEntries(sourceFiles.map((file) => [
     file.split(path.sep).join('/'), sha256(readSource(file.split(path.sep).join('/'))),
@@ -326,7 +345,7 @@ async function build() {
     schemaVersion: 1,
     source: { commit: gitValue(['rev-parse', 'HEAD']), tree: gitValue(['rev-parse', 'HEAD^{tree}']) },
     tool: {
-      name: 'blocky-world-sanitized-qa-builder',
+      name: mode === 'qa' ? 'blocky-world-sanitized-qa-builder' : 'blocky-world-sanitized-playable-preview-builder',
       version: require(path.join(REPO_ROOT, 'package.json')).version,
       terserVersion: require(path.join(REPO_ROOT, 'package.json')).devDependencies.terser,
       node: process.version,
@@ -334,6 +353,7 @@ async function build() {
       packageSha256: sha256(fs.readFileSync(path.join(REPO_ROOT, 'package.json'))),
       lockfileSha256: sha256(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'))),
     },
+    mode,
     transforms: [
       'remove family profile, PIN, setup, visit, and server UI from HTML and CSS',
       'omit network.js and whitelist only the required local game modules',
@@ -341,9 +361,11 @@ async function build() {
       'remove event bindings for controls inside the removed shared fight dialog',
       'replace persistent browser storage with page-memory-only BWStorage',
       'minify JavaScript using the pinned Terser dependency',
-      'add a deterministic QA-only Storybook world and observer fixture',
+      mode === 'qa'
+        ? 'add a deterministic QA-only Storybook world and frozen observer fixture'
+        : 'leave the normal game menu interactive and start a fresh page-memory-only world when Play & Build is selected',
     ],
-    qaFixture: QA_FIXTURE,
+    ...(mode === 'qa' ? { qaFixture: QA_FIXTURE } : { playablePreview: { startsAt: 'main-menu', storage: 'page-memory-only' } }),
     inputSha256: sourceHashes,
     inputGitBlobs: sourceBlobs,
     assets: Object.fromEntries(outputFiles.map((file) => [file, {
@@ -356,13 +378,13 @@ async function build() {
 
   let movedOld = false;
   try {
-    if (fs.existsSync(OUT)) {
-      fs.renameSync(OUT, backup);
+    if (fs.existsSync(out)) {
+      fs.renameSync(out, backup);
       movedOld = true;
     }
-    fs.renameSync(stage, OUT);
+    fs.renameSync(stage, out);
   } catch (error) {
-    if (movedOld && !fs.existsSync(OUT)) fs.renameSync(backup, OUT);
+    if (movedOld && !fs.existsSync(out)) fs.renameSync(backup, out);
     throw error;
   }
   if (movedOld) fs.rmSync(backup, { recursive: true, force: true });
@@ -372,7 +394,7 @@ async function build() {
   }
 }
 
-function assertNoForbiddenReferences(text, resourceText) {
+function assertNoForbiddenReferences(text, resourceText, mode = 'qa') {
   const forbidden = [
     ['server/network/auth UI', /\bserver\b|\bNetwork\b|network\.js|networkRemote|auth-screen|login-form|visit-lobby|visit-hud|visit-mode-dialog|shared-fight-dialog|session-row/i],
     ['identifying profile/PIN UI', /\b(?:Marlene|Florenz|Feng)\b|\bPIN\b|auth-profile|profile-setup|login-form|choose your profile|sign in/i],
@@ -383,12 +405,12 @@ function assertNoForbiddenReferences(text, resourceText) {
   ];
   for (const [label, pattern] of forbidden) {
     const match = pattern.exec(text);
-    if (match) throw new Error('Sanitized QA output contains ' + label + ' token ' + JSON.stringify(match[0]) + ': ' + text.slice(Math.max(0, match.index - 50), match.index + 100));
+    if (match) throw new Error('Sanitized output contains ' + label + ' token ' + JSON.stringify(match[0]) + ': ' + text.slice(Math.max(0, match.index - 50), match.index + 100));
   }
-  assertNoExternalResources(resourceText === undefined ? text : resourceText);
+  assertNoExternalResources(resourceText === undefined ? text : resourceText, mode);
 }
 
-function assertNoExternalResources(text) {
+function assertNoExternalResources(text, mode = 'qa') {
   const decodeCssEscapes = (value) => value
     .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(/\\([^\r\n])/g, '$1')
@@ -444,7 +466,7 @@ function assertNoExternalResources(text) {
       if (value.includes('&')) throw new Error('Sanitized QA output contains an encoded HTML resource/style value: ' + value);
       if (name !== 'src' && name !== 'href' && name !== 'style') throw new Error('Sanitized QA output contains an unsupported HTML resource attribute: ' + name);
       if (name !== 'style' && remoteUrl(value)) throw new Error('Sanitized QA output contains an external HTML resource URL: ' + value);
-      if (name === 'src' && !JS_ASSET_ALLOWLIST.has(value) && !/^data:image\/(?:png|gif|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(value)) throw new Error('Sanitized QA output contains an unapproved local source URL: ' + value);
+      if (name === 'src' && !assetAllowlist(mode).has(value) && !/^data:image\/(?:png|gif|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(value)) throw new Error('Sanitized output contains an unapproved local source URL: ' + value);
       if (name === 'href' && value !== 'data:,' && value !== 'style.css' && value[0] !== '#') throw new Error('Sanitized QA output contains an unapproved local link URL: ' + value);
       if (name === 'style') assertNoCssResources(value);
     }
@@ -482,23 +504,31 @@ function assertWorldPickerCss(css) {
   }
 }
 
-function assertSanitizedOutput(root = OUT) {
+function assertSanitizedOutput(root = OUT, mode = 'qa') {
+  const allowedAssets = assetAllowlist(mode);
   const allFiles = walkFiles(root).filter((file) => file !== 'provenance.json');
-  const expectedFiles = ['index.html', 'style.css', ...JS_ASSET_ALLOWLIST].sort();
+  const expectedFiles = ['index.html', 'style.css', ...allowedAssets].sort();
   if (JSON.stringify(allFiles) !== JSON.stringify(expectedFiles)) {
-    throw new Error('Sanitized QA output does not match the complete asset allowlist: ' + allFiles.join(', '));
+    throw new Error('Sanitized ' + mode + ' output does not match the complete asset allowlist: ' + allFiles.join(', '));
   }
   for (const file of allFiles) {
-    if (file.startsWith('js/') && !JS_ASSET_ALLOWLIST.has(file)) throw new Error('Sanitized QA output contains an unapproved script asset: ' + file);
+    if (file.startsWith('js/') && !allowedAssets.has(file)) throw new Error('Sanitized output contains an unapproved script asset: ' + file);
   }
   const files = allFiles.filter((file) => file.startsWith('js/')).map((file) => path.join(root, file));
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
-  assertNoExternalResources(html);
+  assertNoExternalResources(html, mode);
   assertNoCssResources(css);
   const text = html + '\n' + css + '\n' + files.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
-  assertNoForbiddenReferences(text, html);
+  assertNoForbiddenReferences(text, html, mode);
 }
 
-if (require.main === module) build().catch((error) => { console.error(error); process.exitCode = 1; });
-module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, stripRemovedSharedFightBindings, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, QA_FIXTURE, qaFixtureSource, build };
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const mode = args.length === 0 ? 'qa' : args.length === 1 && args[0] === '--playable-preview' ? 'preview' : null;
+  if (!mode) {
+    console.error('Usage: node scripts/build-qa.js [--playable-preview]');
+    process.exitCode = 2;
+  } else build(mode).catch((error) => { console.error(error); process.exitCode = 1; });
+}
+module.exports = { matchingBrace, removeObjectMethod, retainFinalElse, stripNetworkOnlyMain, stripRemovedSharedFightBindings, assertSanitizedOutput, assertNoForbiddenReferences, assertNoExternalResources, assertNoCssResources, assertWorldPickerCss, validateOutputPath, assertCleanCheckout, JS_ASSET_ALLOWLIST, assetAllowlist, outputDirectory, QA_FIXTURE, qaFixtureSource, build };
