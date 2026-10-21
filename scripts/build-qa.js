@@ -374,7 +374,7 @@ async function build(mode = 'qa') {
     }])),
   };
   fs.writeFileSync(path.join(stage, 'provenance.json'), JSON.stringify(manifest, null, 2) + '\n');
-  assertSanitizedOutput(stage);
+  assertSanitizedOutput(stage, mode);
 
   let movedOld = false;
   try {
